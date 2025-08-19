@@ -1,27 +1,69 @@
-use asn1::Encode;
 use base64::Engine;
-use rasn::ber;
-use rasn::types::ObjectIdentifier;
 
-use crate::asn1::*;
-use crate::error::CertificateError;
-
-/// Get OID for certificate attribute
-pub fn get_certificate_attribute_oid<T: AsRef<str>>(name: T) -> Result<ObjectIdentifier, CertificateError> {
-	let name_str = name.as_ref();
-	CERTIFICATE_ATTRIBUTE_OIDS
-		.get(name_str)
-		.cloned()
-		.ok_or_else(|| CertificateError::InvalidOid { message: format!("Unknown certificate attribute: {}", name_str) })
+/// Macro to generate From implementations for error enums
+///
+/// This macro reduces boilerplate when implementing From trait for error types
+/// that wrap other error types in enum variants.
+///
+/// # Example
+/// ```rust
+/// use anchor_rs::impl_source_error_from;
+///
+/// #[derive(Debug)]
+/// enum MyError {
+///     IoError { source: std::io::Error },
+///     ParseError { source: std::num::ParseIntError },
+/// }
+///
+/// impl_source_error_from!(MyError, {
+///     std::io::Error => IoError,
+///     std::num::ParseIntError => ParseError,
+/// });
+/// ```
+#[macro_export]
+macro_rules! impl_source_error_from {
+	($target_error:ty, { $($source_type:ty => $variant:ident),+ $(,)? }) => {
+		$(
+			impl From<$source_type> for $target_error {
+				fn from(source: $source_type) -> Self {
+					Self::$variant { source: source.into() }
+				}
+			}
+		)+
+	};
 }
 
-/// Lookup algorithm name by OID
-pub fn get_algorithm_by_oid(oid: &ObjectIdentifier) -> Result<&'static str, CertificateError> {
-	SENSITIVE_ATTRIBUTE_OIDS
-		.iter()
-		.find(|(_, stored_oid)| *stored_oid == oid)
-		.map(|(name, _)| *name)
-		.ok_or_else(|| CertificateError::InvalidOid { message: format!("Unknown algorithm OID: {}", oid) })
+/// Macro to generate From implementations for error enums with plain variants.
+///
+/// This macro reduces boilerplate when implementing From trait for error types
+/// that map to simple enum variants without source fields.
+///
+/// # Example
+/// ```rust
+/// use anchor_rs::impl_variant_error_from;
+///
+/// #[derive(Debug)]
+/// enum MyError {
+///     InvalidUtf8,
+///     InvalidFormat,
+/// }
+///
+/// impl_variant_error_from!(MyError, {
+///     std::string::FromUtf8Error => InvalidUtf8,
+///     std::num::ParseIntError => InvalidFormat,
+/// });
+/// ```
+#[macro_export]
+macro_rules! impl_variant_error_from {
+	($target_error:ty, { $($source_type:ty => $variant:ident),+ $(,)? }) => {
+		$(
+			impl From<$source_type> for $target_error {
+				fn from(_: $source_type) -> Self {
+					Self::$variant
+				}
+			}
+		)+
+	};
 }
 
 /// Base64 encode wrapper.
@@ -32,21 +74,6 @@ pub(crate) fn base64_encode(data: impl AsRef<[u8]>) -> String {
 /// Base64 decode wrapper.
 pub(crate) fn base64_decode(data: impl AsRef<str>) -> Result<Vec<u8>, base64::DecodeError> {
 	base64::prelude::BASE64_STANDARD.decode(data.as_ref().as_bytes())
-}
-
-/// Convert an asn1 ObjectIdentifier to a rasn ObjectIdentifier via DER bytes
-#[allow(dead_code)]
-pub(crate) fn as_rasn_oid(oid: asn1::ObjectIdentifier) -> Result<rasn::types::ObjectIdentifier, CertificateError> {
-	// Convert asn1 OID to DER bytes
-	let der_bytes = oid.to_der().map_err(|e| CertificateError::InvalidOid {
-		message: format!("Failed to encode ObjectIdentifier to DER: {:?}", e),
-	})?;
-
-	// Decode the DER bytes as a rasn ObjectIdentifier using BER decoder
-	let rasn_oid = ber::decode::<rasn::types::ObjectIdentifier>(&der_bytes)
-		.map_err(|e| CertificateError::InvalidOid { message: format!("Failed to decode ObjectIdentifier: {:?}", e) })?;
-
-	Ok(rasn_oid)
 }
 
 /// Serde helper functions for JSON serialization/deserialization
@@ -80,7 +107,7 @@ pub mod serde_helpers {
 	) -> std::result::Result<&'a str, E> {
 		obj.get(field)
 			.and_then(|v| v.as_str())
-			.ok_or_else(|| E::custom(format!("Missing or invalid {}", field)))
+			.ok_or_else(|| E::custom(format!("Missing or invalid {field}")))
 	}
 
 	/// Extract and decode a base64 field from a JSON object
@@ -91,7 +118,7 @@ pub mod serde_helpers {
 		let b64_str = extract_string(obj, field)?;
 		base64::prelude::BASE64_STANDARD
 			.decode(b64_str)
-			.map_err(|_| E::custom(format!("Invalid base64 in {}", field)))
+			.map_err(|_| E::custom(format!("Invalid base64 in {field}")))
 	}
 
 	/// Extract a required object field from a JSON object
@@ -101,7 +128,7 @@ pub mod serde_helpers {
 	) -> std::result::Result<&'a serde_json::Map<String, Value>, E> {
 		obj.get(field)
 			.and_then(|v| v.as_object())
-			.ok_or_else(|| E::custom(format!("Missing or invalid {}", field)))
+			.ok_or_else(|| E::custom(format!("Missing or invalid {field}")))
 	}
 
 	/// Convert algorithm name to OID
@@ -109,63 +136,14 @@ pub mod serde_helpers {
 		match algorithm {
 			"aes-256-gcm" => Ok(AES_256_GCM_OID),
 			"sha2-256" => Ok(SHA2_256_OID),
-			_ => Err(E::custom(format!("Unknown algorithm: {}", algorithm))),
+			_ => Err(E::custom(format!("Unknown algorithm: {algorithm}"))),
 		}
 	}
 }
 
 #[cfg(test)]
 mod tests {
-	use std::str::FromStr;
-
 	use super::*;
-
-	#[test]
-	fn test_get_certificate_attribute_oid() {
-		let result = get_certificate_attribute_oid("fullName");
-		assert!(result.is_ok());
-
-		let invalid_result = get_certificate_attribute_oid("invalid");
-		assert!(invalid_result.is_err());
-	}
-
-	#[test]
-	fn test_get_algorithm_by_oid() {
-		// Test valid OID
-		let result = get_algorithm_by_oid(&AES_256_GCM_OID);
-		assert!(result.is_ok());
-		assert_eq!(result.unwrap(), "aes-256-gcm");
-
-		// Test invalid OID
-		let invalid_oid = ObjectIdentifier::new(&[1, 2, 3, 4, 5, 6, 7, 8, 9]).unwrap();
-		let invalid_result = get_algorithm_by_oid(&invalid_oid);
-		assert!(invalid_result.is_err());
-	}
-
-	#[test]
-	fn test_as_rasn_oid() {
-		// Test successful conversion
-		let asn1_oid = asn1::ObjectIdentifier::from_str("1.2.3.4").unwrap();
-		let rasn_oid = as_rasn_oid(asn1_oid.clone());
-		assert!(rasn_oid.is_ok());
-
-		// Verify round-trip encoding
-		let rasn_der = ber::encode(&rasn_oid.unwrap()).unwrap();
-		let asn1_der = asn1_oid.to_der().unwrap();
-		assert_eq!(rasn_der, asn1_der);
-
-		// Test BER decode error path with corrupted data
-		let valid_oid = asn1::ObjectIdentifier::from_str("1.2.3.4").unwrap();
-		let mut corrupted_bytes = valid_oid.to_der().unwrap();
-		corrupted_bytes[0] = 0xFF; // Invalid tag
-		let decode_result = ber::decode::<rasn::types::ObjectIdentifier>(&corrupted_bytes);
-		assert!(decode_result.is_err());
-
-		// Test with longer OID to exercise error closures
-		let long_oid = asn1::ObjectIdentifier::from_str("1.2.3.4.5.6.7.8.9.10.11.12").unwrap();
-		let result = as_rasn_oid(long_oid);
-		assert!(result.is_ok() || result.is_err()); // Exercises both error paths
-	}
 
 	#[test]
 	fn test_base64_encode_decode_roundtrip() {
@@ -186,11 +164,12 @@ mod tests {
 
 	#[cfg(feature = "serde")]
 	mod serde_tests {
-		use super::*;
-		use crate::utils::serde_helpers::*;
 		use base64::Engine;
 		use rasn::types::ObjectIdentifier;
 		use serde_json::{Map, Value};
+
+		use crate::asn1::{AES_256_GCM_OID, SHA2_256_OID};
+		use crate::utils::serde_helpers::*;
 
 		#[test]
 		fn test_extract_string() {

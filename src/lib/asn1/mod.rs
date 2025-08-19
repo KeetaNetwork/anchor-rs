@@ -1,3 +1,6 @@
+pub mod error;
+pub mod utils;
+
 use std::borrow::Cow;
 use std::collections::HashMap;
 
@@ -27,7 +30,7 @@ pub const PHONE_NUMBER_OID: ObjectIdentifier =
 
 lazy_static::lazy_static! {
 	/// OID database for certificate attributes.
-	pub static ref CERTIFICATE_ATTRIBUTE_OIDS: HashMap<&'static str, ObjectIdentifier> = {
+	pub static ref SENSITIVE_ATTRIBUTE_OIDS: HashMap<&'static str, ObjectIdentifier> = {
 		[
 			("fullName", FULL_NAME_OID),
 			("dateOfBirth", DATE_OF_BIRTH_OID),
@@ -41,7 +44,7 @@ lazy_static::lazy_static! {
 	};
 
 	/// OID database for sensitive attribute algorithms.
-	pub static ref SENSITIVE_ATTRIBUTE_OIDS: HashMap<&'static str, ObjectIdentifier> = {
+	pub static ref ALGORITHM_ATTRIBUTE_OIDS: HashMap<&'static str, ObjectIdentifier> = {
 		[
 			("aes-256-gcm", AES_256_GCM_OID),
 			("aes-256-cbc", AES_256_CBC_OID),

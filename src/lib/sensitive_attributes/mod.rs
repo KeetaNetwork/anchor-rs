@@ -1,3 +1,6 @@
+pub mod error;
+pub mod utils;
+
 use accounts::KeyPair;
 use crypto::algorithms::aes_gcm::Aes256Gcm;
 use crypto::generate_random_seed;
@@ -12,17 +15,18 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value;
 
 use crate::asn1::*;
-use crate::error::CertificateError;
+use crate::generated::{SensitiveAttribute, SensitiveAttributeCipher, SensitiveAttributeHashedValue};
+use crate::sensitive_attributes::error::SensitiveAttributeError;
+use crate::sensitive_attributes::utils::{create_hash_input, setup_cipher_for_decryption, validate_version};
 use crate::utils::{base64_decode, base64_encode};
-use crate::{SensitiveAttribute, SensitiveAttributeCipher, SensitiveAttributeHashedValue};
 
 #[cfg(feature = "serde")]
-use crate::utils::get_algorithm_by_oid;
+use crate::asn1::utils::get_algorithm_by_oid;
 #[cfg(feature = "serde")]
 use crate::utils::serde_helpers;
 
 /// Result type for certificate operations
-pub type Result<T> = std::result::Result<T, CertificateError>;
+pub type Result<T> = std::result::Result<T, SensitiveAttributeError>;
 /// Sensitive attribute value type
 pub type SensitiveAttributeValue = SecretBox<Vec<u8>>;
 
@@ -30,7 +34,7 @@ pub type SensitiveAttributeValue = SecretBox<Vec<u8>>;
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, AsRefStr)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[strum(serialize_all = "camelCase")]
-pub enum CertificateAttributeName {
+pub enum SensitiveAttributeName {
 	FullName,
 	DateOfBirth,
 	Address,
@@ -38,14 +42,14 @@ pub enum CertificateAttributeName {
 	PhoneNumber,
 }
 
-impl From<CertificateAttributeName> for ObjectIdentifier {
-	fn from(attr: CertificateAttributeName) -> Self {
+impl From<SensitiveAttributeName> for ObjectIdentifier {
+	fn from(attr: SensitiveAttributeName) -> Self {
 		match attr {
-			CertificateAttributeName::FullName => FULL_NAME_OID,
-			CertificateAttributeName::DateOfBirth => DATE_OF_BIRTH_OID,
-			CertificateAttributeName::Address => ADDRESS_OID,
-			CertificateAttributeName::Email => EMAIL_OID,
-			CertificateAttributeName::PhoneNumber => PHONE_NUMBER_OID,
+			SensitiveAttributeName::FullName => FULL_NAME_OID,
+			SensitiveAttributeName::DateOfBirth => DATE_OF_BIRTH_OID,
+			SensitiveAttributeName::Address => ADDRESS_OID,
+			SensitiveAttributeName::Email => EMAIL_OID,
+			SensitiveAttributeName::PhoneNumber => PHONE_NUMBER_OID,
 		}
 	}
 }
@@ -83,31 +87,18 @@ impl SensitiveAttribute {
 	where
 		T: KeyPair,
 	{
-		// Check version
-		let version: u64 = self
-			.version
-			.clone()
-			.try_into()
-			.map_err(|_| CertificateError::InvalidVersion)?;
-		if version != 0 {
-			return Err(CertificateError::UnsupportedVersion { version });
-		}
+		// Validate version and keypair capabilities
+		validate_version(&self.version)?;
 
-		// Check if the keypair supports encryption
 		if !keypair.supports_encryption() {
-			return Err(CertificateError::UnsupportedKeyType);
+			return Err(SensitiveAttributeError::UnsupportedKeyType);
 		}
 
-		// Decrypt the symmetric key with the keypair
-		let decrypted_symmetric_key = keypair.decrypt(&self.cipher.key)?;
-
-		// Extract nonce and set up cipher
-		let nonce_bytes = self.cipher.iv_or_nonce.as_ref();
-		let nonce = <Aes256Gcm as NonceGeneration>::Nonce::from_slice(nonce_bytes);
-		let cipher = Aes256Gcm::new(&decrypted_symmetric_key)?;
+		// Set up cipher for decryption
+		let (cipher, nonce) = setup_cipher_for_decryption(keypair, &self.cipher)?;
 
 		// Decrypt the value
-		let decrypted_value = cipher.decrypt(nonce, self.encrypted_value.as_ref())?;
+		let decrypted_value = cipher.decrypt(&nonce, self.encrypted_value.as_ref())?;
 		Ok(SecretBox::new(Box::new(decrypted_value)))
 	}
 
@@ -129,16 +120,12 @@ impl SensitiveAttribute {
 	{
 		// Decrypt the value
 		let decrypted_value = self.decrypt(keypair)?;
-
-		// Decrypt the salt using the same process
-		let decrypted_symmetric_key = keypair.decrypt(&self.cipher.key)?;
-		let cipher = Aes256Gcm::new(&decrypted_symmetric_key)?;
-		let nonce_bytes = self.cipher.iv_or_nonce.as_ref();
-		let nonce = <Aes256Gcm as NonceGeneration>::Nonce::from_slice(nonce_bytes);
-		let decrypted_salt = cipher.decrypt(nonce, self.hashed_value.encrypted_salt.as_ref())?;
+		// Set up cipher for decrypting salt
+		let (cipher, nonce) = setup_cipher_for_decryption(keypair, &self.cipher)?;
+		let decrypted_salt = cipher.decrypt(&nonce, self.hashed_value.encrypted_salt.as_ref())?;
 
 		Ok(SensitiveAttributeProof {
-			value: base64_encode(&decrypted_value.expose_secret()),
+			value: base64_encode(decrypted_value.expose_secret()),
 			hash: SensitiveAttributeProofHash::from(decrypted_salt),
 		})
 	}
@@ -150,22 +137,15 @@ impl SensitiveAttribute {
 		T: KeyPair,
 	{
 		// Decode the proof values
-		let plaintext_value = base64_decode(&proof.value).map_err(|_| CertificateError::InvalidProof)?;
-		let proof_salt = base64_decode(&proof.hash.salt).map_err(|_| CertificateError::InvalidProof)?;
-
+		let plaintext_value = base64_decode(&proof.value).map_err(|_| SensitiveAttributeError::InvalidProof)?;
+		let proof_salt = base64_decode(&proof.hash.salt).map_err(|_| SensitiveAttributeError::InvalidProof)?;
 		// Get the public key bytes
 		let public_key = keypair.to_public_key_string().into_bytes();
+		// Create hash input using utility function
+		let hash_input = create_hash_input(&proof_salt, &public_key, &self.encrypted_value, &plaintext_value);
 
-		// Reconstruct the hash: salt + public_key + encrypted_value + plaintext_value
-		let mut hash_input = Vec::new();
-		hash_input.extend_from_slice(&proof_salt);
-		hash_input.extend_from_slice(&public_key);
-		hash_input.extend_from_slice(&self.encrypted_value);
-		hash_input.extend_from_slice(&plaintext_value);
-
-		// Hash the concatenated data
+		// Hash the concatenated data and compare
 		let computed_hash = HashAlgorithm::Sha2_256.hash(&hash_input);
-		// Compare with the stored hash
 		Ok(computed_hash.as_slice() == self.hashed_value.value.as_ref())
 	}
 }
@@ -254,6 +234,7 @@ impl<'de> Deserialize<'de> for SensitiveAttribute {
 		let hash_value_bytes = serde_helpers::extract_base64(hashed_value_obj, "value")?;
 		let hashed_value =
 			SensitiveAttributeHashedValue::new(encrypted_salt_bytes.into(), hash_algorithm, hash_value_bytes.into());
+
 		// Extract encryptedValue
 		let encrypted_value_bytes = serde_helpers::extract_base64(obj, "encryptedValue")?;
 
@@ -285,11 +266,14 @@ impl SensitiveAttributeBuilder {
 	where
 		T: KeyPair,
 	{
-		let value = self.value.as_ref().ok_or(CertificateError::MissingValue)?;
+		let value = self
+			.value
+			.as_ref()
+			.ok_or(SensitiveAttributeError::MissingValue)?;
 
 		// Check if the keypair supports encryption
 		if !keypair.supports_encryption() {
-			return Err(CertificateError::UnsupportedKeyType);
+			return Err(SensitiveAttributeError::UnsupportedKeyType);
 		}
 
 		// Generate salt (32 bytes)
@@ -306,20 +290,15 @@ impl SensitiveAttributeBuilder {
 		// Generate nonce (12 bytes for GCM)
 		let nonce = Aes256Gcm::generate_nonce();
 		// Encrypt the symmetric key with the keypair
-		let encrypted_key = keypair.encrypt(&symmetric_key)?;
+		let encrypted_key = keypair.encrypt(symmetric_key)?;
 		// Set up AES-256-GCM cipher
-		let cipher = Aes256Gcm::new(&symmetric_key)?;
+		let cipher = Aes256Gcm::new(symmetric_key)?;
 		// Encrypt the value
 		let encrypted_value = cipher.encrypt(&nonce, value.as_ref())?;
 		// Encrypt the salt
 		let encrypted_salt = cipher.encrypt(&nonce, salt.as_ref())?;
-
-		// Create hash: salt || publicKey || encryptedValue || value
-		let mut hash_input = Vec::new();
-		hash_input.extend_from_slice(salt.as_slice());
-		hash_input.extend_from_slice(&public_key);
-		hash_input.extend_from_slice(&encrypted_value);
-		hash_input.extend_from_slice(value);
+		// Create hash using utility function
+		let hash_input = create_hash_input(salt.as_slice(), &public_key, &encrypted_value, value);
 
 		let version: Integer = 0u64.into(); // version 0
 		let hashed_and_salted_value: OctetString = HashAlgorithm::Sha2_256.hash(&hash_input).into();
@@ -337,39 +316,13 @@ impl SensitiveAttributeBuilder {
 
 #[cfg(test)]
 mod tests {
-	use core::convert::TryFrom;
-
 	use super::*;
-	use accounts::{Account, Accountable, IntoSecret, Keyable, Seed};
-
-	/// Test data from common.rs
-	const TEST_SEED: &str = "2401D206735C20485347B9A622D94DE9B21F2F1450A77C42102237FA4077567D";
-
-	/// Helper function to create a test seed array from the test data
-	fn create_test_seed_array() -> Seed {
-		let seed_bytes = hex::decode(TEST_SEED).unwrap();
-
-		let seed_array: [u8; 32] = seed_bytes.try_into().unwrap();
-		seed_array.into_secret()
-	}
-
-	/// Helper function to create an account from seed for different key types
-	fn create_account_from_seed<T>(index: u32) -> Account<T>
-	where
-		T: accounts::KeyPair,
-		Account<T>: TryFrom<Accountable<T>, Error = accounts::AccountError>,
-	{
-		let seed_array = create_test_seed_array();
-		let seed = Keyable::Seed((seed_array, index));
-		let accountable = Accountable::KeyAndType(seed, T::KEY_PAIR_TYPE);
-
-		Account::<T>::try_from(accountable).unwrap()
-	}
+	use crate::testing::*;
 
 	#[test]
 	fn test_certificate_attribute_name_oid() {
-		let full_name_oid: ObjectIdentifier = CertificateAttributeName::FullName.into();
-		let email_oid: ObjectIdentifier = CertificateAttributeName::Email.into();
+		let full_name_oid: ObjectIdentifier = SensitiveAttributeName::FullName.into();
+		let email_oid: ObjectIdentifier = SensitiveAttributeName::Email.into();
 		assert_eq!(full_name_oid, rasn::oid!("1.3.6.1.4.1.62675.1.0"));
 		assert_eq!(email_oid, rasn::oid!("1.3.6.1.4.1.62675.1.3"));
 	}
@@ -377,11 +330,11 @@ mod tests {
 	#[test]
 	fn test_certificate_attribute_name_conversion() {
 		let test_cases = [
-			(CertificateAttributeName::FullName, FULL_NAME_OID),
-			(CertificateAttributeName::DateOfBirth, DATE_OF_BIRTH_OID),
-			(CertificateAttributeName::Address, ADDRESS_OID),
-			(CertificateAttributeName::Email, EMAIL_OID),
-			(CertificateAttributeName::PhoneNumber, PHONE_NUMBER_OID),
+			(SensitiveAttributeName::FullName, FULL_NAME_OID),
+			(SensitiveAttributeName::DateOfBirth, DATE_OF_BIRTH_OID),
+			(SensitiveAttributeName::Address, ADDRESS_OID),
+			(SensitiveAttributeName::Email, EMAIL_OID),
+			(SensitiveAttributeName::PhoneNumber, PHONE_NUMBER_OID),
 		];
 
 		for (attr_name, expected_oid) in test_cases {

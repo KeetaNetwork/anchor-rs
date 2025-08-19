@@ -158,5 +158,11 @@ fn add_lint_suppressions(code: &str) -> String {
 
 	let mut result = suppressions.join("\n");
 	result.push_str(code);
+
+	// Ensure the file ends with a newline
+	if !result.ends_with('\n') {
+		result.push('\n');
+	}
+
 	result
 }
