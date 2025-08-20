@@ -102,7 +102,7 @@ where
 	T: accounts::KeyPair,
 	Account<T>: TryFrom<Accountable<T>, Error = accounts::AccountError>,
 {
-	let public_key_string = full_account.keypair.to_public_key_string();
+	let public_key_string = full_account.keypair.to_public_key_string().unwrap();
 	let keyable = Keyable::PublicKeyString(public_key_string);
 	let accountable = Accountable::KeyAndType(keyable, T::KEY_PAIR_TYPE);
 

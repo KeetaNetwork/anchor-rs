@@ -17,6 +17,8 @@ pub const SHA3_256_OID: ObjectIdentifier =
 	ObjectIdentifier::new_unchecked(Cow::Borrowed(&[2, 16, 840, 1, 101, 3, 4, 2, 8]));
 
 // Compile-time OID constants for certificate attributes
+pub const KYC_ATTRIBUTES_EXTENSION_OID: ObjectIdentifier =
+	ObjectIdentifier::new_unchecked(Cow::Borrowed(&[1, 3, 6, 1, 4, 1, 62675, 0, 0]));
 pub const FULL_NAME_OID: ObjectIdentifier =
 	ObjectIdentifier::new_unchecked(Cow::Borrowed(&[1, 3, 6, 1, 4, 1, 62675, 1, 0]));
 pub const DATE_OF_BIRTH_OID: ObjectIdentifier =

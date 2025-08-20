@@ -34,7 +34,7 @@ features = ["derive"]
 optional = true
 
 [dependencies.serde_json]
-version = "1.0"
+version = "1.0.143"
 optional = true
 
 # From node-rs

@@ -96,7 +96,7 @@ where
 			.unwrap_or_else(|| create_account_from_seed::<T>(self.wrong_seed));
 		let public_only_account = self
 			.public_only_account
-			.unwrap_or_else(|| create_public_key_only_account(&primary_account));
+			.unwrap_or_else(|| create_public_key_only_account::<T>(&primary_account));
 
 		let builder = SensitiveAttributeBuilder::new().with_value(expected_bytes.clone());
 		let sensitive_attr = builder.build(&primary_account.keypair).unwrap();

@@ -15,7 +15,6 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value;
 
 use crate::asn1::*;
-use crate::generated::{SensitiveAttribute, SensitiveAttributeCipher, SensitiveAttributeHashedValue};
 use crate::sensitive_attributes::error::SensitiveAttributeError;
 use crate::sensitive_attributes::utils::{create_hash_input, setup_cipher_for_decryption, validate_version};
 use crate::utils::{base64_decode, base64_encode};
@@ -29,6 +28,9 @@ use crate::utils::serde_helpers;
 pub type Result<T> = std::result::Result<T, SensitiveAttributeError>;
 /// Sensitive attribute value type
 pub type SensitiveAttributeValue = SecretBox<Vec<u8>>;
+
+// Re-export sensitive attribute types
+pub use crate::generated::{SensitiveAttribute, SensitiveAttributeCipher, SensitiveAttributeHashedValue};
 
 /// Certificate attribute names
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, AsRefStr)]
@@ -140,13 +142,18 @@ impl SensitiveAttribute {
 		let plaintext_value = base64_decode(&proof.value).map_err(|_| SensitiveAttributeError::InvalidProof)?;
 		let proof_salt = base64_decode(&proof.hash.salt).map_err(|_| SensitiveAttributeError::InvalidProof)?;
 		// Get the public key bytes
-		let public_key = keypair.to_public_key_string().into_bytes();
-		// Create hash input using utility function
-		let hash_input = create_hash_input(&proof_salt, &public_key, &self.encrypted_value, &plaintext_value);
+		let public_key = keypair.to_public_key();
+		if let Some(public_key) = public_key {
+			let public_key_bytes = public_key.to_bytes();
+			// Create hash input using utility function
+			let hash_input = create_hash_input(&proof_salt, &public_key_bytes, &self.encrypted_value, &plaintext_value);
+			// Hash the concatenated data and compare
+			let computed_hash = HashAlgorithm::Sha2_256.hash(&hash_input);
 
-		// Hash the concatenated data and compare
-		let computed_hash = HashAlgorithm::Sha2_256.hash(&hash_input);
-		Ok(computed_hash.as_slice() == self.hashed_value.value.as_ref())
+			Ok(computed_hash.as_slice() == self.hashed_value.value.as_ref())
+		} else {
+			Err(SensitiveAttributeError::MissingPublicKey)
+		}
 	}
 }
 
@@ -281,7 +288,11 @@ impl SensitiveAttributeBuilder {
 		let salt = salt.expose_secret();
 
 		// Get public key
-		let public_key = keypair.to_public_key_string().into_bytes();
+		let public_key_bytes = if let Some(public_key) = keypair.to_public_key() {
+			public_key.to_bytes()
+		} else {
+			return Err(SensitiveAttributeError::MissingPublicKey);
+		};
 
 		// Generate a symmetric encryption key
 		let symmetric_key = generate_random_seed()?;
@@ -298,7 +309,7 @@ impl SensitiveAttributeBuilder {
 		// Encrypt the salt
 		let encrypted_salt = cipher.encrypt(&nonce, salt.as_ref())?;
 		// Create hash using utility function
-		let hash_input = create_hash_input(salt.as_slice(), &public_key, &encrypted_value, value);
+		let hash_input = create_hash_input(salt.as_slice(), &public_key_bytes, &encrypted_value, value);
 
 		let version: Integer = 0u64.into(); // version 0
 		let hashed_and_salted_value: OctetString = HashAlgorithm::Sha2_256.hash(&hash_input).into();

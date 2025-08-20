@@ -13,6 +13,9 @@ pub enum SensitiveAttributeError {
 	#[snafu(display("Signing error: {message}"))]
 	SigningError { message: String },
 
+	#[snafu(display("Missing public key"))]
+	MissingPublicKey,
+
 	#[snafu(display("Unsupported key type for encryption"))]
 	UnsupportedKeyType,
 

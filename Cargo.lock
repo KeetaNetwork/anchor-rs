@@ -5,7 +5,7 @@ version = 4
 [[package]]
 name = "accounts"
 version = "0.1.0"
-source = "git+ssh://git@github.com/KeetaNetwork/node-rs.git?branch=main#a020e7fd986fc4e48764b43382e23b27901e498e"
+source = "git+ssh://git@github.com/KeetaNetwork/node-rs.git?branch=main#6d1672e9ffcc1741add749e39f3daea0a21a208a"
 dependencies = [
  "base32",
  "bip39-dict",
@@ -93,7 +93,7 @@ dependencies = [
 [[package]]
 name = "asn1"
 version = "0.1.0"
-source = "git+ssh://git@github.com/KeetaNetwork/node-rs.git?branch=main#a020e7fd986fc4e48764b43382e23b27901e498e"
+source = "git+ssh://git@github.com/KeetaNetwork/node-rs.git?branch=main#6d1672e9ffcc1741add749e39f3daea0a21a208a"
 dependencies = [
  "der",
  "hex",
@@ -297,7 +297,7 @@ checksum = "d0a5c400df2834b80a4c3327b3aad3a4c4cd4de0629063962b03235697506a28"
 [[package]]
 name = "crypto"
 version = "0.1.0"
-source = "git+ssh://git@github.com/KeetaNetwork/node-rs.git?branch=main#a020e7fd986fc4e48764b43382e23b27901e498e"
+source = "git+ssh://git@github.com/KeetaNetwork/node-rs.git?branch=main#6d1672e9ffcc1741add749e39f3daea0a21a208a"
 dependencies = [
  "aead",
  "aes",
@@ -706,7 +706,7 @@ dependencies = [
 [[package]]
 name = "keetanet-error"
 version = "0.1.0"
-source = "git+ssh://git@github.com/KeetaNetwork/node-rs.git?branch=main#a020e7fd986fc4e48764b43382e23b27901e498e"
+source = "git+ssh://git@github.com/KeetaNetwork/node-rs.git?branch=main#6d1672e9ffcc1741add749e39f3daea0a21a208a"
 dependencies = [
  "snafu",
 ]
@@ -1187,9 +1187,9 @@ dependencies = [
 
 [[package]]
 name = "serde_json"
-version = "1.0.142"
+version = "1.0.143"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "030fedb782600dcbd6f02d479bf0d817ac3bb40d644745b769d6a96bc3afc5a7"
+checksum = "d401abef1d108fbd9cbaebc3e46611f4b1021f714a0597a71f41ee463f5f4a5a"
 dependencies = [
  "itoa",
  "memchr",
@@ -1552,7 +1552,7 @@ dependencies = [
 [[package]]
 name = "x509"
 version = "0.1.0"
-source = "git+ssh://git@github.com/KeetaNetwork/node-rs.git?branch=main#a020e7fd986fc4e48764b43382e23b27901e498e"
+source = "git+ssh://git@github.com/KeetaNetwork/node-rs.git?branch=main#6d1672e9ffcc1741add749e39f3daea0a21a208a"
 dependencies = [
  "accounts",
  "asn1",
