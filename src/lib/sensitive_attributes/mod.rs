@@ -16,6 +16,7 @@ use strum::AsRefStr;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
+use crate::asn1::error::AnchorAsn1Error;
 use crate::asn1::*;
 use crate::sensitive_attributes::error::SensitiveAttributeError;
 use crate::sensitive_attributes::utils::{create_hash_input, setup_cipher_for_decryption, validate_version};
@@ -179,6 +180,27 @@ impl SensitiveAttribute {
 			Err(SensitiveAttributeError::MissingPublicKey)
 		}
 	}
+
+	/// Convert the sensitive attribute to DER format
+	pub fn to_der(&self) -> Result<Vec<u8>> {
+		self.try_into()
+	}
+}
+
+impl TryFrom<&SensitiveAttribute> for Vec<u8> {
+	type Error = SensitiveAttributeError;
+
+	fn try_from(attr: &SensitiveAttribute) -> std::result::Result<Self, Self::Error> {
+		Ok(rasn::der::encode(attr)?)
+	}
+}
+
+impl TryFrom<SensitiveAttribute> for Vec<u8> {
+	type Error = SensitiveAttributeError;
+
+	fn try_from(attr: SensitiveAttribute) -> std::result::Result<Self, Self::Error> {
+		(&attr).try_into()
+	}
 }
 
 #[cfg(test)]
@@ -187,6 +209,7 @@ mod tests {
 
 	use super::*;
 	use crate::test_all_key_types;
+	use crate::testing::{create_test_sensitive_attribute, create_test_sensitive_attribute_with_proof};
 
 	#[test]
 	fn test_certificate_attribute_name_oid() {
@@ -216,28 +239,21 @@ mod tests {
 
 	test_all_key_types!(test_sensitive_attribute_decrypt, |account: accounts::Account<_>| {
 		let test_value = b"test value for decryption";
-		let builder = SensitiveAttributeBuilder::new().with_value(test_value);
-		let sensitive_attr = builder.build(&account.keypair).unwrap();
-
+		let sensitive_attr = create_test_sensitive_attribute(&account, test_value);
 		let decrypted = sensitive_attr.decrypt(&account.keypair).unwrap();
 		assert_eq!(decrypted.expose_secret(), test_value);
 	});
 
 	test_all_key_types!(test_sensitive_attribute_decrypt_string, |account: accounts::Account<_>| {
 		let test_string = "Hello, world! 🦀";
-		let builder = SensitiveAttributeBuilder::new().with_value(test_string.as_bytes());
-		let sensitive_attr = builder.build(&account.keypair).unwrap();
-
+		let sensitive_attr = create_test_sensitive_attribute(&account, test_string.as_bytes());
 		let decrypted_string = sensitive_attr.decrypt_as_string(&account.keypair).unwrap();
 		assert_eq!(decrypted_string, test_string);
 	});
 
 	test_all_key_types!(test_sensitive_attribute_prove, |account: accounts::Account<_>| {
 		let test_value = b"test value for proof";
-		let builder = SensitiveAttributeBuilder::new().with_value(test_value);
-		let sensitive_attr = builder.build(&account.keypair).unwrap();
-		let proof = sensitive_attr.to_proof(&account.keypair).unwrap();
-
+		let (_, proof) = create_test_sensitive_attribute_with_proof(&account, test_value);
 		assert!(!proof.value.expose_secret().is_empty());
 		assert!(!proof.hash.salt.is_empty());
 
@@ -247,9 +263,7 @@ mod tests {
 
 	test_all_key_types!(test_sensitive_attribute_validate_proof, |account: accounts::Account<_>| {
 		let test_value = b"test value for validation";
-		let builder = SensitiveAttributeBuilder::new().with_value(test_value);
-		let sensitive_attr = builder.build(&account.keypair).unwrap();
-		let proof = sensitive_attr.to_proof(&account.keypair).unwrap();
+		let (sensitive_attr, proof) = create_test_sensitive_attribute_with_proof(&account, test_value);
 
 		// Validate the valid proof
 		assert!(sensitive_attr
@@ -275,42 +289,19 @@ mod tests {
 			.unwrap());
 	});
 
-	test_all_key_types!(test_sensitive_attribute_roundtrip, |account: accounts::Account<_>| {
-		let test_value = b"test value for roundtrip";
-		let builder = SensitiveAttributeBuilder::new().with_value(test_value);
-		let original_attr = builder.build(&account.keypair).unwrap();
-
-		// Serialize and deserialize
-		let json_str = serde_json::to_string(&original_attr).unwrap();
-		let deserialized_attr: SensitiveAttribute = serde_json::from_str(&json_str).unwrap();
-
-		// Verify decryption equivalence
-		let decrypted_original = original_attr.decrypt(&account.keypair).unwrap();
-		let decrypted_deserialized = deserialized_attr.decrypt(&account.keypair).unwrap();
-		assert_eq!(decrypted_original.expose_secret(), decrypted_deserialized.expose_secret());
-		assert_eq!(decrypted_original.expose_secret(), test_value);
-
-		// Verify proof equivalence
-		let proof_original = original_attr.to_proof(&account.keypair).unwrap();
-		let proof_deserialized = deserialized_attr.to_proof(&account.keypair).unwrap();
-		assert_eq!(proof_original.value.expose_secret(), proof_deserialized.value.expose_secret());
-		assert_eq!(proof_original.hash.salt, proof_deserialized.hash.salt);
-	});
-
 	test_all_key_types!(test_sensitive_attribute_proof_hash, |account: accounts::Account<_>| {
 		let test_value = b"test value for hash";
-		let builder = SensitiveAttributeBuilder::new().with_value(test_value);
-		let sensitive_attr = builder.build(&account.keypair).unwrap();
+		let sensitive_attr = create_test_sensitive_attribute(&account, test_value);
 
 		let proof1 = sensitive_attr.to_proof(&account.keypair).unwrap();
 		let proof2 = sensitive_attr.to_proof(&account.keypair).unwrap();
 
-		// Test Hash trait - both proofs should have the same hash since they have the same salt
+		// Both proofs should have the same hash since they have the same salt
 		let mut map = HashMap::new();
 		map.insert(proof1.clone(), "first");
 		map.insert(proof2.clone(), "second");
 
-		// Since the salts are the same (same sensitive attribute), the hash should be the same
+		// Since the salts are the same, the hash should be the same
 		assert_eq!(map.len(), 1);
 		assert!(map.contains_key(&proof1));
 		assert!(map.contains_key(&proof2));
@@ -318,35 +309,28 @@ mod tests {
 
 	test_all_key_types!(test_sensitive_attribute_proof_partial_eq, |account: accounts::Account<_>| {
 		let test_value = b"test value for equality";
-		let builder = SensitiveAttributeBuilder::new().with_value(test_value);
-		let sensitive_attr = builder.build(&account.keypair).unwrap();
-
-		let proof1 = sensitive_attr.to_proof(&account.keypair).unwrap();
-		let proof2 = sensitive_attr.to_proof(&account.keypair).unwrap();
+		let sensitive_attr = create_test_sensitive_attribute(&account, test_value);
 
 		// Test PartialEq trait - proofs should be equal based on hash field only
+		let proof1 = sensitive_attr.to_proof(&account.keypair).unwrap();
+		let proof2 = sensitive_attr.to_proof(&account.keypair).unwrap();
 		assert_eq!(proof1, proof2);
 		assert_eq!(proof1.hash, proof2.hash);
 
 		// Create a different sensitive attribute with different value
-		let builder2 = SensitiveAttributeBuilder::new().with_value(b"different value");
-		let sensitive_attr2 = builder2.build(&account.keypair).unwrap();
-		let proof3 = sensitive_attr2.to_proof(&account.keypair).unwrap();
-
 		// Different sensitive attributes should produce different proofs
+		let sensitive_attr2 = create_test_sensitive_attribute(&account, b"different value");
+		let proof3 = sensitive_attr2.to_proof(&account.keypair).unwrap();
 		assert_ne!(proof1, proof3);
 		assert_ne!(proof1.hash, proof3.hash);
 	});
 
 	test_all_key_types!(test_sensitive_attribute_proof_clone, |account: accounts::Account<_>| {
 		let test_value = b"test value for clone";
-		let builder = SensitiveAttributeBuilder::new().with_value(test_value);
-		let sensitive_attr = builder.build(&account.keypair).unwrap();
-		let original_proof = sensitive_attr.to_proof(&account.keypair).unwrap();
-
-		let cloned_proof = original_proof.clone();
+		let (sensitive_attr, original_proof) = create_test_sensitive_attribute_with_proof(&account, test_value);
 
 		// Verify cloned proof is equal
+		let cloned_proof = original_proof.clone();
 		assert_eq!(original_proof, cloned_proof);
 		assert_eq!(original_proof.value.expose_secret(), cloned_proof.value.expose_secret());
 		assert_eq!(original_proof.hash, cloned_proof.hash);
@@ -358,5 +342,31 @@ mod tests {
 		assert!(sensitive_attr
 			.validate_proof(&account.keypair, &cloned_proof)
 			.unwrap());
+	});
+
+	test_all_key_types!(test_sensitive_attribute_to_der, |account: accounts::Account<_>| {
+		let test_value = b"test value for DER encoding";
+		let sensitive_attr = create_test_sensitive_attribute(&account, test_value);
+
+		// Test object to vec
+		let der_bytes = Vec::<u8>::try_from(sensitive_attr.clone());
+		assert!(der_bytes.is_ok());
+		assert!(!der_bytes.unwrap().is_empty());
+
+		// Test to_der method
+		let der_bytes = sensitive_attr.to_der().unwrap();
+		assert!(!der_bytes.is_empty());
+
+		// DER encoding should be deterministic
+		let der_bytes2 = sensitive_attr.to_der().unwrap();
+		assert_eq!(der_bytes, der_bytes2);
+
+		// Test round-trip: decode the DER bytes back to SensitiveAttribute
+		let decoded_attr: SensitiveAttribute = rasn::der::decode(&der_bytes).unwrap();
+		// Verify the decoded attribute has the same functionality
+		let decrypted_original = sensitive_attr.decrypt(&account.keypair).unwrap();
+		let decrypted_roundtrip = decoded_attr.decrypt(&account.keypair).unwrap();
+		assert_eq!(decrypted_original.expose_secret(), decrypted_roundtrip.expose_secret());
+		assert_eq!(decrypted_roundtrip.expose_secret(), test_value);
 	});
 }

@@ -1,5 +1,7 @@
 use snafu::Snafu;
 
+use crate::sensitive_attributes::AnchorAsn1Error;
+
 /// Error type for certificate operations
 #[derive(Debug, Snafu)]
 #[snafu(visibility(pub))]
@@ -31,6 +33,12 @@ pub enum SensitiveAttributeError {
 	#[snafu(display("Invalid UTF-8 data in decrypted value"))]
 	InvalidUtf8,
 
+	#[snafu(display("Invalid attribute: {name}"))]
+	InvalidAttributeIsSensitive { name: String },
+
+	#[snafu(display("Invalid attribute: {name}"))]
+	InvalidAttributeIsPlain { name: String },
+
 	#[snafu(display("Account error: {source}"))]
 	AccountError { source: accounts::error::AccountError },
 
@@ -38,7 +46,7 @@ pub enum SensitiveAttributeError {
 	CryptoError { source: crypto::error::CryptoError },
 
 	#[snafu(display("ASN.1 error: {source}"))]
-	Asn1Error { source: asn1::error::Asn1Error },
+	Asn1Error { source: crate::asn1::error::AnchorAsn1Error },
 }
 
 crate::impl_variant_error_from!(SensitiveAttributeError, {
@@ -46,10 +54,15 @@ crate::impl_variant_error_from!(SensitiveAttributeError, {
 });
 
 crate::impl_source_error_from!(SensitiveAttributeError, {
-	asn1::error::Asn1Error => Asn1Error,
+	crate::asn1::error::AnchorAsn1Error => Asn1Error,
 	crypto::error::CryptoError => CryptoError,
 	accounts::error::AccountError => AccountError,
 	crypto::error::AeadError => CryptoError
+});
+
+crate::impl_source_error_from_via!(SensitiveAttributeError, {
+	rasn::error::EncodeError => Asn1Error via AnchorAsn1Error,
+	rasn::error::DecodeError => Asn1Error via AnchorAsn1Error,
 });
 
 #[cfg(test)]
@@ -62,7 +75,7 @@ mod tests {
 		SensitiveAttributeError,
 		[
 			std::string::String::from_utf8(vec![0, 159, 146, 150]).unwrap_err(),
-			asn1::error::Asn1Error::InvalidOid { reason: "test".to_string() },
+			crate::asn1::error::AnchorAsn1Error::InvalidOid { message: "test".to_string() },
 			crypto::error::CryptoError::InvalidKeyMaterial,
 			accounts::error::AccountError::InvalidKeyType,
 			crypto::error::AeadError,

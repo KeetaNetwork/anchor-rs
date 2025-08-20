@@ -42,16 +42,16 @@ macro_rules! impl_source_error_from {
 /// # Example
 /// ```rust
 /// use anchor_rs::impl_source_error_from_via;
-/// use anchor_rs::asn1::error::Asn1Error;
+/// use anchor_rs::asn1::error::AnchorAsn1Error;
 ///
 /// #[derive(Debug)]
 /// enum MyError {
-///     Asn1Error { source: Asn1Error },
+///     Asn1Error { source: AnchorAsn1Error },
 /// }
 ///
 /// impl_source_error_from_via!(MyError, {
-///     rasn::error::EncodeError => Asn1Error via Asn1Error,
-///     rasn::error::DecodeError => Asn1Error via Asn1Error,
+///     rasn::error::EncodeError => Asn1Error via AnchorAsn1Error,
+///     rasn::error::DecodeError => Asn1Error via AnchorAsn1Error,
 /// });
 /// ```
 #[macro_export]

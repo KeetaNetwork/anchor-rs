@@ -58,11 +58,54 @@ pub fn validate_version(version: &Integer) -> Result<u64> {
 	Ok(version)
 }
 
+/// Private helper function to validate attribute sensitivity
+fn validate_attribute_sensitivity(
+	attribute: &crate::kyc_schema::Attribute,
+	name: &str,
+	expected_sensitive: bool,
+) -> Result<()> {
+	let is_sensitive = attribute.is_sensitive();
+
+	if is_sensitive != expected_sensitive {
+		return if expected_sensitive {
+			Err(SensitiveAttributeError::InvalidAttributeIsPlain { name: name.to_string() })
+		} else {
+			Err(SensitiveAttributeError::InvalidAttributeIsSensitive { name: name.to_string() })
+		};
+	}
+
+	Ok(())
+}
+
+/// Assert that an attribute is sensitive (encrypted).
+///
+/// # Parameters
+/// * `attribute` - The attribute to check
+/// * `name` - The name of the attribute (for error messages)
+///
+/// # Returns
+/// * `Ok(())` if the attribute is sensitive
+/// * `Err(SensitiveAttributeError::InvalidAttributeIsPlain)` if the attribute is not sensitive
+pub fn assert_attribute_is_sensitive(attribute: &crate::kyc_schema::Attribute, name: &str) -> Result<()> {
+	validate_attribute_sensitivity(attribute, name, true)
+}
+
+/// Assert that an attribute is plain text (not encrypted).
+///
+/// # Parameters
+/// * `attribute` - The attribute to check
+/// * `name` - The name of the attribute (for error messages)
+///
+/// # Returns
+/// * `Ok(())` if the attribute is plain text
+/// * `Err(SensitiveAttributeError::InvalidAttributeIsSensitive)` if the attribute is sensitive
+pub fn assert_attribute_is_plain(attribute: &crate::kyc_schema::Attribute, name: &str) -> Result<()> {
+	validate_attribute_sensitivity(attribute, name, false)
+}
+
 #[cfg(test)]
 mod tests {
-	use core::convert::TryFrom;
-
-	use accounts::{Account, Accountable, IntoSecret, KeyECDSASECP256K1, Keyable, Seed};
+	use accounts::KeyECDSASECP256K1;
 	use crypto::algorithms::aes_gcm::Aes256Gcm;
 	use crypto::generate_random_seed;
 	use crypto::operations::encryption::{Aead, NonceGeneration};
@@ -70,30 +113,26 @@ mod tests {
 	use rasn::prelude::*;
 
 	use super::*;
+	use crate::testing::create_account_from_seed;
 
-	/// Test seed for consistent test results
-	const TEST_SEED: &str = "2401D206735C20485347B9A622D94DE9B21F2F1450A77C42102237FA4077567D";
+	/// Helper function to create a test attribute for assertion testing
+	fn create_test_attribute(is_sensitive: bool) -> crate::kyc_schema::Attribute {
+		use crate::kyc_schema::AttributeBuilder;
 
-	/// Helper function to create a test seed array
-	fn create_test_seed_array() -> Seed {
-		let seed_bytes = hex::decode(TEST_SEED).unwrap();
-		let seed_array: [u8; 32] = seed_bytes.try_into().unwrap();
+		let builder = AttributeBuilder::new()
+			.with_oid("1.3.6.1.4.1.62675.1.0")
+			.with_value(b"test value");
 
-		seed_array.into_secret()
-	}
-
-	/// Helper function to create an account from seed
-	fn create_test_account() -> Account<KeyECDSASECP256K1> {
-		let seed_array = create_test_seed_array();
-		let seed = Keyable::Seed((seed_array, 0));
-		let accountable = Accountable::KeyAndType(seed, KeyECDSASECP256K1::KEY_PAIR_TYPE);
-
-		Account::<KeyECDSASECP256K1>::try_from(accountable).unwrap()
+		if is_sensitive {
+			builder.as_sensitive().build().unwrap()
+		} else {
+			builder.as_plain().build().unwrap()
+		}
 	}
 
 	#[test]
 	fn test_setup_cipher_for_decryption() {
-		let account = create_test_account();
+		let account = create_account_from_seed::<KeyECDSASECP256K1>(0);
 
 		// Generate a symmetric key and encrypt it
 		let symmetric_key = generate_random_seed().unwrap();
@@ -160,4 +199,38 @@ mod tests {
 		let error = result.unwrap_err();
 		assert!(matches!(error, SensitiveAttributeError::UnsupportedVersion { version: 1 }));
 	}
+
+	/// Macro to test assertion functions with both success and failure cases
+	macro_rules! test_attribute_assertion {
+		($test_name:ident, $assert_fn:ident, $success_case:expr, $failure_case:expr, $expected_error:pat) => {
+			#[test]
+			fn $test_name() {
+				// Should succeed with correct attribute type
+				let success_attr = create_test_attribute($success_case);
+				assert!($assert_fn(&success_attr, "testAttr").is_ok());
+
+				// Should fail with incorrect attribute type
+				let failure_attr = create_test_attribute($failure_case);
+				let result = $assert_fn(&failure_attr, "testAttr");
+				assert!(result.is_err());
+				assert!(matches!(result.unwrap_err(), $expected_error));
+			}
+		};
+	}
+
+	test_attribute_assertion!(
+		test_assert_attribute_is_sensitive,
+		assert_attribute_is_sensitive,
+		true,
+		false,
+		SensitiveAttributeError::InvalidAttributeIsPlain { .. }
+	);
+
+	test_attribute_assertion!(
+		test_assert_attribute_is_plain,
+		assert_attribute_is_plain,
+		false,
+		true,
+		SensitiveAttributeError::InvalidAttributeIsSensitive { .. }
+	);
 }

@@ -1,38 +1,38 @@
 use asn1::Encode;
 use rasn::types::ObjectIdentifier;
 
-use crate::asn1::error::Asn1Error;
+use crate::asn1::error::AnchorAsn1Error;
 use crate::asn1::{ALGORITHM_ATTRIBUTE_OIDS, SENSITIVE_ATTRIBUTE_OIDS};
 
 /// Lookup algorithm name by OID
-pub fn get_algorithm_by_oid(oid: &ObjectIdentifier) -> Result<&'static str, Asn1Error> {
+pub fn get_algorithm_by_oid(oid: &ObjectIdentifier) -> Result<&'static str, AnchorAsn1Error> {
 	ALGORITHM_ATTRIBUTE_OIDS
 		.iter()
 		.find(|(_, stored_oid)| *stored_oid == oid)
 		.map(|(name, _)| *name)
-		.ok_or_else(|| Asn1Error::InvalidOid { message: format!("Unknown algorithm OID: {oid}") })
+		.ok_or_else(|| AnchorAsn1Error::InvalidOid { message: format!("Unknown algorithm OID: {oid}") })
 }
 
 /// Get OID for certificate attribute
-pub fn get_sensitive_attribute_oid<T: AsRef<str>>(name: T) -> Result<ObjectIdentifier, Asn1Error> {
+pub fn get_sensitive_attribute_oid<T: AsRef<str>>(name: T) -> Result<ObjectIdentifier, AnchorAsn1Error> {
 	let name_str = name.as_ref();
 	SENSITIVE_ATTRIBUTE_OIDS
 		.get(name_str)
 		.cloned()
-		.ok_or_else(|| Asn1Error::InvalidOid { message: format!("Unknown sensitive attribute: {name_str}") })
+		.ok_or_else(|| AnchorAsn1Error::InvalidOid { message: format!("Unknown sensitive attribute: {name_str}") })
 }
 
 /// Convert an asn1 ObjectIdentifier to a rasn ObjectIdentifier via DER bytes.
 #[allow(dead_code)]
-pub(crate) fn as_rasn_oid(oid: asn1::ObjectIdentifier) -> Result<rasn::types::ObjectIdentifier, Asn1Error> {
+pub(crate) fn as_rasn_oid(oid: asn1::ObjectIdentifier) -> Result<rasn::types::ObjectIdentifier, AnchorAsn1Error> {
 	// Convert asn1 OID to DER bytes
-	let der_bytes = oid
-		.to_der()
-		.map_err(|e| Asn1Error::InvalidOid { message: format!("Failed to encode ObjectIdentifier to DER: {e:?}") })?;
+	let der_bytes = oid.to_der().map_err(|e| AnchorAsn1Error::InvalidOid {
+		message: format!("Failed to encode ObjectIdentifier to DER: {e:?}"),
+	})?;
 
 	// Decode the DER bytes as a rasn ObjectIdentifier using BER decoder
 	let rasn_oid = rasn::ber::decode::<rasn::types::ObjectIdentifier>(&der_bytes)
-		.map_err(|e| Asn1Error::InvalidOid { message: format!("Failed to decode ObjectIdentifier: {e:?}") })?;
+		.map_err(|e| AnchorAsn1Error::InvalidOid { message: format!("Failed to decode ObjectIdentifier: {e:?}") })?;
 
 	Ok(rasn_oid)
 }
@@ -40,20 +40,22 @@ pub(crate) fn as_rasn_oid(oid: asn1::ObjectIdentifier) -> Result<rasn::types::Ob
 /// Parse an OID string into a rasn ObjectIdentifier.
 ///
 /// Takes a string like "1.2.3.4.5" and converts it to an ObjectIdentifier
-pub fn parse_oid_string<S: AsRef<str>>(oid_str: S) -> Result<ObjectIdentifier, Asn1Error> {
+pub fn parse_oid_string<S: AsRef<str>>(oid_str: S) -> Result<ObjectIdentifier, AnchorAsn1Error> {
 	let oid_str = oid_str.as_ref();
 
 	// Parse OID string into u32 arcs
 	let arcs: Result<Vec<u32>, _> = oid_str.split('.').map(|s| s.parse::<u32>()).collect();
 	let arcs = match arcs {
 		Ok(arcs) => arcs,
-		Err(e) => return Err(Asn1Error::InvalidOid { message: format!("Failed to parse OID '{oid_str}': {e}") }),
+		Err(e) => return Err(AnchorAsn1Error::InvalidOid { message: format!("Failed to parse OID '{oid_str}': {e}") }),
 	};
 
 	// Create ObjectIdentifier from arcs
 	match ObjectIdentifier::new(arcs) {
 		Some(oid) => Ok(oid),
-		None => Err(Asn1Error::InvalidOid { message: format!("Failed to create ObjectIdentifier from '{oid_str}'") }),
+		None => {
+			Err(AnchorAsn1Error::InvalidOid { message: format!("Failed to create ObjectIdentifier from '{oid_str}'") })
+		}
 	}
 }
 

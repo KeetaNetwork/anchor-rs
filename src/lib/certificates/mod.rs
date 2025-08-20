@@ -1,8 +1,7 @@
 pub mod builder;
 pub mod error;
-pub mod utils;
 
-use accounts::{Account, KeyPair};
+use accounts::KeyPair;
 use crypto::prelude::ExposeSecret;
 use x509::certificates::Certificate as X509Certificate;
 
@@ -10,6 +9,7 @@ use crate::asn1::utils::get_sensitive_attribute_oid;
 use crate::asn1::KYC_ATTRIBUTES_EXTENSION_OID;
 use crate::generated::KYCAttributes;
 use crate::kyc_schema::Attribute;
+use crate::sensitive_attributes::utils::{assert_attribute_is_plain, assert_attribute_is_sensitive};
 use crate::sensitive_attributes::SensitiveAttribute;
 
 // Re-export commonly used types
@@ -29,10 +29,9 @@ pub struct Certificate {
 
 impl Certificate {
 	/// Create a new certificate wrapper
-	pub fn new(x509_cert: X509Certificate) -> Self {
-		let kyc_attributes = Self::parse_kyc_attributes(&x509_cert);
-
-		Self { inner: x509_cert, kyc_attributes }
+	pub fn new(inner: X509Certificate) -> Self {
+		let kyc_attributes = Self::parse_kyc_attributes(&inner);
+		Self { inner, kyc_attributes }
 	}
 
 	/// Get the underlying X.509 certificate
@@ -46,47 +45,38 @@ impl Certificate {
 	}
 
 	/// Get a specific KYC attribute by name
-	pub fn get_kyc_attribute(&self, name: &str) -> Option<&Attribute> {
-		let oid = get_sensitive_attribute_oid(name).ok()?;
+	pub fn get_kyc_attribute<N: AsRef<str>>(&self, name: N) -> Option<&Attribute> {
+		let oid = get_sensitive_attribute_oid(name.as_ref()).ok()?;
 		self.kyc_attributes.find_by_object_identifier(&oid)
 	}
 
 	/// Decrypt a sensitive KYC attribute value
-	pub fn decrypt_kyc_attribute<T: KeyPair>(&self, name: &str, keypair: &T) -> Result<Vec<u8>, CertificateError>
+	pub fn decrypt_kyc_attribute<K, N>(&self, name: N, keypair: &K) -> Result<Vec<u8>, CertificateError>
 	where
-		Account<T>: TryFrom<accounts::Accountable<T>, Error = accounts::AccountError>,
+		K: KeyPair,
+		N: AsRef<str>,
 	{
+		let name_str = name.as_ref();
 		let attribute = self
-			.get_kyc_attribute(name)
-			.ok_or_else(|| CertificateError::AttributeNotFound { name: name.to_string() })?;
+			.get_kyc_attribute(name_str)
+			.ok_or_else(|| CertificateError::AttributeNotFound { name: name_str.to_string() })?;
 
-		if !attribute.is_sensitive() {
-			return Err(CertificateError::InvalidAttributeValue {
-				name: name.to_string(),
-				reason: "Attribute is not sensitive".to_string(),
-			});
-		}
+		assert_attribute_is_sensitive(attribute, name_str)?;
 
 		// Decode the sensitive attribute from DER
 		let sensitive_attr: SensitiveAttribute = rasn::der::decode(attribute.as_ref())?;
-
-		// Decrypt the value
 		let decrypted = sensitive_attr.decrypt(keypair)?;
 		Ok(decrypted.expose_secret().clone())
 	}
 
 	/// Get a plain text KYC attribute value
-	pub fn get_plain_kyc_attribute(&self, name: &str) -> Result<Vec<u8>, CertificateError> {
+	pub fn get_plain_kyc_attribute<N: AsRef<str>>(&self, name: N) -> Result<Vec<u8>, CertificateError> {
+		let name_str = name.as_ref();
 		let attribute = self
-			.get_kyc_attribute(name)
-			.ok_or_else(|| CertificateError::AttributeNotFound { name: name.to_string() })?;
+			.get_kyc_attribute(name_str)
+			.ok_or_else(|| CertificateError::AttributeNotFound { name: name_str.to_string() })?;
 
-		if attribute.is_sensitive() {
-			return Err(CertificateError::InvalidAttributeValue {
-				name: name.to_string(),
-				reason: "Attribute is sensitive and requires decryption".to_string(),
-			});
-		}
+		assert_attribute_is_plain(attribute, name_str)?;
 
 		Ok(attribute.as_ref().to_vec())
 	}
@@ -118,15 +108,14 @@ impl Certificate {
 
 #[cfg(test)]
 mod tests {
-	use accounts::Account;
+	use accounts::{Account, IntoSecret};
 	use crypto::bigint::U256;
 	use crypto::prelude::{CryptoSignerWithOptions, SignatureEncoding};
 	use x509::certificates::CertificateBuilder as X509CertificateBuilder;
 	use x509::utils::create_dn;
 
 	use super::*;
-	use crate::certificates::CertificateBuilder;
-	use crate::testing::create_account_from_seed;
+	use crate::testing::{create_account_from_seed, create_test_certificate_builder};
 
 	/// Helper function to create a test X.509 certificate.
 	fn create_test_x509_cert() -> X509Certificate {
@@ -181,27 +170,21 @@ mod tests {
 		const TEST_ATTRIBUTES: &[(&str, &str, bool)] =
 			&[("fullName", "John Doe", false), ("email", "john@example.com", true)];
 
-		let subject_dn = x509::utils::create_dn(&[(x509::oids::CN, "Test Subject")]).unwrap();
-		let public_key = account.keypair.to_public_key().unwrap();
-		let mut builder = CertificateBuilder::for_end_entity()
-			.with_subject_dn(subject_dn.clone())
-			.with_issuer_dn(subject_dn)
-			.with_serial_number(U256::from(12345u64))
-			.with_validity_days(365)
-			.with_subject_public_key(public_key.into());
-
-		// Add test attributes
+		let mut builder = create_test_certificate_builder(&account);
 		for (name, value, sensitive) in TEST_ATTRIBUTES.iter() {
+			// Add test attributes
 			builder = if *sensitive {
-				builder.with_sensitive_attribute(name, value).unwrap()
+				let sensitive_attribute = value.as_bytes().to_vec();
+				builder
+					.with_sensitive_attribute(name, sensitive_attribute.into_secret())
+					.unwrap()
 			} else {
 				builder.with_plain_attribute(name, value).unwrap()
 			};
 		}
 
-		let certificate = builder.build(&account.keypair, &account.keypair).unwrap();
-
 		// Verify certificate has KYC attributes
+		let certificate = builder.build(&account.keypair, &account.keypair).unwrap();
 		assert!(certificate.has_kyc_attributes());
 		assert_eq!(certificate.kyc_attribute_count(), 2);
 
@@ -234,29 +217,23 @@ mod tests {
 		T: KeyPair + CryptoSignerWithOptions<S> + 'static,
 		S: SignatureEncoding,
 	{
-		let subject_dn = x509::utils::create_dn(&[(x509::oids::CN, "Test Subject")]).unwrap();
-		let public_key = account.keypair.to_public_key().unwrap();
-		let builder = CertificateBuilder::for_end_entity()
-			.with_subject_dn(subject_dn.clone())
-			.with_issuer_dn(subject_dn)
-			.with_serial_number(U256::from(12345u64))
-			.with_validity_days(365)
-			.with_subject_public_key(public_key.into())
+		let sensitive_attribute = "jane@example.com".as_bytes().to_vec();
+		let builder = create_test_certificate_builder(&account)
 			.with_plain_attribute("fullName", "Jane Smith")
 			.unwrap()
-			.with_sensitive_attribute("email", "jane@example.com")
+			.with_sensitive_attribute("email", sensitive_attribute.into_secret())
 			.unwrap();
 
 		// Test trying to decrypt a plain attribute
 		let certificate = builder.build(&account.keypair, &account.keypair).unwrap();
 		let result = certificate.decrypt_kyc_attribute("fullName", &account.keypair);
 		assert!(result.is_err());
-		assert!(matches!(result.unwrap_err(), CertificateError::InvalidAttributeValue { .. }));
+		assert!(matches!(result.unwrap_err(), CertificateError::SensitiveAttributeError { .. }));
 
 		// Test trying to get a sensitive attribute as plain
 		let result = certificate.get_plain_kyc_attribute("email");
 		assert!(result.is_err());
-		assert!(matches!(result.unwrap_err(), CertificateError::InvalidAttributeValue { .. }));
+		assert!(matches!(result.unwrap_err(), CertificateError::SensitiveAttributeError { .. }));
 	}
 
 	crate::test_all_key_types!(test_certificate_type_errors, test_certificate_attribute_type_errors);

@@ -102,7 +102,6 @@ mod tests {
 	test_all_key_types!(test_sensitive_attribute_builder_missing_value, |account: accounts::Account<_>| {
 		let builder = SensitiveAttributeBuilder::new();
 		let result = builder.build(&account.keypair);
-
 		assert!(result.is_err());
 		assert!(matches!(result.unwrap_err(), SensitiveAttributeError::MissingValue));
 	});

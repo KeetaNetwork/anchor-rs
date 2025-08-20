@@ -140,7 +140,8 @@ impl<'de> Deserialize<'de> for SensitiveAttribute {
 mod tests {
 	use super::*;
 	use crate::sensitive_attributes::SensitiveAttributeBuilder;
-	use crate::testing::create_account_from_seed;
+	use crate::test_all_key_types;
+	use crate::testing::{create_account_from_seed, create_test_sensitive_attribute};
 
 	#[test]
 	fn test_sensitive_attribute_serialize() {
@@ -194,4 +195,25 @@ mod tests {
 		let json_str2 = serde_json::to_string(&deserialized_proof).unwrap();
 		assert_eq!(json_str, json_str2);
 	}
+
+	test_all_key_types!(test_sensitive_attribute_roundtrip, |account: accounts::Account<_>| {
+		let test_value = b"test value for roundtrip";
+		let original_attr = create_test_sensitive_attribute(&account, test_value);
+
+		// Serialize and deserialize
+		let json_str = serde_json::to_string(&original_attr).unwrap();
+		let deserialized_attr: SensitiveAttribute = serde_json::from_str(&json_str).unwrap();
+
+		// Verify decryption equivalence
+		let decrypted_original = original_attr.decrypt(&account.keypair).unwrap();
+		let decrypted_deserialized = deserialized_attr.decrypt(&account.keypair).unwrap();
+		assert_eq!(decrypted_original.expose_secret(), decrypted_deserialized.expose_secret());
+		assert_eq!(decrypted_original.expose_secret(), test_value);
+
+		// Verify proof equivalence
+		let proof_original = original_attr.to_proof(&account.keypair).unwrap();
+		let proof_deserialized = deserialized_attr.to_proof(&account.keypair).unwrap();
+		assert_eq!(proof_original.value.expose_secret(), proof_deserialized.value.expose_secret());
+		assert_eq!(proof_original.hash.salt, proof_deserialized.hash.salt);
+	});
 }

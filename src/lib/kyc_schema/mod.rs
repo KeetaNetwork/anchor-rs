@@ -176,8 +176,6 @@ mod tests {
 	#[test]
 	fn test_asn1_encoding_decoding() {
 		let mut attributes = KYCAttributes::new();
-
-		// Add all test attributes
 		for test_attr in &TEST_ATTRIBUTES {
 			let attr = build_attribute(test_attr);
 			attributes.add_attribute(attr);
@@ -201,7 +199,7 @@ mod tests {
 
 	#[test]
 	fn test_iterator_support() {
-		// Build test attributes (only plain ones)
+		// Build test attributes
 		let mut attributes = KYCAttributes::new();
 		for test_attr in &TEST_ATTRIBUTES {
 			if !test_attr.is_sensitive {

@@ -1,6 +1,6 @@
 use snafu::Snafu;
 
-use crate::asn1::error::Asn1Error;
+use crate::asn1::error::AnchorAsn1Error;
 use crate::kyc_schema::error::KycSchemaError;
 use crate::sensitive_attributes::error::SensitiveAttributeError;
 
@@ -15,7 +15,7 @@ pub enum CertificateError {
 	X509Error { source: x509::error::CertificateError },
 
 	#[snafu(display("ASN.1 error: {}", source))]
-	Asn1Error { source: Asn1Error },
+	Asn1Error { source: AnchorAsn1Error },
 
 	#[snafu(display("KYC schema error: {}", source))]
 	KycSchemaError { source: KycSchemaError },
@@ -33,7 +33,7 @@ pub enum CertificateError {
 crate::impl_source_error_from!(CertificateError, {
 	SensitiveAttributeError => SensitiveAttributeError,
 	x509::error::CertificateError => X509Error,
-	Asn1Error => Asn1Error,
+	AnchorAsn1Error => Asn1Error,
 	KycSchemaError => KycSchemaError,
 	rasn::error::EncodeError => Asn1Error,
 	rasn::error::DecodeError => Asn1Error,
@@ -47,13 +47,13 @@ mod tests {
 	test_error_from_conversions!(
 		test_from_conversions,
 		CertificateError,
-		[SensitiveAttributeError::InvalidVersion, Asn1Error::InvalidOid { message: "test".to_string() },]
+		[SensitiveAttributeError::InvalidVersion, AnchorAsn1Error::InvalidOid { message: "test".to_string() },]
 	);
 	test_error_variants!(
 		test_error_variants,
 		[
 			CertificateError::SensitiveAttributeError { source: SensitiveAttributeError::MissingValue },
-			CertificateError::Asn1Error { source: Asn1Error::InvalidOid { message: "test".to_string() } },
+			CertificateError::Asn1Error { source: AnchorAsn1Error::InvalidOid { message: "test".to_string() } },
 			CertificateError::AttributeNotFound { name: "test".to_string() },
 			CertificateError::InvalidAttributeValue { name: "test".to_string(), reason: "test".to_string() },
 			CertificateError::MissingRequiredField { field: "test".to_string() },

@@ -3,7 +3,14 @@
 
 use std::convert::TryFrom;
 
-use accounts::{Account, Accountable, IntoSecret, Keyable, Seed};
+use accounts::{Account, Accountable, IntoSecret, KeyPair, Keyable, Seed};
+use crypto::bigint::U256;
+
+use crate::{
+	certificates::CertificateBuilder,
+	generated::SensitiveAttribute,
+	sensitive_attributes::{SensitiveAttributeBuilder, SensitiveAttributeProof},
+};
 
 /// Test data from TypeScript test
 pub const TEST_SEED: &str = "D6986115BE7334E50DA8D73B1A4670A510E8BF47E8C5C9960B8F5248EC7D6E3D";
@@ -107,4 +114,37 @@ where
 	let accountable = Accountable::KeyAndType(keyable, T::KEY_PAIR_TYPE);
 
 	Account::<T>::try_from(accountable).unwrap()
+}
+
+/// Helper function to create a sensitive attribute and proof for testing.
+pub fn create_test_sensitive_attribute_with_proof<T: KeyPair>(
+	account: &accounts::Account<T>,
+	test_value: &[u8],
+) -> (SensitiveAttribute, SensitiveAttributeProof) {
+	let builder = SensitiveAttributeBuilder::new().with_value(test_value);
+	let sensitive_attr = builder.build(&account.keypair).unwrap();
+	let proof = sensitive_attr.to_proof(&account.keypair).unwrap();
+	(sensitive_attr, proof)
+}
+
+/// Helper function to create just a sensitive attribute for testing.
+pub fn create_test_sensitive_attribute<T: KeyPair>(
+	account: &accounts::Account<T>,
+	test_value: &[u8],
+) -> SensitiveAttribute {
+	let builder = SensitiveAttributeBuilder::new().with_value(test_value);
+	builder.build(&account.keypair).unwrap()
+}
+
+/// Helper function to create a CertificateBuilder with default test data.
+pub fn create_test_certificate_builder<T: KeyPair>(account: &Account<T>) -> CertificateBuilder {
+	let subject_dn = x509::utils::create_dn(&[(x509::oids::CN, "Test Subject")]).unwrap();
+	let public_key = account.keypair.to_public_key().unwrap();
+
+	CertificateBuilder::for_end_entity()
+		.with_subject_dn(subject_dn.clone())
+		.with_issuer_dn(subject_dn)
+		.with_serial_number(U256::from(12345u64))
+		.with_validity_days(365)
+		.with_subject_public_key(public_key.into())
 }
