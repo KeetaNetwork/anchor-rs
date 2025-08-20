@@ -17,7 +17,7 @@ use crate::sensitive_attributes::SensitiveAttributeBuilder;
 ///
 /// This builder extends the base X.509 certificate builder with support
 /// for Keeta KYC attributes, both plain text and sensitive (encrypted).
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct CertificateBuilder {
 	/// The underlying X.509 certificate builder
 	inner: X509CertificateBuilder,
@@ -215,12 +215,6 @@ impl CertificateBuilder {
 			.with_critical(false)
 			.build()
 			.map_err(Into::into)
-	}
-}
-
-impl Default for CertificateBuilder {
-	fn default() -> Self {
-		Self { inner: X509CertificateBuilder::new(), kyc_attributes: HashMap::new() }
 	}
 }
 
