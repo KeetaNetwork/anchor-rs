@@ -209,7 +209,7 @@ mod tests {
 
 	fn build_attribute(test_attr: &TestAttribute) -> Attribute {
 		let builder = AttributeBuilder::new()
-			.with_oid(&test_attr.oid.to_string())
+			.with_oid(test_attr.oid.to_string())
 			.with_value(test_attr.value);
 
 		if test_attr.is_sensitive {
@@ -252,7 +252,7 @@ mod tests {
 		}
 
 		// Test non-existent OID
-		assert!(attributes.find_by_oid("1.2.3.4.5".to_string()).is_none());
+		assert!(attributes.find_by_oid("1.2.3.4.5").is_none());
 	}
 
 	#[test]
@@ -320,10 +320,7 @@ mod tests {
 
 	#[test]
 	fn test_from_iterator() {
-		let attrs: Vec<Attribute> = TEST_ATTRIBUTES
-			.iter()
-			.map(|test_attr| build_attribute(test_attr))
-			.collect();
+		let attrs: Vec<Attribute> = TEST_ATTRIBUTES.iter().map(build_attribute).collect();
 
 		let kyc_attrs: KYCAttributes = attrs.into_iter().collect();
 		assert_eq!(kyc_attrs.count(), TEST_ATTRIBUTES.len());

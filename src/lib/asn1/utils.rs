@@ -47,13 +47,13 @@ pub fn parse_oid_string<S: AsRef<str>>(oid_str: S) -> Result<ObjectIdentifier, A
 	let arcs: Result<Vec<u32>, _> = oid_str.split('.').map(|s| s.parse::<u32>()).collect();
 	let arcs = match arcs {
 		Ok(arcs) => arcs,
-		Err(e) => return Err(Asn1Error::InvalidOid { message: format!("Failed to parse OID '{}': {}", oid_str, e) }),
+		Err(e) => return Err(Asn1Error::InvalidOid { message: format!("Failed to parse OID '{oid_str}': {e}") }),
 	};
 
 	// Create ObjectIdentifier from arcs
 	match ObjectIdentifier::new(arcs) {
 		Some(oid) => Ok(oid),
-		None => Err(Asn1Error::InvalidOid { message: format!("Failed to create ObjectIdentifier from '{}'", oid_str) }),
+		None => Err(Asn1Error::InvalidOid { message: format!("Failed to create ObjectIdentifier from '{oid_str}'") }),
 	}
 }
 

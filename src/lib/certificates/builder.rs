@@ -182,14 +182,14 @@ impl CertificateBuilder {
 				let sensitive_der = rasn::der::encode(&sensitive_attr)?;
 
 				AttributeBuilder::new()
-					.with_oid(&oid.to_string())
+					.with_oid(oid.to_string())
 					.with_value(sensitive_der)
 					.as_sensitive()
 					.build()?
 			} else {
 				// Create a plain attribute
 				AttributeBuilder::new()
-					.with_oid(&oid.to_string())
+					.with_oid(oid.to_string())
 					.with_value(&entry.value)
 					.as_plain()
 					.build()?
@@ -202,7 +202,7 @@ impl CertificateBuilder {
 		let kyc_der = rasn::der::encode(&kyc_attributes)?;
 
 		// Create the extension
-		Ok(Extension::new(&KYC_ATTRIBUTES_EXTENSION_OID.to_string(), kyc_der, false)?)
+		Ok(Extension::new(KYC_ATTRIBUTES_EXTENSION_OID.to_string(), kyc_der, false)?)
 	}
 }
 
@@ -294,7 +294,7 @@ impl Certificate {
 	/// Parse KYC attributes from an X.509 certificate
 	fn parse_kyc_attributes(x509_cert: &X509Certificate) -> KYCAttributes {
 		// Try to find the KYC attributes extension
-		if let Some(extension) = x509_cert.get_extension(&KYC_ATTRIBUTES_EXTENSION_OID.to_string()) {
+		if let Some(extension) = x509_cert.get_extension(KYC_ATTRIBUTES_EXTENSION_OID.to_string()) {
 			// Try to decode the extension value
 			if let Ok(kyc_attrs) = rasn::der::decode::<KYCAttributes>(extension.value.as_bytes()) {
 				return kyc_attrs;
@@ -361,7 +361,7 @@ mod tests {
 		];
 
 		for (name, builder) in builders {
-			assert!(builder.kyc_attributes.is_empty(), "Builder {} should have empty attributes", name);
+			assert!(builder.kyc_attributes.is_empty(), "Builder {name} should have empty attributes");
 		}
 	}
 
@@ -429,7 +429,7 @@ mod tests {
 		let x509_cert = cert.to_x509();
 		// Just check that we can access the X509 certificate
 		assert!(x509_cert
-			.get_extension(&KYC_ATTRIBUTES_EXTENSION_OID.to_string())
+			.get_extension(KYC_ATTRIBUTES_EXTENSION_OID.to_string())
 			.is_none());
 
 		// Test Certificate.kyc_attributes
@@ -445,10 +445,10 @@ mod tests {
 		assert!(matches!(result.unwrap_err(), CertificateError::AttributeNotFound { .. }));
 	}
 
-	fn test_certificate_building_functionality<T: KeyPair, S>(account: Account<T>)
+	fn test_certificate_building_functionality<T, S>(account: Account<T>)
 	where
 		Account<T>: TryFrom<accounts::Accountable<T>, Error = accounts::AccountError>,
-		T: CryptoSignerWithOptions<S> + 'static,
+		T: KeyPair + CryptoSignerWithOptions<S> + 'static,
 		S: SignatureEncoding,
 	{
 		let subject_dn = x509::utils::create_dn(&[(x509::oids::CN, "Test Subject")]).unwrap();
@@ -498,10 +498,10 @@ mod tests {
 
 	crate::test_all_key_types!(test_certificate_building, test_certificate_building_functionality);
 
-	fn test_certificate_attribute_type_errors<T: KeyPair, S>(account: Account<T>)
+	fn test_certificate_attribute_type_errors<T, S>(account: Account<T>)
 	where
 		Account<T>: TryFrom<accounts::Accountable<T>, Error = accounts::AccountError>,
-		T: CryptoSignerWithOptions<S> + 'static,
+		T: KeyPair + CryptoSignerWithOptions<S> + 'static,
 		S: SignatureEncoding,
 	{
 		let subject_dn = x509::utils::create_dn(&[(x509::oids::CN, "Test Subject")]).unwrap();

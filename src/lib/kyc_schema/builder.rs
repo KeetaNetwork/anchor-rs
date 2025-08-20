@@ -49,8 +49,8 @@ impl AttributeBuilder {
 	/// Build the attribute
 	pub fn build(self) -> Result<Attribute, KycSchemaError> {
 		// Validate and extract OID and value
-		let oid_str = self.name_oid.ok_or_else(|| KycSchemaError::MissingOid)?;
-		let value_bytes = self.value.ok_or_else(|| KycSchemaError::MissingValue)?;
+		let oid_str = self.name_oid.ok_or(KycSchemaError::MissingOid)?;
+		let value_bytes = self.value.ok_or(KycSchemaError::MissingValue)?;
 		// Parse OID string using utility function
 		let oid = parse_oid_string(&oid_str)?;
 		let octet_string = OctetString::from_slice(&value_bytes);
