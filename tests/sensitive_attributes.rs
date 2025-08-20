@@ -1,4 +1,6 @@
-use accounts::{Account, AccountError, Accountable, KeyECDSASECP256K1, KeyECDSASECP256R1, KeyED25519, KeyPair};
+use accounts::{
+	Account, AccountError, Accountable, IntoSecret, KeyECDSASECP256K1, KeyECDSASECP256R1, KeyED25519, KeyPair,
+};
 use base64::Engine;
 use crypto::prelude::ExposeSecret;
 
@@ -159,8 +161,9 @@ where
 		assert_eq!(decrypted_string, self.test_value);
 
 		// Verify proof contains expected base64 encoded value
+		let proof_value = self.valid_proof.value.expose_secret();
 		let decoded_proof_value = base64::prelude::BASE64_STANDARD
-			.decode(&self.valid_proof.value)
+			.decode(proof_value)
 			.unwrap();
 		assert_eq!(decoded_proof_value, self.expected_bytes);
 
@@ -210,10 +213,9 @@ where
 
 	fn test_invalid_proofs(&self) {
 		// Invalid proof value
-		let invalid_proof = SensitiveAttributeProof {
-			value: base64::prelude::BASE64_STANDARD.encode("Wrong Value"),
-			hash: self.valid_proof.hash.clone(),
-		};
+		let base64_value = base64::prelude::BASE64_STANDARD.encode("Wrong Value");
+		let invalid_proof =
+			SensitiveAttributeProof { value: base64_value.into_secret(), hash: self.valid_proof.hash.clone() };
 		let invalid_validation = self
 			.sensitive_attr
 			.validate_proof(&self.primary_account.keypair, &invalid_proof)
@@ -221,8 +223,9 @@ where
 		assert!(!invalid_validation, "Invalid proof should fail validation");
 
 		// Invalid proof salt
+		let proof = self.valid_proof.clone();
 		let invalid_salt_proof = SensitiveAttributeProof {
-			value: self.valid_proof.value.clone(),
+			value: proof.value,
 			hash: SensitiveAttributeProofHash::from(b"wrong_salt_32_bytes_long_for_test".to_vec()),
 		};
 		let invalid_salt_validation = self
@@ -386,12 +389,12 @@ where
 	// Verify they produce the same proof
 	let original_proof = original_attr.to_proof(&account.keypair).unwrap();
 	let deserialized_proof = deserialized_attr.to_proof(&account.keypair).unwrap();
-	assert_eq!(original_proof.value, deserialized_proof.value);
+	assert_eq!(original_proof.value.expose_secret(), deserialized_proof.value.expose_secret());
 	assert_eq!(original_proof.hash.salt, deserialized_proof.hash.salt);
 
 	// Validate proof value can be decoded from base64
 	let decoded_proof_value = base64::prelude::BASE64_STANDARD
-		.decode(&original_proof.value)
+		.decode(original_proof.value.expose_secret())
 		.unwrap();
 	let proof_string = String::from_utf8(decoded_proof_value).unwrap();
 	assert_eq!(proof_string, TEST_VALUE, "Proof value should match original when base64 decoded");

@@ -5,7 +5,7 @@ version = 4
 [[package]]
 name = "accounts"
 version = "0.1.0"
-source = "git+ssh://git@github.com/KeetaNetwork/node-rs.git?branch=main#6d1672e9ffcc1741add749e39f3daea0a21a208a"
+source = "git+ssh://git@github.com/KeetaNetwork/node-rs.git?branch=main#e284d8d1f59e1998383ca7ef5426c6d6a9566b60"
 dependencies = [
  "base32",
  "bip39-dict",
@@ -93,7 +93,7 @@ dependencies = [
 [[package]]
 name = "asn1"
 version = "0.1.0"
-source = "git+ssh://git@github.com/KeetaNetwork/node-rs.git?branch=main#6d1672e9ffcc1741add749e39f3daea0a21a208a"
+source = "git+ssh://git@github.com/KeetaNetwork/node-rs.git?branch=main#e284d8d1f59e1998383ca7ef5426c6d6a9566b60"
 dependencies = [
  "der",
  "hex",
@@ -297,7 +297,7 @@ checksum = "d0a5c400df2834b80a4c3327b3aad3a4c4cd4de0629063962b03235697506a28"
 [[package]]
 name = "crypto"
 version = "0.1.0"
-source = "git+ssh://git@github.com/KeetaNetwork/node-rs.git?branch=main#6d1672e9ffcc1741add749e39f3daea0a21a208a"
+source = "git+ssh://git@github.com/KeetaNetwork/node-rs.git?branch=main#e284d8d1f59e1998383ca7ef5426c6d6a9566b60"
 dependencies = [
  "aead",
  "aes",
@@ -706,7 +706,7 @@ dependencies = [
 [[package]]
 name = "keetanet-error"
 version = "0.1.0"
-source = "git+ssh://git@github.com/KeetaNetwork/node-rs.git?branch=main#6d1672e9ffcc1741add749e39f3daea0a21a208a"
+source = "git+ssh://git@github.com/KeetaNetwork/node-rs.git?branch=main#e284d8d1f59e1998383ca7ef5426c6d6a9566b60"
 dependencies = [
  "snafu",
 ]
@@ -1552,7 +1552,7 @@ dependencies = [
 [[package]]
 name = "x509"
 version = "0.1.0"
-source = "git+ssh://git@github.com/KeetaNetwork/node-rs.git?branch=main#6d1672e9ffcc1741add749e39f3daea0a21a208a"
+source = "git+ssh://git@github.com/KeetaNetwork/node-rs.git?branch=main#e284d8d1f59e1998383ca7ef5426c6d6a9566b60"
 dependencies = [
  "accounts",
  "asn1",

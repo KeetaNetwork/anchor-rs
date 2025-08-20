@@ -6,12 +6,10 @@
 pub mod builder;
 pub mod error;
 
-use rasn::types::{ObjectIdentifier, OctetString};
+#[cfg(feature = "serde")]
+pub mod serde;
 
-#[cfg(feature = "serde")]
-use base64::Engine;
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
+use rasn::types::ObjectIdentifier;
 
 // Re-exports
 pub use crate::generated::{Attribute, AttributeValue, KYCAttributes};
@@ -105,86 +103,6 @@ impl<'a> IntoIterator for &'a KYCAttributes {
 impl FromIterator<Attribute> for KYCAttributes {
 	fn from_iter<T: IntoIterator<Item = Attribute>>(iter: T) -> Self {
 		Self(iter.into_iter().collect())
-	}
-}
-
-#[cfg(feature = "serde")]
-impl Serialize for KYCAttributes {
-	fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-	where
-		S: serde::Serializer,
-	{
-		self.0.serialize(serializer)
-	}
-}
-
-#[cfg(feature = "serde")]
-impl<'de> Deserialize<'de> for KYCAttributes {
-	fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-	where
-		D: serde::Deserializer<'de>,
-	{
-		Ok(Self(rasn::types::SequenceOf::deserialize(deserializer)?))
-	}
-}
-
-#[cfg(feature = "serde")]
-impl Serialize for Attribute {
-	fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-	where
-		S: serde::Serializer,
-	{
-		use serde::ser::SerializeStruct;
-
-		let mut state = serializer.serialize_struct("Attribute", 2)?;
-		state.serialize_field("name", &self.name.to_string())?;
-
-		match &self.value {
-			AttributeValue::plainValue(octets) => {
-				state.serialize_field("value", &base64::prelude::BASE64_STANDARD.encode(octets.as_ref()))?;
-				state.serialize_field("sensitive", &false)?;
-			}
-			AttributeValue::sensitiveValue(octets) => {
-				state.serialize_field("value", &base64::prelude::BASE64_STANDARD.encode(octets.as_ref()))?;
-				state.serialize_field("sensitive", &true)?;
-			}
-		}
-
-		state.end()
-	}
-}
-
-#[cfg(feature = "serde")]
-impl<'de> Deserialize<'de> for Attribute {
-	fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-	where
-		D: serde::Deserializer<'de>,
-	{
-		use crate::asn1::utils::parse_oid_string;
-		use serde::de;
-
-		#[derive(Deserialize)]
-		struct AttributeJson {
-			name: String,
-			value: String,
-			sensitive: bool,
-		}
-
-		let attr_json = AttributeJson::deserialize(deserializer)?;
-		let oid = parse_oid_string(&attr_json.name).map_err(de::Error::custom)?;
-		let decoded = base64::prelude::BASE64_STANDARD
-			.decode(&attr_json.value)
-			.map_err(de::Error::custom)?;
-
-		let octet_string = OctetString::from_slice(&decoded);
-
-		let attr_value = if attr_json.sensitive {
-			AttributeValue::sensitiveValue(octet_string)
-		} else {
-			AttributeValue::plainValue(octet_string)
-		};
-
-		Ok(Attribute { name: oid, value: attr_value })
 	}
 }
 
@@ -321,7 +239,6 @@ mod tests {
 	#[test]
 	fn test_from_iterator() {
 		let attrs: Vec<Attribute> = TEST_ATTRIBUTES.iter().map(build_attribute).collect();
-
 		let kyc_attrs: KYCAttributes = attrs.into_iter().collect();
 		assert_eq!(kyc_attrs.count(), TEST_ATTRIBUTES.len());
 
@@ -329,33 +246,6 @@ mod tests {
 		for test_attr in &TEST_ATTRIBUTES {
 			let found = kyc_attrs.find_by_oid(test_attr.oid.to_string()).unwrap();
 			assert_eq!(found.as_ref(), test_attr.value);
-		}
-	}
-
-	#[cfg(feature = "serde")]
-	#[test]
-	fn test_json_serialization() {
-		let mut attributes = KYCAttributes::new();
-
-		// Add test attributes
-		for test_attr in &TEST_ATTRIBUTES {
-			let attr = build_attribute(test_attr);
-			attributes.add_attribute(attr);
-		}
-
-		// Serialize to JSON
-		let json = serde_json::to_string(&attributes).unwrap();
-		assert!(!json.is_empty());
-
-		// Deserialize from JSON
-		let deserialized: KYCAttributes = serde_json::from_str(&json).unwrap();
-		assert_eq!(deserialized.count(), TEST_ATTRIBUTES.len());
-
-		// Verify all attributes match
-		for test_attr in &TEST_ATTRIBUTES {
-			let attr = deserialized.find_by_oid(test_attr.oid.to_string()).unwrap();
-			assert_eq!(attr.as_ref(), test_attr.value);
-			assert_eq!(attr.is_sensitive(), test_attr.is_sensitive);
 		}
 	}
 }
