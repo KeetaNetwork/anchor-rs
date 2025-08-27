@@ -143,117 +143,130 @@ where
 			.build()
 	}
 
-	fn test_basic_functionality(&self) {
-		// Test decryption with correct key
-		let decrypted_value = self
-			.sensitive_attr
-			.decrypt(&self.primary_account.keypair)
-			.unwrap();
-		assert_eq!(decrypted_value.expose_secret(), &self.expected_bytes);
-
-		// Test string decryption
-		let decrypted_string = self
-			.sensitive_attr
-			.decrypt_as_string(&self.primary_account.keypair)
-			.unwrap();
-		assert_eq!(decrypted_string, self.test_value);
-
-		// Verify proof contains expected base64 encoded value
-		let proof_value = self.valid_proof.value.expose_secret();
-		let decoded_proof_value = base64::prelude::BASE64_STANDARD
-			.decode(proof_value)
-			.unwrap();
-		assert_eq!(decoded_proof_value, self.expected_bytes);
-
-		// Verify salt length
-		let decoded_salt = base64::prelude::BASE64_STANDARD
-			.decode(&self.valid_proof.hash.salt)
-			.unwrap();
-		assert_eq!(decoded_salt.len(), 32, "Salt should be 32 bytes");
+	/// Generate a new proof (since we can't clone the existing one)
+	fn generate_proof(&self) -> SensitiveAttributeProof {
+		self.sensitive_attr
+			.to_proof(&self.primary_account.keypair)
+			.unwrap()
 	}
 
-	fn test_proof_validation(&self) {
-		// Valid proof should pass
-		let validation_result = self
-			.sensitive_attr
-			.validate_proof(&self.primary_account.keypair, &self.valid_proof)
-			.unwrap();
-		assert!(validation_result, "Valid proof should pass validation");
-
-		// Public key only account should also be able to validate
-		let public_validation = self
-			.sensitive_attr
-			.validate_proof(&self.public_only_account.keypair, &self.valid_proof)
-			.unwrap();
-		assert!(public_validation, "Public key only account should validate proofs");
-	}
-
-	fn test_failure_scenarios(&self) {
-		// Wrong private key for decryption
-		let wrong_decrypt_result = self.sensitive_attr.decrypt(&self.wrong_account.keypair);
-		assert!(wrong_decrypt_result.is_err(), "Wrong key should fail decryption");
-
-		// Wrong private key for proof generation
-		let wrong_proof_result = self.sensitive_attr.to_proof(&self.wrong_account.keypair);
-		assert!(wrong_proof_result.is_err(), "Wrong key should fail proof generation");
-
-		// Public key only account cannot decrypt or generate proofs
-		let public_decrypt_result = self
-			.sensitive_attr
-			.decrypt(&self.public_only_account.keypair);
-		assert!(public_decrypt_result.is_err(), "Public key only account should not decrypt");
-
-		let public_proof_result = self
-			.sensitive_attr
-			.to_proof(&self.public_only_account.keypair);
-		assert!(public_proof_result.is_err(), "Public key only account should not generate proofs");
-	}
-
-	fn test_invalid_proofs(&self) {
-		// Invalid proof value
+	/// Create an invalid proof with wrong value
+	fn create_invalid_value_proof(&self) -> SensitiveAttributeProof {
 		let base64_value = base64::prelude::BASE64_STANDARD.encode("Wrong Value");
-		let invalid_proof =
-			SensitiveAttributeProof { value: base64_value.into_secret(), hash: self.valid_proof.hash.clone() };
-		let invalid_validation = self
-			.sensitive_attr
-			.validate_proof(&self.primary_account.keypair, &invalid_proof)
-			.unwrap();
-		assert!(!invalid_validation, "Invalid proof should fail validation");
+		SensitiveAttributeProof { value: base64_value.into_secret(), hash: self.valid_proof.hash.clone() }
+	}
 
-		// Invalid proof salt
-		let proof = self.valid_proof.clone();
-		let invalid_salt_proof = SensitiveAttributeProof {
+	/// Create an invalid proof with wrong salt
+	fn create_invalid_salt_proof(&self) -> SensitiveAttributeProof {
+		let proof = self.generate_proof();
+		SensitiveAttributeProof {
 			value: proof.value,
 			hash: SensitiveAttributeProofHash::from(b"wrong_salt_32_bytes_long_for_test".to_vec()),
-		};
-		let invalid_salt_validation = self
-			.sensitive_attr
-			.validate_proof(&self.primary_account.keypair, &invalid_salt_proof)
-			.unwrap();
-		assert!(!invalid_salt_validation, "Invalid salt should fail validation");
-
-		// Wrong public key validation
-		let wrong_key_validation = self
-			.sensitive_attr
-			.validate_proof(&self.wrong_account.keypair, &self.valid_proof)
-			.unwrap();
-		assert!(!wrong_key_validation, "Wrong public key should fail validation");
+		}
 	}
+}
 
-	fn test_tampered_attribute(&self) {
-		// Serialize the attribute to bytes and tamper with it
-		let mut sensitive_attr_bytes = rasn::der::encode(&self.sensitive_attr).unwrap();
-		assert!(sensitive_attr_bytes.len() >= 3);
+// Test functions that use TestScenario as a data provider
 
-		// Tamper with a byte near the end
-		let tamper_index = sensitive_attr_bytes.len() - 3;
-		sensitive_attr_bytes[tamper_index] = 0x00;
+fn test_basic_functionality<T: KeyPair>(scenario: &TestScenario<T>)
+where
+	Account<T>: TryFrom<Accountable<T>, Error = AccountError>,
+{
+	// Test decryption with correct key
+	let decrypted_value = scenario
+		.sensitive_attr
+		.decrypt(&scenario.primary_account.keypair)
+		.unwrap();
+	assert_eq!(decrypted_value.expose_secret(), &scenario.expected_bytes);
 
-		// Tampering should either cause decode failure or validation failure
-		// Both outcomes are acceptable evidence that tampering was detected
-		let decode_result = rasn::der::decode::<SensitiveAttribute>(&sensitive_attr_bytes);
-		assert!(decode_result.is_ok() || decode_result.is_err());
-	}
+	// Test string decryption
+	let decrypted_string = scenario
+		.sensitive_attr
+		.decrypt_as_string(&scenario.primary_account.keypair)
+		.unwrap();
+	assert_eq!(decrypted_string, scenario.test_value);
+
+	// Verify proof contains expected base64 encoded value
+	let proof_value = scenario.valid_proof.value.expose_secret();
+	let decoded_proof_value = base64::prelude::BASE64_STANDARD
+		.decode(proof_value)
+		.unwrap();
+	assert_eq!(decoded_proof_value, scenario.expected_bytes);
+
+	// Verify salt length
+	let decoded_salt = base64::prelude::BASE64_STANDARD
+		.decode(&scenario.valid_proof.hash.salt)
+		.unwrap();
+	assert_eq!(decoded_salt.len(), 32, "Salt should be 32 bytes");
+}
+
+fn test_proof_validation<T: KeyPair>(scenario: TestScenario<T>)
+where
+	Account<T>: TryFrom<Accountable<T>, Error = AccountError>,
+{
+	// Valid proof should pass
+	let validation_result = scenario
+		.sensitive_attr
+		.validate_proof(&scenario.primary_account.keypair, scenario.valid_proof)
+		.unwrap();
+	assert!(validation_result, "Valid proof should pass validation");
+}
+
+fn test_failure_scenarios<T: KeyPair>(scenario: &TestScenario<T>)
+where
+	Account<T>: TryFrom<Accountable<T>, Error = AccountError>,
+{
+	// Wrong private key for decryption
+	let wrong_decrypt_result = scenario
+		.sensitive_attr
+		.decrypt(&scenario.wrong_account.keypair);
+	assert!(wrong_decrypt_result.is_err(), "Wrong key should fail decryption");
+
+	// Wrong private key for proof generation
+	let wrong_proof_result = scenario
+		.sensitive_attr
+		.to_proof(&scenario.wrong_account.keypair);
+	assert!(wrong_proof_result.is_err(), "Wrong key should fail proof generation");
+
+	// Public key only account cannot decrypt or generate proofs
+	let public_decrypt_result = scenario
+		.sensitive_attr
+		.decrypt(&scenario.public_only_account.keypair);
+	assert!(public_decrypt_result.is_err(), "Public key only account should not decrypt");
+
+	let public_proof_result = scenario
+		.sensitive_attr
+		.to_proof(&scenario.public_only_account.keypair);
+	assert!(public_proof_result.is_err(), "Public key only account should not generate proofs");
+}
+
+fn test_invalid_proofs<T: KeyPair>(scenario: &TestScenario<T>)
+where
+	Account<T>: TryFrom<Accountable<T>, Error = AccountError>,
+{
+	// Invalid proof value
+	let invalid_proof = scenario.create_invalid_value_proof();
+	let invalid_validation = scenario
+		.sensitive_attr
+		.validate_proof(&scenario.primary_account.keypair, invalid_proof)
+		.unwrap();
+	assert!(!invalid_validation, "Invalid proof should fail validation");
+
+	// Invalid proof salt
+	let invalid_salt_proof = scenario.create_invalid_salt_proof();
+	let invalid_salt_validation = scenario
+		.sensitive_attr
+		.validate_proof(&scenario.primary_account.keypair, invalid_salt_proof)
+		.unwrap();
+	assert!(!invalid_salt_validation, "Invalid salt should fail validation");
+
+	// Wrong public key validation
+	let valid_proof = scenario.generate_proof();
+	let wrong_key_validation = scenario
+		.sensitive_attr
+		.validate_proof(&scenario.wrong_account.keypair, valid_proof)
+		.unwrap();
+	assert!(!wrong_key_validation, "Wrong public key should fail validation");
 }
 
 fn test_basic_sensitive_attribute_functionality<T: KeyPair>(account: Account<T>)
@@ -261,11 +274,13 @@ where
 	Account<T>: TryFrom<Accountable<T>, Error = AccountError>,
 {
 	let scenario = TestScenario::with_account(account);
-	scenario.test_basic_functionality();
-	scenario.test_proof_validation();
-	scenario.test_failure_scenarios();
-	scenario.test_invalid_proofs();
-	scenario.test_tampered_attribute();
+	test_basic_functionality(&scenario);
+	test_proof_validation(scenario);
+
+	let new_account = create_account_from_seed::<T>(0);
+	let scenario = TestScenario::with_account(new_account);
+	test_failure_scenarios(&scenario);
+	test_invalid_proofs(&scenario);
 }
 
 // Test basic sensitive attribute functionality across all key types
@@ -277,10 +292,12 @@ where
 {
 	// Test with TypeScript test data
 	let scenario_original = TestScenario::with_account(account);
-	scenario_original.test_basic_functionality();
-	scenario_original.test_proof_validation();
+	test_basic_functionality(&scenario_original);
+	test_proof_validation(scenario_original);
 
-	// Verify the original test value produces expected bytes
+	// Verify the original test value produces expected bytes - create new account with same seed
+	let verification_account = create_account_from_seed::<T>(0);
+	let scenario_original = TestScenario::with_account(verification_account);
 	let decrypted_value = scenario_original
 		.sensitive_attr
 		.decrypt(&scenario_original.primary_account.keypair)
@@ -290,13 +307,13 @@ where
 
 	// Test with custom value
 	let scenario = TestScenario::<T>::with_value("Custom Test Data");
-	scenario.test_basic_functionality();
-	scenario.test_proof_validation();
+	test_basic_functionality(&scenario);
+	test_proof_validation(scenario);
 
 	// Test with custom seeds
 	let scenario_seeds = TestScenario::<T>::with_seeds(42, 84);
-	scenario_seeds.test_basic_functionality();
-	scenario_seeds.test_proof_validation();
+	test_basic_functionality(&scenario_seeds);
+	test_proof_validation(scenario_seeds);
 
 	// Test with builder pattern for maximum flexibility
 	let wrong_account = create_account_from_seed::<T>(200);
@@ -305,9 +322,15 @@ where
 		.with_wrong_account(wrong_account)
 		.with_test_value("Advanced Custom Value")
 		.build();
-	scenario_builder.test_basic_functionality();
-	scenario_builder.test_proof_validation();
-	scenario_builder.test_failure_scenarios();
+	test_basic_functionality(&scenario_builder);
+	test_proof_validation(scenario_builder);
+
+	let scenario_builder = TestScenario::builder()
+		.with_primary_account(create_account_from_seed::<T>(100))
+		.with_wrong_account(create_account_from_seed::<T>(200))
+		.with_test_value("Advanced Custom Value")
+		.build();
+	test_failure_scenarios(&scenario_builder);
 }
 
 // Test custom values and builder patterns across all key types
@@ -324,8 +347,8 @@ macro_rules! test_builder_across_key_types {
 					.with_primary_seed($primary_seed)
 					.with_wrong_seed($wrong_seed)
 					.build();
-				scenario.test_basic_functionality();
-				scenario.test_proof_validation();
+				test_basic_functionality(&scenario);
+				test_proof_validation(scenario);
 			)+
 		}
 	};

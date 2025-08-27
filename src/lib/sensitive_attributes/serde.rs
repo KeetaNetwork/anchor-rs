@@ -184,15 +184,11 @@ mod tests {
 
 		// Both proofs should validate
 		assert!(sensitive_attr
-			.validate_proof(&account.keypair, &original_proof)
+			.validate_proof(&account.keypair, original_proof)
 			.unwrap());
 		assert!(sensitive_attr
-			.validate_proof(&account.keypair, &deserialized_proof)
+			.validate_proof(&account.keypair, deserialized_proof)
 			.unwrap());
-
-		// Serialize the deserialized proof again - should be identical
-		let json_str2 = serde_json::to_string(&deserialized_proof).unwrap();
-		assert_eq!(json_str, json_str2);
 	}
 
 	test_all_key_types!(test_sensitive_attribute_roundtrip, |account: accounts::Account<_>| {

@@ -10,7 +10,7 @@ use crate::sensitive_attributes::error::SensitiveAttributeError;
 type Result<T> = std::result::Result<T, SensitiveAttributeError>;
 
 /// Set up cipher for decryption using keypair and cipher info.
-pub fn setup_cipher_for_decryption<T>(
+pub(crate) fn setup_cipher_for_decryption<T>(
 	keypair: &T,
 	cipher_info: &SensitiveAttributeCipher,
 ) -> Result<(Aes256Gcm, <Aes256Gcm as NonceGeneration>::Nonce)>
@@ -28,7 +28,7 @@ where
 }
 
 /// Create hash input for proof validation.
-pub fn create_hash_input(
+pub(crate) fn create_hash_input(
 	salt: impl AsRef<[u8]>,
 	public_key: impl AsRef<[u8]>,
 	encrypted_value: impl AsRef<[u8]>,
@@ -45,7 +45,7 @@ pub fn create_hash_input(
 }
 
 /// Validate version (currently only supports version 0).
-pub fn validate_version(version: &Integer) -> Result<u64> {
+pub(crate) fn assert_valid_version(version: &Integer) -> Result<u64> {
 	let version: u64 = version
 		.clone()
 		.try_into()
@@ -80,12 +80,12 @@ fn validate_attribute_sensitivity(
 /// Assert that an attribute is sensitive (encrypted).
 ///
 /// # Parameters
-/// * `attribute` - The attribute to check
-/// * `name` - The name of the attribute (for error messages)
+/// - `attribute` - The attribute to check
+/// - `name` - The name of the attribute (for error messages)
 ///
 /// # Returns
-/// * `Ok(())` if the attribute is sensitive
-/// * `Err(SensitiveAttributeError::InvalidAttributeIsPlain)` if the attribute is not sensitive
+/// - `Ok(_)` if the attribute is sensitive
+/// - `Err(_)` if the attribute is not sensitive
 pub fn assert_attribute_is_sensitive(attribute: &crate::kyc_schema::Attribute, name: &str) -> Result<()> {
 	validate_attribute_sensitivity(attribute, name, true)
 }
@@ -93,12 +93,12 @@ pub fn assert_attribute_is_sensitive(attribute: &crate::kyc_schema::Attribute, n
 /// Assert that an attribute is plain text (not encrypted).
 ///
 /// # Parameters
-/// * `attribute` - The attribute to check
-/// * `name` - The name of the attribute (for error messages)
+/// - `attribute` - The attribute to check
+/// - `name` - The name of the attribute (for error messages)
 ///
 /// # Returns
-/// * `Ok(())` if the attribute is plain text
-/// * `Err(SensitiveAttributeError::InvalidAttributeIsSensitive)` if the attribute is sensitive
+/// - `Ok(_)` if the attribute is plain text
+/// - `Err(_)` if the attribute is sensitive
 pub fn assert_attribute_is_plain(attribute: &crate::kyc_schema::Attribute, name: &str) -> Result<()> {
 	validate_attribute_sensitivity(attribute, name, false)
 }
@@ -187,13 +187,13 @@ mod tests {
 	fn test_validate_version() {
 		// Test valid version 0
 		let version_zero: Integer = 0u64.into();
-		let result = validate_version(&version_zero);
+		let result = assert_valid_version(&version_zero);
 		assert!(result.is_ok());
 		assert_eq!(result.unwrap(), 0);
 
 		// Test invalid version 1
 		let version_one: Integer = 1u64.into();
-		let result = validate_version(&version_one);
+		let result = assert_valid_version(&version_one);
 		assert!(result.is_err());
 
 		let error = result.unwrap_err();
