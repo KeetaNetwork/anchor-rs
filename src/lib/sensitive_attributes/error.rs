@@ -3,7 +3,7 @@ use snafu::Snafu;
 use crate::sensitive_attributes::AnchorAsn1Error;
 
 /// Error type for certificate operations
-#[derive(Debug, Snafu)]
+#[derive(Debug, Clone, PartialEq, Snafu)]
 #[snafu(visibility(pub))]
 pub enum SensitiveAttributeError {
 	#[snafu(display("Value not set"))]
@@ -68,14 +68,14 @@ crate::impl_source_error_from_via!(SensitiveAttributeError, {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::{test_error_from_conversions, test_error_variants};
+	use utils::{test_error_from_conversions, test_error_variants};
 
 	test_error_from_conversions!(
 		test_from_conversions,
 		SensitiveAttributeError,
 		[
 			std::string::String::from_utf8(vec![0, 159, 146, 150]).unwrap_err(),
-			crate::asn1::error::AnchorAsn1Error::InvalidOid { message: "test".to_string() },
+			crate::asn1::error::AnchorAsn1Error::InvalidOid { reason: "test".to_string() },
 			crypto::error::CryptoError::InvalidKeyMaterial,
 			accounts::error::AccountError::InvalidKeyType,
 			crypto::error::AeadError,

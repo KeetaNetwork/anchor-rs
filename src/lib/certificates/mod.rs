@@ -108,9 +108,9 @@ impl Certificate {
 
 #[cfg(test)]
 mod tests {
-	use accounts::{Account, IntoSecret};
+	use accounts::Account;
 	use crypto::bigint::U256;
-	use crypto::prelude::{CryptoSignerWithOptions, SignatureEncoding};
+	use crypto::prelude::{CryptoSignerWithOptions, IntoSecret, SignatureEncoding};
 	use x509::certificates::CertificateBuilder as X509CertificateBuilder;
 	use x509::utils::create_dn;
 
@@ -122,7 +122,7 @@ mod tests {
 		// Create a minimal X.509 certificate for testing
 		let subject_dn = create_dn(&[(x509::oids::CN, "Test")]).unwrap();
 		let account = create_account_from_seed::<accounts::KeyECDSASECP256K1>(0);
-		let public_key = account.keypair.to_public_key().unwrap();
+		let public_key = account.keypair.to_public_key();
 
 		X509CertificateBuilder::new()
 			.with_subject_dn(subject_dn.clone())

@@ -1,8 +1,39 @@
+//! Sensitive Attribute Builder
+//!
+//! This module provides the `SensitiveAttributeBuilder` for creating encrypted
+//! sensitive attributes that can be embedded in KYC certificates.
+//!
+//! # Example
+//!
+//! ```rust
+//! # use anchor_rs::doc_utils;
+//! use anchor_rs::sensitive_attributes::SensitiveAttributeBuilder;
+//! use crypto::prelude::ExposeSecret;
+//!
+//! // Create a test account
+//! # let account = doc_utils::create_secp256k1_test_account(None);
+//! // Create a sensitive attribute with personal data
+//! let sensitive_attr = SensitiveAttributeBuilder::new()
+//!     .with_value(b"john.doe@example.com")
+//!     .build(&account.keypair)?;
+//!
+//! // The attribute is now encrypted and can be stored safely
+//! let der_encoded = sensitive_attr.to_der()?;
+//! println!("Encrypted attribute size: {} bytes", der_encoded.len());
+//!
+//! // Later, decrypt the attribute using the same keypair
+//! let decrypted_data = sensitive_attr.decrypt(&account.keypair)?;
+//! let decrypted_string = String::from_utf8(decrypted_data.expose_secret().clone())?;
+//!
+//! assert_eq!(decrypted_string, "john.doe@example.com");
+//! # Ok::<(), Box<dyn std::error::Error>>(())
+//! ```
+
 use accounts::KeyPair;
 use crypto::algorithms::aes_gcm::Aes256Gcm;
-use crypto::generate_random_seed;
 use crypto::operations::encryption::{Aead, NonceGeneration};
 use crypto::prelude::{ExposeSecret, HashAlgorithm};
+use crypto::utils::generate_random_seed;
 use rasn::prelude::*;
 
 use crate::asn1::*;
@@ -13,25 +44,102 @@ use crate::sensitive_attributes::utils::create_hash_input;
 /// Result type for certificate operations
 pub type Result<T> = std::result::Result<T, SensitiveAttributeError>;
 
-/// Builder for creating SensitiveAttribute instances
+/// Builder for creating encrypted SensitiveAttribute instances.
+///
+/// This builder creates ASN.1-encoded sensitive attributes that are encrypted using a hybrid
+/// encryption scheme. The attribute value is encrypted with AES-256-GCM using a randomly
+/// generated symmetric key, which is then encrypted with the provided keypair's public key.
+///
+/// # Security Features
+///
+/// - **Hybrid Encryption**: Combines symmetric (AES-256-GCM) and asymmetric encryption
+/// - **Salt and Hash**: Includes salted hash for integrity verification
+/// - **Nonce Generation**: Uses cryptographically secure random nonces
+/// - **Key Derivation**: Generates secure symmetric keys for each attribute
+///
+/// # Example
+///
+/// ```rust
+/// # use anchor_rs::doc_utils;
+/// use anchor_rs::sensitive_attributes::SensitiveAttributeBuilder;
+///
+/// // Create an account with encryption support
+/// # let account = doc_utils::create_secp256k1_test_account(None);
+///
+/// // Create a sensitive attribute containing personal data
+/// let sensitive_attr = SensitiveAttributeBuilder::new()
+///     .with_value(b"Social Security Number: 123-45-6789")
+///     .build(&account.keypair)?;
+///
+/// // The attribute is now encrypted and can be safely stored
+/// println!("Sensitive attribute created successfully");
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
 #[derive(Default, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct SensitiveAttributeBuilder {
 	value: Option<Vec<u8>>,
 }
-
 impl SensitiveAttributeBuilder {
-	/// Create a new builder.
+	/// Creates a new empty builder.
 	pub fn new() -> Self {
 		Self::default()
 	}
 
-	/// Set the value for the builder.
+	/// Sets the raw byte value to be encrypted and stored in the sensitive attribute.
+	///
+	/// # Arguments
+	///
+	/// * `value` - The data to encrypt and store
+	///
+	/// # Example
+	///
+	/// ```rust
+	/// use anchor_rs::sensitive_attributes::SensitiveAttributeBuilder;
+	///
+	/// // With byte slice
+	/// let builder1 = SensitiveAttributeBuilder::new()
+	///     .with_value(b"sensitive data");
+	///
+	/// // With string
+	/// let builder2 = SensitiveAttributeBuilder::new()
+	///     .with_value("personal information".as_bytes());
+	///
+	/// // With vector
+	/// let data = vec![1, 2, 3, 4, 5];
+	/// let builder3 = SensitiveAttributeBuilder::new()
+	///     .with_value(data);
+	/// ```
 	pub fn with_value(mut self, value: impl Into<Vec<u8>>) -> Self {
 		self.value = Some(value.into());
 		self
 	}
 
-	/// Build the SensitiveAttribute using the provided keypair.
+	/// Builds the encrypted SensitiveAttribute using the provided keypair.
+	///
+	/// # Arguments
+	///
+	/// * `keypair` - A keypair that supports encryption operations
+	///
+	/// # Returns
+	///
+	/// - `Ok(_)` on success
+	/// - `Err(_)` if any of the steps fail
+	///
+	/// # Example
+	///
+	/// ```rust
+	/// # use anchor_rs::doc_utils;
+	/// use anchor_rs::sensitive_attributes::SensitiveAttributeBuilder;
+	///
+	/// let account = doc_utils::create_secp256k1_test_account(None);
+	///
+	/// let result = SensitiveAttributeBuilder::new()
+	///     .with_value("confidential data")
+	///     .build(&account.keypair);
+	///
+	/// assert!(result.is_ok());
+	/// # Ok::<(), Box<dyn std::error::Error>>(())
+	/// ```
 	pub fn build<T>(&self, keypair: &T) -> Result<SensitiveAttribute>
 	where
 		T: KeyPair,
@@ -51,12 +159,8 @@ impl SensitiveAttributeBuilder {
 		let salt = salt.expose_secret();
 
 		// Get public key
-		let public_key_bytes = if let Some(public_key) = keypair.to_public_key() {
-			public_key.to_bytes()
-		} else {
-			return Err(SensitiveAttributeError::MissingPublicKey);
-		};
-
+		let public_key = keypair.to_public_key();
+		let public_key_bytes = public_key.as_ref();
 		// Generate a symmetric encryption key
 		let symmetric_key = generate_random_seed()?;
 		let symmetric_key = symmetric_key.expose_secret();
@@ -72,7 +176,7 @@ impl SensitiveAttributeBuilder {
 		// Encrypt the salt
 		let encrypted_salt = cipher.encrypt(&nonce, salt.as_ref())?;
 		// Create hash using utility function
-		let hash_input = create_hash_input(salt.as_slice(), &public_key_bytes, &encrypted_value, value);
+		let hash_input = create_hash_input(salt.as_slice(), public_key_bytes, &encrypted_value, value);
 
 		let version: Integer = 0u64.into(); // version 0
 		let hashed_and_salted_value: OctetString = HashAlgorithm::Sha2_256.hash(&hash_input).into();

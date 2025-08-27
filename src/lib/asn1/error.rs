@@ -1,28 +1,29 @@
 use snafu::Snafu;
+use utils::impl_error_from_with_fields;
 
 /// Error type for ASN.1.
-#[derive(Debug, Snafu)]
+#[derive(Debug, Clone, PartialEq, Eq, Snafu)]
 #[snafu(visibility(pub))]
 pub enum AnchorAsn1Error {
-	#[snafu(display("Invalid OID: {message}"))]
-	InvalidOid { message: String },
+	#[snafu(display("Invalid OID: {reason}"))]
+	InvalidOid { reason: String },
 
-	#[snafu(display("ASN.1 encoding error: {}", source))]
-	Asn1EncodeError { source: rasn::error::EncodeError },
+	#[snafu(display("ASN.1 encoding error: {}", reason))]
+	Asn1EncodeError { reason: String },
 
-	#[snafu(display("ASN.1 decoding error: {}", source))]
-	Asn1DecodeError { source: rasn::error::DecodeError },
+	#[snafu(display("ASN.1 decoding error: {}", reason))]
+	Asn1DecodeError { reason: String },
 }
 
-crate::impl_source_error_from!(AnchorAsn1Error, {
-	rasn::error::EncodeError => Asn1EncodeError,
-	rasn::error::DecodeError => Asn1DecodeError,
+impl_error_from_with_fields!(AnchorAsn1Error, {
+	rasn::error::EncodeError => Asn1EncodeError { reason: |error: &rasn::error::EncodeError| format!("ASN.1 encoding error: {error}") },
+	rasn::error::DecodeError => Asn1DecodeError { reason: |error: &rasn::error::DecodeError| format!("ASN.1 decoding error: {error}") },
 });
 
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::{test_error_from_conversions, test_error_variants};
+	use utils::{test_error_from_conversions, test_error_variants};
 
 	test_error_from_conversions!(
 		test_from_conversions,
@@ -36,13 +37,9 @@ mod tests {
 	test_error_variants!(
 		test_error_variants,
 		[
-			AnchorAsn1Error::InvalidOid { message: "test.oid".to_string() },
-			AnchorAsn1Error::Asn1EncodeError {
-				source: rasn::error::EncodeError::length_exceeds_platform_size(rasn::Codec::Der)
-			},
-			AnchorAsn1Error::Asn1DecodeError {
-				source: rasn::error::DecodeError::integer_overflow(100, rasn::Codec::Der)
-			},
+			AnchorAsn1Error::InvalidOid { reason: "test.oid".to_string() },
+			AnchorAsn1Error::Asn1EncodeError { reason: "test encode error".to_string() },
+			AnchorAsn1Error::Asn1DecodeError { reason: "test decode error".to_string() },
 		]
 	);
 }

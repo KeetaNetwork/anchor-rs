@@ -3,8 +3,7 @@
 pub(crate) use serde::{Deserialize, Deserializer, Serialize, Serializer};
 pub(crate) use serde_json::Value;
 
-use accounts::IntoSecret;
-use crypto::ExposeSecret;
+use crypto::prelude::{ExposeSecret, IntoSecret};
 use rasn::types::Integer;
 use serde::ser::SerializeStruct;
 

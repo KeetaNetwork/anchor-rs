@@ -5,7 +5,7 @@ use crate::kyc_schema::error::KycSchemaError;
 use crate::sensitive_attributes::error::SensitiveAttributeError;
 
 /// Error type for certificate operations
-#[derive(Debug, Snafu)]
+#[derive(Debug, Clone, PartialEq, Snafu)]
 #[snafu(visibility(pub))]
 pub enum CertificateError {
 	#[snafu(display("Sensitive attribute error: {}", source))]
@@ -42,18 +42,18 @@ crate::impl_source_error_from!(CertificateError, {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::{test_error_from_conversions, test_error_variants};
+	use utils::{test_error_from_conversions, test_error_variants};
 
 	test_error_from_conversions!(
 		test_from_conversions,
 		CertificateError,
-		[SensitiveAttributeError::InvalidVersion, AnchorAsn1Error::InvalidOid { message: "test".to_string() },]
+		[SensitiveAttributeError::InvalidVersion, AnchorAsn1Error::InvalidOid { reason: "test".to_string() },]
 	);
 	test_error_variants!(
 		test_error_variants,
 		[
 			CertificateError::SensitiveAttributeError { source: SensitiveAttributeError::MissingValue },
-			CertificateError::Asn1Error { source: AnchorAsn1Error::InvalidOid { message: "test".to_string() } },
+			CertificateError::Asn1Error { source: AnchorAsn1Error::InvalidOid { reason: "test".to_string() } },
 			CertificateError::AttributeNotFound { name: "test".to_string() },
 			CertificateError::InvalidAttributeValue { name: "test".to_string(), reason: "test".to_string() },
 			CertificateError::MissingRequiredField { field: "test".to_string() },

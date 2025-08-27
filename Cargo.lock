@@ -5,18 +5,19 @@ version = 4
 [[package]]
 name = "accounts"
 version = "0.1.0"
-source = "git+ssh://git@github.com/KeetaNetwork/node-rs.git?branch=main#e284d8d1f59e1998383ca7ef5426c6d6a9566b60"
+source = "git+ssh://git@github.com/KeetaNetwork/node-rs.git?branch=main#cb3b7a02f7d1bfc7e786c39a7017abf2cea05fac"
 dependencies = [
+ "asn1",
  "base32",
  "bip39-dict",
  "crypto",
  "hex",
  "keetanet-error",
  "rand_core 0.9.3",
- "secrecy",
  "snafu",
  "strum",
  "strum_macros",
+ "utils",
  "zeroize",
 ]
 
@@ -72,6 +73,7 @@ dependencies = [
  "serde_json",
  "snafu",
  "strum",
+ "utils",
  "x509",
 ]
 
@@ -93,12 +95,14 @@ dependencies = [
 [[package]]
 name = "asn1"
 version = "0.1.0"
-source = "git+ssh://git@github.com/KeetaNetwork/node-rs.git?branch=main#e284d8d1f59e1998383ca7ef5426c6d6a9566b60"
+source = "git+ssh://git@github.com/KeetaNetwork/node-rs.git?branch=main#cb3b7a02f7d1bfc7e786c39a7017abf2cea05fac"
 dependencies = [
+ "const-oid",
  "der",
  "hex",
  "serde",
  "snafu",
+ "utils",
 ]
 
 [[package]]
@@ -209,9 +213,9 @@ dependencies = [
 
 [[package]]
 name = "cc"
-version = "1.2.32"
+version = "1.2.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2352e5597e9c544d5e6d9c95190d5d27738ade584fa8db0a16e130e5c2b5296e"
+checksum = "42bc4aea80032b7bf409b0bc7ccad88853858911b7713a8062fdc0623867bedc"
 dependencies = [
  "shlex",
 ]
@@ -297,7 +301,7 @@ checksum = "d0a5c400df2834b80a4c3327b3aad3a4c4cd4de0629063962b03235697506a28"
 [[package]]
 name = "crypto"
 version = "0.1.0"
-source = "git+ssh://git@github.com/KeetaNetwork/node-rs.git?branch=main#e284d8d1f59e1998383ca7ef5426c6d6a9566b60"
+source = "git+ssh://git@github.com/KeetaNetwork/node-rs.git?branch=main#cb3b7a02f7d1bfc7e786c39a7017abf2cea05fac"
 dependencies = [
  "aead",
  "aes",
@@ -329,6 +333,7 @@ dependencies = [
  "strum",
  "strum_macros",
  "subtle",
+ "utils",
  "x25519-dalek",
  "zeroize",
 ]
@@ -602,6 +607,9 @@ name = "hex"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "hkdf"
@@ -706,7 +714,7 @@ dependencies = [
 [[package]]
 name = "keetanet-error"
 version = "0.1.0"
-source = "git+ssh://git@github.com/KeetaNetwork/node-rs.git?branch=main#e284d8d1f59e1998383ca7ef5426c6d6a9566b60"
+source = "git+ssh://git@github.com/KeetaNetwork/node-rs.git?branch=main#cb3b7a02f7d1bfc7e786c39a7017abf2cea05fac"
 dependencies = [
  "snafu",
 ]
@@ -1081,9 +1089,9 @@ dependencies = [
 
 [[package]]
 name = "regex"
-version = "1.11.1"
+version = "1.11.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b544ef1b4eac5dc2db33ea63606ae9ffcfac26c1416a2806ae0bf5f56b201191"
+checksum = "23d7fd106d8c02486a8d64e778353d1cffe08ce79ac2e82f540c86d0facf6912"
 dependencies = [
  "regex-automata",
  "regex-syntax",
@@ -1091,18 +1099,18 @@ dependencies = [
 
 [[package]]
 name = "regex-automata"
-version = "0.4.9"
+version = "0.4.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "809e8dc61f6de73b46c85f4c96486310fe304c434cfa43669d7b40f711150908"
+checksum = "6b9458fa0bfeeac22b5ca447c63aaf45f28439a709ccd244698632f9aa6394d6"
 dependencies = [
  "regex-syntax",
 ]
 
 [[package]]
 name = "regex-syntax"
-version = "0.8.5"
+version = "0.8.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2b15c43186be67a4fd63bee50d0303afffcef381492ebe2c5d87f324e1b8815c"
+checksum = "caf4aa5b0f434c91fe5c7f1ecb6a5ece2130b02ad2a590589dda5146df959001"
 
 [[package]]
 name = "rfc6979"
@@ -1277,18 +1285,18 @@ dependencies = [
 
 [[package]]
 name = "snafu"
-version = "0.8.6"
+version = "0.8.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "320b01e011bf8d5d7a4a4a4be966d9160968935849c83b918827f6a435e7f627"
+checksum = "0062a372b26c4a6e9155d099a3416d732514fd47ae2f235b3695b820afcee74a"
 dependencies = [
  "snafu-derive",
 ]
 
 [[package]]
 name = "snafu-derive"
-version = "0.8.6"
+version = "0.8.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1961e2ef424c1424204d3a5d6975f934f56b6d50ff5732382d84ebf460e147f7"
+checksum = "7e5fd9e3263fc19d73abd5107dbd4d43e37949212d2b15d4d334ee5db53022b8"
 dependencies = [
  "heck",
  "proc-macro2",
@@ -1370,6 +1378,14 @@ checksum = "fc1de2c688dc15305988b563c3854064043356019f97a4b46276fe734c4f07ea"
 dependencies = [
  "crypto-common",
  "subtle",
+]
+
+[[package]]
+name = "utils"
+version = "0.1.0"
+source = "git+ssh://git@github.com/KeetaNetwork/node-rs.git?branch=main#cb3b7a02f7d1bfc7e786c39a7017abf2cea05fac"
+dependencies = [
+ "rasn-compiler",
 ]
 
 [[package]]
@@ -1552,7 +1568,7 @@ dependencies = [
 [[package]]
 name = "x509"
 version = "0.1.0"
-source = "git+ssh://git@github.com/KeetaNetwork/node-rs.git?branch=main#e284d8d1f59e1998383ca7ef5426c6d6a9566b60"
+source = "git+ssh://git@github.com/KeetaNetwork/node-rs.git?branch=main#cb3b7a02f7d1bfc7e786c39a7017abf2cea05fac"
 dependencies = [
  "accounts",
  "asn1",
@@ -1565,6 +1581,7 @@ dependencies = [
  "serde",
  "serde_json",
  "snafu",
+ "utils",
 ]
 
 [[package]]

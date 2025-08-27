@@ -10,7 +10,7 @@ pub fn get_algorithm_by_oid(oid: &ObjectIdentifier) -> Result<&'static str, Anch
 		.iter()
 		.find(|(_, stored_oid)| *stored_oid == oid)
 		.map(|(name, _)| *name)
-		.ok_or_else(|| AnchorAsn1Error::InvalidOid { message: format!("Unknown algorithm OID: {oid}") })
+		.ok_or_else(|| AnchorAsn1Error::InvalidOid { reason: format!("Unknown algorithm OID: {oid}") })
 }
 
 /// Get OID for certificate attribute
@@ -19,7 +19,7 @@ pub fn get_sensitive_attribute_oid<T: AsRef<str>>(name: T) -> Result<ObjectIdent
 	SENSITIVE_ATTRIBUTE_OIDS
 		.get(name_str)
 		.cloned()
-		.ok_or_else(|| AnchorAsn1Error::InvalidOid { message: format!("Unknown sensitive attribute: {name_str}") })
+		.ok_or_else(|| AnchorAsn1Error::InvalidOid { reason: format!("Unknown sensitive attribute: {name_str}") })
 }
 
 /// Convert an asn1 ObjectIdentifier to a rasn ObjectIdentifier via DER bytes.
@@ -27,12 +27,12 @@ pub fn get_sensitive_attribute_oid<T: AsRef<str>>(name: T) -> Result<ObjectIdent
 pub(crate) fn as_rasn_oid(oid: asn1::ObjectIdentifier) -> Result<rasn::types::ObjectIdentifier, AnchorAsn1Error> {
 	// Convert asn1 OID to DER bytes
 	let der_bytes = oid.to_der().map_err(|e| AnchorAsn1Error::InvalidOid {
-		message: format!("Failed to encode ObjectIdentifier to DER: {e:?}"),
+		reason: format!("Failed to encode ObjectIdentifier to DER: {e:?}"),
 	})?;
 
 	// Decode the DER bytes as a rasn ObjectIdentifier using BER decoder
 	let rasn_oid = rasn::ber::decode::<rasn::types::ObjectIdentifier>(&der_bytes)
-		.map_err(|e| AnchorAsn1Error::InvalidOid { message: format!("Failed to decode ObjectIdentifier: {e:?}") })?;
+		.map_err(|e| AnchorAsn1Error::InvalidOid { reason: format!("Failed to decode ObjectIdentifier: {e:?}") })?;
 
 	Ok(rasn_oid)
 }
@@ -47,14 +47,14 @@ pub fn parse_oid_string<S: AsRef<str>>(oid_str: S) -> Result<ObjectIdentifier, A
 	let arcs: Result<Vec<u32>, _> = oid_str.split('.').map(|s| s.parse::<u32>()).collect();
 	let arcs = match arcs {
 		Ok(arcs) => arcs,
-		Err(e) => return Err(AnchorAsn1Error::InvalidOid { message: format!("Failed to parse OID '{oid_str}': {e}") }),
+		Err(e) => return Err(AnchorAsn1Error::InvalidOid { reason: format!("Failed to parse OID '{oid_str}': {e}") }),
 	};
 
 	// Create ObjectIdentifier from arcs
 	match ObjectIdentifier::new(arcs) {
 		Some(oid) => Ok(oid),
 		None => {
-			Err(AnchorAsn1Error::InvalidOid { message: format!("Failed to create ObjectIdentifier from '{oid_str}'") })
+			Err(AnchorAsn1Error::InvalidOid { reason: format!("Failed to create ObjectIdentifier from '{oid_str}'") })
 		}
 	}
 }

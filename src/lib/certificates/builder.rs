@@ -220,8 +220,7 @@ impl CertificateBuilder {
 
 #[cfg(test)]
 mod tests {
-	use accounts::IntoSecret;
-	use crypto::prelude::ExposeSecret;
+	use crypto::prelude::{ExposeSecret, IntoSecret};
 	use x509::certificates::ExtensionBuilder;
 	use x509::DistinguishedName;
 
@@ -284,7 +283,7 @@ mod tests {
 		let serial = U256::from(12345u64);
 
 		// Create a test extension using ExtensionBuilder
-		let test_extension = ExtensionBuilder::for_key_usage(0x01).build().unwrap();
+		let test_extension = ExtensionBuilder::for_key_usage(0x01);
 		let builder = CertificateBuilder::new()
 			.with_subject_dn(subject_dn.clone())
 			.with_issuer_dn(issuer_dn.clone())

@@ -107,9 +107,9 @@ pub fn assert_attribute_is_plain(attribute: &crate::kyc_schema::Attribute, name:
 mod tests {
 	use accounts::KeyECDSASECP256K1;
 	use crypto::algorithms::aes_gcm::Aes256Gcm;
-	use crypto::generate_random_seed;
 	use crypto::operations::encryption::{Aead, NonceGeneration};
 	use crypto::prelude::ExposeSecret;
+	use crypto::utils::generate_random_seed;
 	use rasn::prelude::*;
 
 	use super::*;

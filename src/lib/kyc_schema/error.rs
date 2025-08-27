@@ -7,7 +7,7 @@ use snafu::Snafu;
 use crate::asn1::error::AnchorAsn1Error;
 
 /// Errors that can occur during KYC schema operations
-#[derive(Debug, Snafu)]
+#[derive(Debug, Clone, PartialEq, Eq, Snafu)]
 #[snafu(visibility(pub))]
 pub enum KycSchemaError {
 	/// ASN.1 error
@@ -39,13 +39,13 @@ crate::impl_source_error_from_via!(KycSchemaError, {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::{test_error_from_conversions, test_error_variants};
+	use utils::{test_error_from_conversions, test_error_variants};
 
 	test_error_from_conversions!(
 		test_from_conversions,
 		KycSchemaError,
 		[
-			AnchorAsn1Error::InvalidOid { message: "test".to_string() },
+			AnchorAsn1Error::InvalidOid { reason: "test".to_string() },
 			rasn::error::EncodeError::length_exceeds_platform_size(rasn::Codec::Der),
 			rasn::error::DecodeError::length_exceeds_platform_width("test".to_string(), rasn::Codec::Der),
 		]
@@ -54,7 +54,7 @@ mod tests {
 	test_error_variants!(
 		test_error_variants,
 		[
-			KycSchemaError::Asn1Error { source: AnchorAsn1Error::InvalidOid { message: "test.oid".to_string() } },
+			KycSchemaError::Asn1Error { source: AnchorAsn1Error::InvalidOid { reason: "test.oid".to_string() } },
 			KycSchemaError::Serialization { message: "test serialization error".to_string() },
 			KycSchemaError::MissingOid,
 			KycSchemaError::MissingValue,

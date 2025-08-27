@@ -7,9 +7,9 @@ pub mod serde;
 
 use std::hash::{Hash, Hasher};
 
-use accounts::{IntoSecret, KeyPair};
+use accounts::KeyPair;
 use crypto::operations::encryption::Aead;
-use crypto::prelude::{ExposeSecret, HashAlgorithm, SecretBox};
+use crypto::prelude::{ExposeSecret, HashAlgorithm, IntoSecret, SecretBox};
 use rasn::prelude::*;
 use strum::AsRefStr;
 
@@ -168,17 +168,13 @@ impl SensitiveAttribute {
 		let proof_salt = base64_decode(&proof.hash.salt).map_err(|_| SensitiveAttributeError::InvalidProof)?;
 		// Get the public key bytes
 		let public_key = keypair.to_public_key();
-		if let Some(public_key) = public_key {
-			let public_key_bytes = public_key.to_bytes();
-			// Create hash input using utility function
-			let hash_input = create_hash_input(&proof_salt, &public_key_bytes, &self.encrypted_value, &plaintext_value);
-			// Hash the concatenated data and compare
-			let computed_hash = HashAlgorithm::Sha2_256.hash(&hash_input);
+		let public_key_bytes = public_key.as_ref();
+		// Create hash input using utility function
+		let hash_input = create_hash_input(&proof_salt, public_key_bytes, &self.encrypted_value, &plaintext_value);
+		// Hash the concatenated data and compare
+		let computed_hash = HashAlgorithm::Sha2_256.hash(&hash_input);
 
-			Ok(computed_hash.as_slice() == self.hashed_value.value.as_ref())
-		} else {
-			Err(SensitiveAttributeError::MissingPublicKey)
-		}
+		Ok(computed_hash.as_slice() == self.hashed_value.value.as_ref())
 	}
 
 	/// Convert the sensitive attribute to DER format

@@ -11,6 +11,10 @@ path = "src/lib/mod.rs"
 name = "anchor-rs"
 path = "src/main.rs"
 
+[[example]]
+name = "certificates"
+path = "src/examples/certificates.rs"
+
 # Dependencies
 
 [dependencies]
@@ -51,8 +55,15 @@ branch = "main"
 [dependencies.asn1]
 git = "ssh://git@github.com/KeetaNetwork/node-rs.git"
 branch = "main"
+default-features = false
+# TODO support rasn everywhere else first...
+features = ["der"]
 
 [dependencies.accounts]
+git = "ssh://git@github.com/KeetaNetwork/node-rs.git"
+branch = "main"
+
+[dependencies.utils]
 git = "ssh://git@github.com/KeetaNetwork/node-rs.git"
 branch = "main"
 
@@ -60,7 +71,10 @@ branch = "main"
 
 [build-dependencies]
 rasn-compiler = "0.14.2"
+utils = { git = "ssh://git@github.com/KeetaNetwork/node-rs.git", branch = "main", features = [
+	"build",
+] }
 
 [features]
 default = ["serde"]
-serde = ["dep:serde", "dep:serde_json"]
+serde = ["dep:serde", "dep:serde_json", "asn1/serde"]

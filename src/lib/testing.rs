@@ -3,8 +3,10 @@
 
 use std::convert::TryFrom;
 
-use accounts::{Account, Accountable, IntoSecret, KeyPair, Keyable, Seed};
+use accounts::{Account, Accountable, KeyPair, Keyable, Seed};
+use asn1::SubjectPublicKeyInfo;
 use crypto::bigint::U256;
+use crypto::IntoSecret;
 
 use crate::{
 	certificates::CertificateBuilder,
@@ -14,50 +16,6 @@ use crate::{
 
 /// Test data from TypeScript test
 pub const TEST_SEED: &str = "D6986115BE7334E50DA8D73B1A4670A510E8BF47E8C5C9960B8F5248EC7D6E3D";
-
-/// Macro to generate tests for From conversions on error types.
-#[macro_export]
-macro_rules! test_error_from_conversions {
-	($test_name:ident, $error_type:ty, [$($source_expr:expr),+ $(,)?]) => {
-		#[test]
-		fn $test_name() {
-			let test_cases: &[Box<dyn Fn() -> $error_type>] = &[
-				$(Box::new(|| {
-					let source_error = $source_expr;
-					source_error.into()
-				}),)+
-			];
-
-			for error_fn in test_cases {
-				let error = error_fn();
-
-				// Verify the conversion worked by checking the error can be formatted
-				let display_str = format!("{}", error);
-				let debug_str = format!("{error:?}");
-				assert!(!display_str.is_empty());
-				assert!(!debug_str.is_empty());
-			}
-		}
-	};
-}
-
-/// Macro to generate tests for error variants (Display and Debug formatting).
-#[macro_export]
-macro_rules! test_error_variants {
-	($test_name:ident, [$($variant:expr),+ $(,)?]) => {
-		#[test]
-		fn $test_name() {
-			let test_cases = [$($variant),+];
-
-			for error in test_cases {
-				let display_str = format!("{}", error);
-				let debug_str = format!("{error:?}");
-				assert!(!display_str.is_empty());
-				assert!(!debug_str.is_empty());
-			}
-		}
-	};
-}
 
 /// Macro to test functionality across all supported key types
 #[macro_export]
@@ -99,7 +57,6 @@ where
 	let seed_array = create_test_seed_array();
 	let seed = Keyable::Seed((seed_array, index));
 	let accountable = Accountable::KeyAndType(seed, T::KEY_PAIR_TYPE);
-
 	Account::<T>::try_from(accountable).unwrap()
 }
 
@@ -109,10 +66,9 @@ where
 	T: accounts::KeyPair,
 	Account<T>: TryFrom<Accountable<T>, Error = accounts::AccountError>,
 {
-	let public_key_string = full_account.keypair.to_public_key_string().unwrap();
+	let public_key_string = full_account.keypair.to_public_key_string();
 	let keyable = Keyable::PublicKeyString(public_key_string);
 	let accountable = Accountable::KeyAndType(keyable, T::KEY_PAIR_TYPE);
-
 	Account::<T>::try_from(accountable).unwrap()
 }
 
@@ -139,12 +95,12 @@ pub fn create_test_sensitive_attribute<T: KeyPair>(
 /// Helper function to create a CertificateBuilder with default test data.
 pub fn create_test_certificate_builder<T: KeyPair>(account: &Account<T>) -> CertificateBuilder {
 	let subject_dn = x509::utils::create_dn(&[(x509::oids::CN, "Test Subject")]).unwrap();
-	let public_key = account.keypair.to_public_key().unwrap();
+	let subject_public_key_info = SubjectPublicKeyInfo::try_from(account).unwrap();
 
 	CertificateBuilder::for_end_entity()
 		.with_subject_dn(subject_dn.clone())
 		.with_issuer_dn(subject_dn)
 		.with_serial_number(U256::from(12345u64))
 		.with_validity_days(365)
-		.with_subject_public_key(public_key.into())
+		.with_subject_public_key(subject_public_key_info)
 }

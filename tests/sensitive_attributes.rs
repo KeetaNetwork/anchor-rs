@@ -1,8 +1,6 @@
-use accounts::{
-	Account, AccountError, Accountable, IntoSecret, KeyECDSASECP256K1, KeyECDSASECP256R1, KeyED25519, KeyPair,
-};
+use accounts::{Account, AccountError, Accountable, KeyECDSASECP256K1, KeyECDSASECP256R1, KeyED25519, KeyPair};
 use base64::Engine;
-use crypto::prelude::ExposeSecret;
+use crypto::prelude::{ExposeSecret, IntoSecret};
 
 use anchor_rs::generated::SensitiveAttribute;
 use anchor_rs::sensitive_attributes::{

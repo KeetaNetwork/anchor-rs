@@ -6,7 +6,7 @@ use crate::impl_source_error_from;
 use crate::sensitive_attributes::error::SensitiveAttributeError;
 
 /// Error type for certificate operations
-#[derive(Debug, Snafu)]
+#[derive(Debug, Clone, PartialEq, Snafu)]
 #[snafu(visibility(pub))]
 pub enum AnchorError {
 	#[snafu(display("ASN.1 error: {}", source))]
@@ -28,13 +28,13 @@ impl_source_error_from!(AnchorError, {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::{test_error_from_conversions, test_error_variants};
+	use utils::{test_error_from_conversions, test_error_variants};
 
 	test_error_from_conversions!(
 		test_from_conversions,
 		AnchorError,
 		[
-			AnchorAsn1Error::InvalidOid { message: "test.oid".to_string() },
+			AnchorAsn1Error::InvalidOid { reason: "test.oid".to_string() },
 			CertificateError::SensitiveAttributeError { source: SensitiveAttributeError::InvalidVersion },
 			SensitiveAttributeError::InvalidVersion,
 		]
@@ -43,7 +43,7 @@ mod tests {
 	test_error_variants!(
 		test_error_variants,
 		[
-			AnchorError::Asn1Error { source: AnchorAsn1Error::InvalidOid { message: "test.oid".to_string() } },
+			AnchorError::Asn1Error { source: AnchorAsn1Error::InvalidOid { reason: "test.oid".to_string() } },
 			AnchorError::CertificateError {
 				source: CertificateError::SensitiveAttributeError { source: SensitiveAttributeError::InvalidVersion }
 			},
