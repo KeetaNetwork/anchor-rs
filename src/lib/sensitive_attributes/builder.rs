@@ -36,7 +36,7 @@ use crypto::prelude::{ExposeSecret, HashAlgorithm};
 use crypto::utils::generate_random_seed;
 use rasn::prelude::*;
 
-use crate::asn1::*;
+use crate::asn1::oids;
 use crate::generated::{SensitiveAttribute, SensitiveAttributeCipher, SensitiveAttributeHashedValue};
 use crate::sensitive_attributes::error::SensitiveAttributeError;
 use crate::sensitive_attributes::utils::create_hash_input;
@@ -45,17 +45,6 @@ use crate::sensitive_attributes::utils::create_hash_input;
 pub type Result<T> = std::result::Result<T, SensitiveAttributeError>;
 
 /// Builder for creating encrypted SensitiveAttribute instances.
-///
-/// This builder creates ASN.1-encoded sensitive attributes that are encrypted using a hybrid
-/// encryption scheme. The attribute value is encrypted with AES-256-GCM using a randomly
-/// generated symmetric key, which is then encrypted with the provided keypair's public key.
-///
-/// # Security Features
-///
-/// - **Hybrid Encryption**: Combines symmetric (AES-256-GCM) and asymmetric encryption
-/// - **Salt and Hash**: Includes salted hash for integrity verification
-/// - **Nonce Generation**: Uses cryptographically secure random nonces
-/// - **Key Derivation**: Generates secure symmetric keys for each attribute
 ///
 /// # Example
 ///
@@ -85,11 +74,11 @@ impl SensitiveAttributeBuilder {
 		Self::default()
 	}
 
-	/// Sets the raw byte value to be encrypted and stored in the sensitive attribute.
+	/// Sets the raw byte value to be encrypted and stored it.
 	///
 	/// # Arguments
 	///
-	/// * `value` - The data to encrypt and store
+	/// - `value` - The data to encrypt and store
 	///
 	/// # Example
 	///
@@ -118,7 +107,7 @@ impl SensitiveAttributeBuilder {
 	///
 	/// # Arguments
 	///
-	/// * `keypair` - A keypair that supports encryption operations
+	/// - `keypair` - A keypair that supports encryption operations
 	///
 	/// # Returns
 	///
@@ -181,9 +170,9 @@ impl SensitiveAttributeBuilder {
 		let version: Integer = 0u64.into(); // version 0
 		let hashed_and_salted_value: OctetString = HashAlgorithm::Sha2_256.hash(&hash_input).into();
 		let encrypted_salt: OctetString = encrypted_salt.into();
-		let hashed_value = SensitiveAttributeHashedValue::new(encrypted_salt, SHA2_256_OID, hashed_and_salted_value);
+		let hashed_value = SensitiveAttributeHashedValue::new(encrypted_salt, oids::SHA2_256, hashed_and_salted_value);
 		let nonce = nonce.to_vec();
-		let cipher = SensitiveAttributeCipher::new(AES_256_GCM_OID, nonce.into(), encrypted_key.into());
+		let cipher = SensitiveAttributeCipher::new(oids::AES_256_GCM, nonce.into(), encrypted_key.into());
 		let encrypted_value: OctetString = encrypted_value.into();
 
 		// Build ASN.1 structure

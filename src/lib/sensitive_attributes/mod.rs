@@ -138,11 +138,11 @@ pub enum SensitiveAttributeName {
 impl From<SensitiveAttributeName> for ObjectIdentifier {
 	fn from(attr: SensitiveAttributeName) -> Self {
 		match attr {
-			SensitiveAttributeName::FullName => FULL_NAME_OID,
-			SensitiveAttributeName::DateOfBirth => DATE_OF_BIRTH_OID,
-			SensitiveAttributeName::Address => ADDRESS_OID,
-			SensitiveAttributeName::Email => EMAIL_OID,
-			SensitiveAttributeName::PhoneNumber => PHONE_NUMBER_OID,
+			SensitiveAttributeName::FullName => oids::keeta::FULL_NAME,
+			SensitiveAttributeName::DateOfBirth => oids::keeta::DATE_OF_BIRTH,
+			SensitiveAttributeName::Address => oids::keeta::ADDRESS,
+			SensitiveAttributeName::Email => oids::keeta::EMAIL,
+			SensitiveAttributeName::PhoneNumber => oids::keeta::PHONE_NUMBER,
 		}
 	}
 }
@@ -479,6 +479,7 @@ impl TryFrom<Vec<u8>> for SensitiveAttribute {
 #[cfg(test)]
 mod tests {
 	use super::*;
+	use crate::asn1::oids;
 	use crate::test_all_key_types;
 	use crate::testing::{create_test_sensitive_attribute, create_test_sensitive_attribute_with_proof};
 
@@ -493,11 +494,11 @@ mod tests {
 	#[test]
 	fn test_certificate_attribute_name_conversion() {
 		let test_cases = [
-			(SensitiveAttributeName::FullName, FULL_NAME_OID),
-			(SensitiveAttributeName::DateOfBirth, DATE_OF_BIRTH_OID),
-			(SensitiveAttributeName::Address, ADDRESS_OID),
-			(SensitiveAttributeName::Email, EMAIL_OID),
-			(SensitiveAttributeName::PhoneNumber, PHONE_NUMBER_OID),
+			(SensitiveAttributeName::FullName, oids::keeta::FULL_NAME),
+			(SensitiveAttributeName::DateOfBirth, oids::keeta::DATE_OF_BIRTH),
+			(SensitiveAttributeName::Address, oids::keeta::ADDRESS),
+			(SensitiveAttributeName::Email, oids::keeta::EMAIL),
+			(SensitiveAttributeName::PhoneNumber, oids::keeta::PHONE_NUMBER),
 		];
 
 		for (attr_name, expected_oid) in test_cases {

@@ -2,11 +2,12 @@ use asn1::Encode;
 use rasn::types::ObjectIdentifier;
 
 use crate::asn1::error::AnchorAsn1Error;
-use crate::asn1::{ALGORITHM_ATTRIBUTE_OIDS, SENSITIVE_ATTRIBUTE_OIDS};
+use crate::asn1::oids;
 
 /// Lookup algorithm name by OID
-pub fn get_algorithm_by_oid(oid: &ObjectIdentifier) -> Result<&'static str, AnchorAsn1Error> {
-	ALGORITHM_ATTRIBUTE_OIDS
+#[allow(dead_code)]
+pub(crate) fn get_algorithm_by_oid(oid: &ObjectIdentifier) -> Result<&'static str, AnchorAsn1Error> {
+	oids::ALGORITHM_ATTRIBUTES
 		.iter()
 		.find(|(_, stored_oid)| *stored_oid == oid)
 		.map(|(name, _)| *name)
@@ -14,9 +15,9 @@ pub fn get_algorithm_by_oid(oid: &ObjectIdentifier) -> Result<&'static str, Anch
 }
 
 /// Get OID for certificate attribute
-pub fn get_sensitive_attribute_oid<T: AsRef<str>>(name: T) -> Result<ObjectIdentifier, AnchorAsn1Error> {
+pub(crate) fn get_sensitive_attribute_oid<T: AsRef<str>>(name: T) -> Result<ObjectIdentifier, AnchorAsn1Error> {
 	let name_str = name.as_ref();
-	SENSITIVE_ATTRIBUTE_OIDS
+	oids::keeta::SENSITIVE_ATTRIBUTES
 		.get(name_str)
 		.cloned()
 		.ok_or_else(|| AnchorAsn1Error::InvalidOid { reason: format!("Unknown sensitive attribute: {name_str}") })
@@ -37,7 +38,8 @@ pub(crate) fn as_rasn_oid(oid: asn1::ObjectIdentifier) -> Result<rasn::types::Ob
 	Ok(rasn_oid)
 }
 
-/// Parse an OID string into a rasn ObjectIdentifier.
+/// Parse an OID string into a rasn `ObjectIdentifier`. This is required
+/// because `ObjectIdentifier` does not implement `FromStr` for some reason.
 ///
 /// Takes a string like "1.2.3.4.5" and converts it to an ObjectIdentifier
 pub fn parse_oid_string<S: AsRef<str>>(oid_str: S) -> Result<ObjectIdentifier, AnchorAsn1Error> {
@@ -64,11 +66,11 @@ mod tests {
 	use std::str::FromStr;
 
 	use super::*;
-	use crate::asn1::AES_256_GCM_OID;
+	use crate::asn1::oids;
 
 	#[test]
 	fn test_get_algorithm_by_oid() {
-		const ALGORITHM_TEST_DATA: &[(&ObjectIdentifier, Option<&str>)] = &[(&AES_256_GCM_OID, Some("aes-256-gcm"))];
+		const ALGORITHM_TEST_DATA: &[(&ObjectIdentifier, Option<&str>)] = &[(&oids::AES_256_GCM, Some("aes-256-gcm"))];
 		for (oid, expected_name) in ALGORITHM_TEST_DATA {
 			let result = get_algorithm_by_oid(oid);
 			match expected_name {

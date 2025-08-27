@@ -118,7 +118,7 @@ pub mod serde_helpers {
 	use serde::de::Error as DeError;
 	use serde_json::Value;
 
-	use crate::asn1::*;
+	use crate::asn1::oids;
 
 	/// Create a JSON object with string fields
 	macro_rules! json_object {
@@ -168,8 +168,8 @@ pub mod serde_helpers {
 	/// Convert algorithm name to OID
 	pub(crate) fn algorithm_to_oid<E: DeError>(algorithm: &str) -> std::result::Result<ObjectIdentifier, E> {
 		match algorithm {
-			"aes-256-gcm" => Ok(AES_256_GCM_OID),
-			"sha2-256" => Ok(SHA2_256_OID),
+			"aes-256-gcm" => Ok(oids::AES_256_GCM),
+			"sha2-256" => Ok(oids::SHA2_256),
 			_ => Err(E::custom(format!("Unknown algorithm: {algorithm}"))),
 		}
 	}
@@ -202,7 +202,7 @@ mod tests {
 		use rasn::types::ObjectIdentifier;
 		use serde_json::{Map, Value};
 
-		use crate::asn1::{AES_256_GCM_OID, SHA2_256_OID};
+		use crate::asn1::oids;
 		use crate::utils::serde_helpers::*;
 
 		#[test]
@@ -276,11 +276,11 @@ mod tests {
 			// Test known algorithms
 			let aes_result: Result<ObjectIdentifier, serde_json::Error> = algorithm_to_oid("aes-256-gcm");
 			assert!(aes_result.is_ok());
-			assert_eq!(aes_result.unwrap(), AES_256_GCM_OID);
+			assert_eq!(aes_result.unwrap(), oids::AES_256_GCM);
 
 			let sha_result: Result<ObjectIdentifier, serde_json::Error> = algorithm_to_oid("sha2-256");
 			assert!(sha_result.is_ok());
-			assert_eq!(sha_result.unwrap(), SHA2_256_OID);
+			assert_eq!(sha_result.unwrap(), oids::SHA2_256);
 
 			// Test unknown algorithm
 			let unknown_result: Result<ObjectIdentifier, serde_json::Error> = algorithm_to_oid("unknown-algorithm");

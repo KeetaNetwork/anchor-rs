@@ -5,8 +5,8 @@ use accounts::KeyPair;
 use crypto::prelude::ExposeSecret;
 use x509::certificates::Certificate as X509Certificate;
 
+use crate::asn1::oids;
 use crate::asn1::utils::get_sensitive_attribute_oid;
-use crate::asn1::KYC_ATTRIBUTES_EXTENSION_OID;
 use crate::generated::KYCAttributes;
 use crate::kyc_schema::Attribute;
 use crate::sensitive_attributes::utils::{assert_attribute_is_plain, assert_attribute_is_sensitive};
@@ -47,7 +47,7 @@ impl Certificate {
 	/// Get a specific KYC attribute by name
 	pub fn get_kyc_attribute<N: AsRef<str>>(&self, name: N) -> Option<&Attribute> {
 		let oid = get_sensitive_attribute_oid(name.as_ref()).ok()?;
-		self.kyc_attributes.find_by_object_identifier(&oid)
+		self.kyc_attributes.find_by_oid(&oid)
 	}
 
 	/// Decrypt a sensitive KYC attribute value
@@ -84,7 +84,7 @@ impl Certificate {
 	/// Parse KYC attributes from an X.509 certificate
 	fn parse_kyc_attributes(x509_cert: &X509Certificate) -> KYCAttributes {
 		// Try to find the KYC attributes extension
-		if let Some(extension) = x509_cert.get_extension(KYC_ATTRIBUTES_EXTENSION_OID.to_string()) {
+		if let Some(extension) = x509_cert.get_extension(oids::keeta::KYC_ATTRIBUTES_EXTENSION.to_string()) {
 			// Try to decode the extension value
 			if let Ok(kyc_attrs) = rasn::der::decode::<KYCAttributes>(extension.value.as_bytes()) {
 				return kyc_attrs;
@@ -145,7 +145,7 @@ mod tests {
 		let x509_cert = cert.to_x509();
 		// Just check that we can access the X509 certificate
 		assert!(x509_cert
-			.get_extension(KYC_ATTRIBUTES_EXTENSION_OID.to_string())
+			.get_extension(oids::keeta::KYC_ATTRIBUTES_EXTENSION.to_string())
 			.is_none());
 
 		// Test Certificate.kyc_attributes

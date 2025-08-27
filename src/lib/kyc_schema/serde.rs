@@ -83,7 +83,7 @@ impl<'de> Deserialize<'de> for Attribute {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::asn1;
+	use crate::asn1::oids;
 	use crate::kyc_schema::{AttributeBuilder, KYCAttributes};
 
 	struct TestAttribute {
@@ -94,15 +94,15 @@ mod tests {
 
 	// Shared test data for serde tests
 	const TEST_ATTRIBUTES: [TestAttribute; 4] = [
-		TestAttribute { oid: asn1::FULL_NAME_OID, value: b"John Doe", is_sensitive: false },
-		TestAttribute { oid: asn1::EMAIL_OID, value: b"test@example.com", is_sensitive: true },
-		TestAttribute { oid: asn1::PHONE_NUMBER_OID, value: b"+1234567890", is_sensitive: false },
-		TestAttribute { oid: asn1::ADDRESS_OID, value: b"123 Main St", is_sensitive: true },
+		TestAttribute { oid: oids::keeta::FULL_NAME, value: b"John Doe", is_sensitive: false },
+		TestAttribute { oid: oids::keeta::EMAIL, value: b"test@example.com", is_sensitive: true },
+		TestAttribute { oid: oids::keeta::PHONE_NUMBER, value: b"+1234567890", is_sensitive: false },
+		TestAttribute { oid: oids::keeta::ADDRESS, value: b"123 Main St", is_sensitive: true },
 	];
 
 	fn build_attribute(test_attr: &TestAttribute) -> Attribute {
 		let builder = AttributeBuilder::new()
-			.with_oid(test_attr.oid.to_string())
+			.with_oid(test_attr.oid.clone())
 			.with_value(test_attr.value);
 
 		if test_attr.is_sensitive {

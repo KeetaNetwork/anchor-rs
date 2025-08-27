@@ -113,6 +113,7 @@ mod tests {
 	use rasn::prelude::*;
 
 	use super::*;
+	use crate::asn1::oids;
 	use crate::testing::create_account_from_seed;
 
 	/// Helper function to create a test attribute for assertion testing
@@ -142,8 +143,7 @@ mod tests {
 		// Generate a nonce
 		let nonce = Aes256Gcm::generate_nonce();
 		// Create cipher info
-		let cipher_info =
-			SensitiveAttributeCipher::new(crate::asn1::AES_256_GCM_OID, nonce.to_vec().into(), encrypted_key.into());
+		let cipher_info = SensitiveAttributeCipher::new(oids::AES_256_GCM, nonce.to_vec().into(), encrypted_key.into());
 
 		let result = setup_cipher_for_decryption(&account.keypair, &cipher_info);
 		assert!(result.is_ok());

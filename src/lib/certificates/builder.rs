@@ -7,8 +7,8 @@ use crypto::prelude::{CryptoSignerWithOptions, ExposeSecret, SecretBox, Signatur
 use x509::certificates::{CertificateBuilder as X509CertificateBuilder, Extension, ExtensionBuilder};
 use x509::DistinguishedName;
 
+use crate::asn1::oids;
 use crate::asn1::utils::get_sensitive_attribute_oid;
-use crate::asn1::KYC_ATTRIBUTES_EXTENSION_OID;
 use crate::certificates::{Certificate, CertificateError};
 use crate::kyc_schema::{AttributeBuilder, KYCAttributes};
 use crate::sensitive_attributes::SensitiveAttributeBuilder;
@@ -192,7 +192,7 @@ impl CertificateBuilder {
 		let mut kyc_attributes = KYCAttributes::new();
 		for (name, entry) in &self.kyc_attributes {
 			let oid = get_sensitive_attribute_oid(name)?;
-			let attribute_builder = AttributeBuilder::new().with_oid(oid.to_string());
+			let attribute_builder = AttributeBuilder::new().with_oid(oid);
 			let attribute_builder = match entry {
 				KycAttributeEntry::PlainText(value) => attribute_builder.with_value(value).as_plain(),
 				KycAttributeEntry::Sensitive(_) => {
@@ -210,7 +210,7 @@ impl CertificateBuilder {
 
 		// Create the extension using ExtensionBuilder
 		ExtensionBuilder::new()
-			.with_oid(KYC_ATTRIBUTES_EXTENSION_OID.to_string())
+			.with_oid(oids::keeta::KYC_ATTRIBUTES_EXTENSION.to_string())
 			.with_value(rasn::der::encode(&kyc_attributes)?)
 			.with_critical(false)
 			.build()
