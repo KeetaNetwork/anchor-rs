@@ -144,10 +144,10 @@ mod tests {
 	fn test_create_test_certificate_builder() {
 		let account = create_secp256k1_test_account(None);
 		let builder = create_test_certificate_builder(&account);
-
 		// Test that we can add attributes to the builder
-		let result = builder.with_plain_attribute("fullName", b"Test Name");
-		assert!(result.is_ok());
+		builder
+			.with_plain_attribute("postalCode", b"Test Name")
+			.with_sensitive_attribute("email", b"test@example.com".to_vec().into_secret());
 	}
 
 	#[test]

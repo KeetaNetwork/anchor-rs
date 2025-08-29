@@ -22,6 +22,14 @@ pub(crate) fn get_sensitive_attribute_oid<T: AsRef<str>>(name: T) -> Result<Obje
 		.ok_or_else(|| AnchorAsn1Error::InvalidOid { reason: format!("Unknown sensitive attribute: {name_str}") })
 }
 
+pub(crate) fn get_plain_attribute_oid<T: AsRef<str>>(name: T) -> Result<ObjectIdentifier, AnchorAsn1Error> {
+	let name_str = name.as_ref();
+	oids::PLAIN_ATTRIBUTES
+		.get(name_str)
+		.cloned()
+		.ok_or_else(|| AnchorAsn1Error::InvalidOid { reason: format!("Unknown plain attribute: {name_str}") })
+}
+
 /// Parse an OID string into a rasn `ObjectIdentifier`. This is required
 /// because `ObjectIdentifier` does not implement `FromStr` for some reason.
 ///

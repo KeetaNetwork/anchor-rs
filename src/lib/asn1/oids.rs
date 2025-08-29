@@ -66,3 +66,15 @@ pub mod keeta {
 		};
 	}
 }
+
+lazy_static::lazy_static! {
+	/// OID database for certificate attributes.
+	pub static ref PLAIN_ATTRIBUTES: HashMap<&'static str, ObjectIdentifier> = {
+		[
+			("postalCode", ADDRESS_POSTAL_CODE),
+		]
+		.iter()
+		.cloned()
+		.collect()
+	};
+}

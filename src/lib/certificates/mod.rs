@@ -23,9 +23,9 @@
 //! # // Create separate issuer and subject accounts
 //! # let issuer_account = doc_utils::create_secp256k1_test_account(Some(0));
 //! # let subject_account = doc_utils::create_secp256k1_test_account(Some(1));
-//! # let subject_dn = x509::utils::create_dn(&[(x509::oids::CN, "Test Subject")]).unwrap();
-//! # let issuer_dn = x509::utils::create_dn(&[(x509::oids::CN, "Test Issuer")]).unwrap();
-//! # let subject_public_key_info = asn1::SubjectPublicKeyInfo::try_from(&subject_account).unwrap();
+//! # let subject_dn = x509::utils::create_dn(&[(x509::oids::CN, "Test Subject")])?;
+//! # let issuer_dn = x509::utils::create_dn(&[(x509::oids::CN, "Test Issuer")])?;
+//! # let subject_public_key_info = asn1::SubjectPublicKeyInfo::try_from(&subject_account)?;
 //!
 //! // Create a certificate with KYC attributes
 //! let certificate = CertificateBuilder::for_end_entity()
@@ -34,8 +34,8 @@
 //!     .with_serial_number(SerialNumber::from(12345u64))
 //!     .with_validity_days(365)
 //!     .with_subject_public_key(subject_public_key_info)
-//!     .with_plain_attribute("fullName", "John Doe")?
-//!     .with_sensitive_attribute("email", b"john@example.com".to_vec().into_secret())?
+//!     .with_plain_attribute("postalCode", "12345")
+//!     .with_sensitive_attribute("email", b"john@example.com".to_vec().into_secret())
 //!     .build(&subject_account.keypair, &issuer_account.keypair)?;
 //!
 //! // Access KYC attributes
@@ -43,8 +43,8 @@
 //! assert_eq!(certificate.kyc_attribute_count(), 2);
 //!
 //! // Get plain text attributes
-//! let name = certificate.get_plain_kyc_attribute("fullName")?;
-//! assert_eq!(name, b"John Doe");
+//! let postal_code = certificate.get_plain_kyc_attribute("postalCode")?;
+//! assert_eq!(postal_code, b"12345");
 //!
 //! // Decrypt sensitive attributes (requires subject's keypair)
 //! let email = certificate.decrypt_kyc_attribute("email", &subject_account.keypair)?;
@@ -113,7 +113,7 @@ use crypto::prelude::ExposeSecret;
 use x509::certificates::Certificate as X509Certificate;
 
 use crate::asn1::oids;
-use crate::asn1::utils::get_sensitive_attribute_oid;
+use crate::asn1::utils::{get_plain_attribute_oid, get_sensitive_attribute_oid};
 use crate::generated::KYCAttributes;
 use crate::kyc_schema::Attribute;
 use crate::sensitive_attributes::utils::{assert_attribute_is_plain, assert_attribute_is_sensitive};
@@ -168,7 +168,7 @@ impl Certificate {
 	///
 	/// # Arguments
 	///
-	/// * `inner` - The X.509 certificate to wrap
+	/// - `inner` - The X.509 certificate to wrap
 	///
 	/// # Examples
 	///
@@ -221,12 +221,13 @@ impl Certificate {
 	/// # let subject_account = doc_utils::create_secp256k1_test_account(Some(0));
 	/// # let issuer_account = doc_utils::create_secp256k1_test_account(Some(1));
 	/// # let certificate = doc_utils::create_test_certificate_builder(&subject_account)
-	/// #     .with_plain_attribute("fullName", "John Doe").unwrap()
-	/// #     .build(&subject_account.keypair, &issuer_account.keypair).unwrap();
+	/// #     .with_sensitive_attribute("fullName", b"John Doe".to_vec().into_secret())
+	/// #     .build(&subject_account.keypair, &issuer_account.keypair)?;
 	/// let kyc_attributes = certificate.kyc_attributes();
 	/// for attr in kyc_attributes.iter() {
 	///     println!("OID: {}, Sensitive: {}", attr.name, attr.is_sensitive());
 	/// }
+	/// # Ok::<(), Box<dyn std::error::Error>>(())
 	/// ```
 	pub fn kyc_attributes(&self) -> &KYCAttributes {
 		&self.kyc_attributes
@@ -239,32 +240,49 @@ impl Certificate {
 	///
 	/// # Arguments
 	///
-	/// * `name` - The attribute name to search for
+	/// - `name` - The attribute name to search for
 	///
 	/// # Returns
 	///
-	/// * `Some(&Attribute)` - If the attribute is found
-	/// * `None` - If the attribute is not found or the name is invalid
+	/// - `Some(_)` - If the attribute is found
+	/// - `None` - If the attribute is not found or the name is invalid
 	///
 	/// # Examples
 	///
 	/// ```rust
 	/// # use anchor_rs::doc_utils;
 	/// use anchor_rs::certificates::CertificateBuilder;
+	/// use crypto::prelude::IntoSecret;
 	///
 	/// # let account = doc_utils::create_secp256k1_test_account(None);
 	/// # let certificate = doc_utils::create_test_certificate_builder(&account)
-	/// #     .with_plain_attribute("fullName", "John Doe").unwrap()
-	/// #     .build(&account.keypair, &account.keypair).unwrap();
+	/// #     .with_sensitive_attribute("fullName", b"John Doe".to_vec().into_secret())
+	/// #     .build(&account.keypair, &account.keypair)?;
 	/// if let Some(name_attr) = certificate.get_kyc_attribute("fullName") {
 	///     println!("Found name attribute: {}", name_attr.is_sensitive());
 	/// } else {
 	///     println!("Name attribute not found");
 	/// }
+	/// # Ok::<(), Box<dyn std::error::Error>>(())
 	/// ```
 	pub fn get_kyc_attribute<N: AsRef<str>>(&self, name: N) -> Option<&Attribute> {
-		let oid = get_sensitive_attribute_oid(name.as_ref()).ok()?;
-		self.kyc_attributes.find_by_oid(&oid)
+		let name_str = name.as_ref();
+
+		// Try sensitive attribute OID first
+		if let Ok(oid) = get_sensitive_attribute_oid(name_str) {
+			if let Some(attr) = self.kyc_attributes.find_by_oid(&oid) {
+				return Some(attr);
+			}
+		}
+
+		// Try plain attribute OID if sensitive didn't work
+		if let Ok(oid) = get_plain_attribute_oid(name_str) {
+			if let Some(attr) = self.kyc_attributes.find_by_oid(&oid) {
+				return Some(attr);
+			}
+		}
+
+		None
 	}
 
 	/// Decrypt a sensitive KYC attribute value
@@ -274,13 +292,13 @@ impl Certificate {
 	///
 	/// # Arguments
 	///
-	/// * `name` - The name of the attribute to decrypt
-	/// * `keypair` - The keypair to use for decryption
+	/// - `name` - The name of the attribute to decrypt
+	/// - `keypair` - The keypair to use for decryption
 	///
 	/// # Returns
 	///
-	/// * `Ok(Vec<u8>)` - The decrypted attribute value
-	/// * `Err(CertificateError)` - If the attribute is not found, not sensitive, or decryption fails
+	/// - `Ok(_)` - The decrypted attribute value
+	/// - `Err(_)` - If the attribute is not found, not sensitive, or decryption fails
 	///
 	/// # Examples
 	///
@@ -292,8 +310,8 @@ impl Certificate {
 	/// # let subject_account = doc_utils::create_secp256k1_test_account(Some(0));
 	/// # let issuer_account = doc_utils::create_secp256k1_test_account(Some(1));
 	/// # let certificate = doc_utils::create_test_certificate_builder(&subject_account)
-	/// #     .with_sensitive_attribute("email", b"john@example.com".to_vec().into_secret()).unwrap()
-	/// #     .build(&subject_account.keypair, &issuer_account.keypair).unwrap();
+	/// #     .with_sensitive_attribute("email", b"john@example.com".to_vec().into_secret())
+	/// #     .build(&subject_account.keypair, &issuer_account.keypair)?;
 	/// // Note: Must use subject's keypair to decrypt, not issuer's
 	/// let email = certificate.decrypt_kyc_attribute("email", &subject_account.keypair)?;
 	/// assert_eq!(email, b"john@example.com");
@@ -324,12 +342,12 @@ impl Certificate {
 	///
 	/// # Arguments
 	///
-	/// * `name` - The name of the attribute to retrieve
+	/// - `name` - The name of the attribute to retrieve
 	///
 	/// # Returns
 	///
-	/// * `Ok(Vec<u8>)` - The plain text attribute value
-	/// * `Err(CertificateError)` - If the attribute is not found or is marked as sensitive
+	/// - `Ok(_)` - The plain text attribute value
+	/// - `Err(_)` - If the attribute is not found or is marked as sensitive
 	///
 	/// # Examples
 	///
@@ -339,10 +357,10 @@ impl Certificate {
 	///
 	/// # let account = doc_utils::create_secp256k1_test_account(None);
 	/// # let certificate = doc_utils::create_test_certificate_builder(&account)
-	/// #     .with_plain_attribute("fullName", "John Doe").unwrap()
-	/// #     .build(&account.keypair, &account.keypair).unwrap();
-	/// let name = certificate.get_plain_kyc_attribute("fullName")?;
-	/// assert_eq!(name, b"John Doe");
+	/// #     .with_plain_attribute("postalCode", "12345")
+	/// #     .build(&account.keypair, &account.keypair)?;
+	/// let postal_code = certificate.get_plain_kyc_attribute("postalCode")?;
+	/// assert_eq!(postal_code, b"12345");
 	/// # Ok::<(), Box<dyn std::error::Error>>(())
 	/// ```
 	pub fn get_plain_kyc_attribute<N: AsRef<str>>(&self, name: N) -> Result<Vec<u8>, CertificateError> {
@@ -376,8 +394,10 @@ impl Certificate {
 
 	/// Check if the certificate has any KYC attributes
 	///
-	/// Returns `true` if the certificate contains one or more KYC attributes,
-	/// `false` if it contains none.
+	/// # Returns
+	///
+	/// - `true` if the certificate contains one or more KYC attributes,
+	/// - `false` if it contains none.
 	///
 	/// # Examples
 	///
@@ -399,8 +419,9 @@ impl Certificate {
 
 	/// Get the number of KYC attributes
 	///
-	/// Returns the total count of KYC attributes (both plain and sensitive)
-	/// contained in this certificate.
+	/// # Returns
+	///
+	/// - The total count of KYC attributes (both plain and sensitive)
 	///
 	/// # Examples
 	///
@@ -411,10 +432,11 @@ impl Certificate {
 	///
 	/// # let account = doc_utils::create_secp256k1_test_account(None);
 	/// # let certificate = doc_utils::create_test_certificate_builder(&account)
-	/// #     .with_plain_attribute("fullName", "John Doe").unwrap()
-	/// #     .with_sensitive_attribute("email", b"john@example.com".to_vec().into_secret()).unwrap()
-	/// #     .build(&account.keypair, &account.keypair).unwrap();
+	/// #     .with_plain_attribute("postalCode", "12345")
+	/// #     .with_sensitive_attribute("email", b"john@example.com".to_vec().into_secret())
+	/// #     .build(&account.keypair, &account.keypair)?;
 	/// assert_eq!(certificate.kyc_attribute_count(), 2);
+	/// # Ok::<(), Box<dyn std::error::Error>>(())
 	/// ```
 	pub fn kyc_attribute_count(&self) -> usize {
 		self.kyc_attributes.count()
@@ -483,29 +505,27 @@ mod tests {
 		S: SignatureEncoding,
 	{
 		const TEST_ATTRIBUTES: &[(&str, &str, bool)] =
-			&[("fullName", "John Doe", false), ("email", "john@example.com", true)];
+			&[("postalCode", "12345", false), ("fullName", "John Doe", true), ("email", "john@example.com", true)];
 
 		let mut builder = create_test_certificate_builder(&account);
 		for (name, value, sensitive) in TEST_ATTRIBUTES.iter() {
 			// Add test attributes
 			builder = if *sensitive {
 				let sensitive_attribute = value.as_bytes().to_vec();
-				builder
-					.with_sensitive_attribute(name, sensitive_attribute.into_secret())
-					.unwrap()
+				builder.with_sensitive_attribute(name, sensitive_attribute.into_secret())
 			} else {
-				builder.with_plain_attribute(name, value).unwrap()
+				builder.with_plain_attribute(name, value)
 			};
 		}
 
 		// Verify certificate has KYC attributes
 		let certificate = builder.build(&account.keypair, &account.keypair).unwrap();
 		assert!(certificate.has_kyc_attributes());
-		assert_eq!(certificate.kyc_attribute_count(), 2);
+		assert_eq!(certificate.kyc_attribute_count(), 3);
 
 		// Test Certificate.kyc_attributes() method when KYC attributes are present
 		let kyc_attrs = certificate.kyc_attributes();
-		assert_eq!(kyc_attrs.count(), 2);
+		assert_eq!(kyc_attrs.count(), 3);
 
 		// Test both plain and sensitive attributes
 		for (name, value, sensitive) in TEST_ATTRIBUTES.iter() {
@@ -542,14 +562,12 @@ mod tests {
 	{
 		let sensitive_attribute = "jane@example.com".as_bytes().to_vec();
 		let builder = create_test_certificate_builder(&account)
-			.with_plain_attribute("fullName", "Jane Smith")
-			.unwrap()
-			.with_sensitive_attribute("email", sensitive_attribute.into_secret())
-			.unwrap();
+			.with_plain_attribute("postalCode", "12345")
+			.with_sensitive_attribute("email", sensitive_attribute.into_secret());
 
 		// Test trying to decrypt a plain attribute
 		let certificate = builder.build(&account.keypair, &account.keypair).unwrap();
-		let result = certificate.decrypt_kyc_attribute("fullName", &account.keypair);
+		let result = certificate.decrypt_kyc_attribute("postalCode", &account.keypair);
 		assert!(result.is_err());
 		assert!(matches!(result.unwrap_err(), CertificateError::SensitiveAttributeError { .. }));
 

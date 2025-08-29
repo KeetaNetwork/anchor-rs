@@ -89,6 +89,7 @@ use strum::AsRefStr;
 use serde::{Deserialize, Serialize};
 
 use crate::asn1::error::AnchorAsn1Error;
+use crate::asn1::utils::{get_plain_attribute_oid, get_sensitive_attribute_oid};
 use crate::asn1::*;
 use crate::sensitive_attributes::error::SensitiveAttributeError;
 use crate::sensitive_attributes::utils::{assert_valid_version, create_hash_input, setup_cipher_for_decryption};
@@ -103,6 +104,108 @@ pub type SensitiveAttributeProofValue = SecretBox<String>;
 // Re-export sensitive attribute types
 pub use crate::generated::{SensitiveAttribute, SensitiveAttributeCipher, SensitiveAttributeHashedValue};
 pub use builder::SensitiveAttributeBuilder;
+
+/// Internal representation of a KYC attribute entry
+///
+/// This enum represents the different types of KYC attribute values that can
+/// be stored in a certificate. It distinguishes between plain text attributes
+/// (stored unencrypted) and sensitive attributes (stored as encrypted secrets).
+///
+/// # Variants
+///
+/// - [`PlainText`](KycAttributeEntry::PlainText) - For non-sensitive information like names or public identifiers
+/// - [`Sensitive`](KycAttributeEntry::Sensitive) - For personally identifiable information (PII) that should be encrypted
+///
+/// # Security Considerations
+///
+/// When choosing between plain text and sensitive variants:
+/// - Use `PlainText` for information that can be publicly visible (e.g., full name, job title)
+/// - Use `Sensitive` for private information (e.g., email addresses, phone numbers, addresses)
+///
+/// # Examples
+///
+/// ```rust
+/// use anchor_rs::sensitive_attributes::KycAttributeEntry;
+/// use crypto::prelude::IntoSecret;
+///
+/// // Plain text attribute for non-sensitive data
+/// let name_entry = KycAttributeEntry::PlainText(b"John Doe".to_vec());
+///
+/// // Sensitive attribute for PII
+/// let email_entry = KycAttributeEntry::Sensitive(
+///     b"john@example.com".to_vec().into_secret()
+/// );
+/// ```
+#[derive(Debug)]
+pub enum KycAttributeEntry {
+	/// Plain text attribute value
+	///
+	/// Used for non-sensitive information that can be stored unencrypted.
+	/// Examples: full name, job title, public identifiers.
+	PlainText(Vec<u8>),
+	/// Sensitive attribute value
+	///
+	/// Used for personally identifiable information (PII) that should be
+	/// encrypted for privacy protection. The value is wrapped in a `SecretBox`
+	/// to prevent accidental exposure in logs or debug output.
+	/// Examples: email addresses, phone numbers, home addresses.
+	Sensitive(SecretBox<Vec<u8>>),
+}
+
+impl KycAttributeEntry {
+	/// Get the appropriate OID for this attribute entry type and name.
+	///
+	/// This method determines whether to use plain or sensitive attribute OID
+	/// lookup based on the entry variant and the provided attribute name.
+	///
+	/// # Arguments
+	///
+	/// - `name` - The attribute name to look up
+	///
+	/// # Returns
+	///
+	/// - `Ok(ObjectIdentifier)` - The OID for the attribute
+	/// - `Err(AnchorAsn1Error)` - If the attribute name is not found
+	///
+	/// # Examples
+	///
+	/// ```rust
+	/// use anchor_rs::sensitive_attributes::KycAttributeEntry;
+	/// use crypto::prelude::IntoSecret;
+	///
+	/// let plain_entry = KycAttributeEntry::PlainText(b"12345".to_vec());
+	/// let oid = plain_entry.to_oid("postalCode")?;
+	///
+	/// let sensitive_entry = KycAttributeEntry::Sensitive(b"john@example.com".to_vec().into_secret());
+	/// let oid = sensitive_entry.to_oid("email")?;
+	/// # Ok::<(), Box<dyn std::error::Error>>(())
+	/// ```
+	pub fn to_oid<N: AsRef<str>>(&self, name: N) -> Result<ObjectIdentifier> {
+		match self {
+			KycAttributeEntry::PlainText(_) => Ok(get_plain_attribute_oid(name)?),
+			KycAttributeEntry::Sensitive(_) => Ok(get_sensitive_attribute_oid(name)?),
+		}
+	}
+}
+
+impl From<&KycAttributeEntry> for SensitiveAttributeBuilder {
+	fn from(entry: &KycAttributeEntry) -> Self {
+		let builder = SensitiveAttributeBuilder::new();
+		match entry {
+			KycAttributeEntry::PlainText(value) => builder.with_value(value.to_vec()),
+			KycAttributeEntry::Sensitive(secret_value) => {
+				let sensitive_value = secret_value.expose_secret();
+				builder.with_value(sensitive_value.clone())
+			}
+		}
+	}
+}
+
+impl From<KycAttributeEntry> for SensitiveAttributeBuilder {
+	fn from(entry: KycAttributeEntry) -> Self {
+		(&entry).into()
+	}
+}
 
 /// Certificate attribute names
 ///
