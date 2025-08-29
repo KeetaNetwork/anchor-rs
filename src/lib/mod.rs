@@ -6,8 +6,9 @@ pub mod error;
 pub mod generated;
 pub mod kyc_schema;
 pub mod sensitive_attributes;
-pub mod testing;
 pub mod utils;
 
 #[doc(hidden)]
 pub mod doc_utils;
+#[doc(hidden)]
+pub mod testing;

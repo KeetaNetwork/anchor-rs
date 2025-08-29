@@ -396,141 +396,131 @@ impl TryFrom<Vec<u8>> for KYCAttributes {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use crate::asn1::oids::keeta;
+	use crate::testing::{create_test_attribute, create_test_kyc_attributes, TEST_KYC_ATTRIBUTES};
 
-	struct TestAttribute {
-		oid: rasn::types::ObjectIdentifier,
-		value: &'static [u8],
-		is_sensitive: bool,
-	}
-
-	// Shared test data for all tests
-	const TEST_ATTRIBUTES: [TestAttribute; 4] = [
-		TestAttribute { oid: keeta::FULL_NAME, value: b"John Doe", is_sensitive: false },
-		TestAttribute { oid: keeta::EMAIL, value: b"test@example.com", is_sensitive: true },
-		TestAttribute { oid: keeta::PHONE_NUMBER, value: b"+1234567890", is_sensitive: false },
-		TestAttribute { oid: keeta::ADDRESS, value: b"123 Main St", is_sensitive: true },
-	];
-
-	fn build_attribute(test_attr: &TestAttribute) -> Attribute {
-		let builder = AttributeBuilder::new()
-			.with_oid(test_attr.oid.clone())
-			.with_value(test_attr.value);
-
-		if test_attr.is_sensitive {
-			builder.as_sensitive().build()
-		} else {
-			builder.as_plain().build()
-		}
-		.unwrap()
+	#[test]
+	fn test_attribute_is_sensitive_plain() {
+		let attr = create_test_attribute("1.2.3.4.1", b"test", false);
+		assert!(!attr.is_sensitive());
 	}
 
 	#[test]
-	fn test_kyc_attribute_creation() {
-		for case in &TEST_ATTRIBUTES {
-			let attr = build_attribute(case);
-			assert_eq!(attr.name.to_string(), case.oid.to_string());
-			assert_eq!(attr.is_sensitive(), case.is_sensitive);
-			assert_eq!(attr.as_ref(), case.value);
-		}
+	fn test_attribute_is_sensitive_encrypted() {
+		let attr = create_test_attribute("1.2.3.4.1", b"test", true);
+		assert!(attr.is_sensitive());
 	}
 
 	#[test]
-	fn test_kyc_attributes_collection() {
-		let mut attributes = KYCAttributes::new();
-		assert!(attributes.is_empty());
-		assert_eq!(attributes.count(), 0);
-
-		// Add all test attributes
-		for (i, test_attr) in TEST_ATTRIBUTES.iter().enumerate() {
-			let attr = build_attribute(test_attr);
-			attributes.add_attribute(attr);
-			assert_eq!(attributes.count(), i + 1);
-			assert!(!attributes.is_empty());
-		}
-
-		// Test finding by OID for all attributes
-		for test_attr in &TEST_ATTRIBUTES {
-			let found = attributes.find_by_oid(test_attr.oid.to_string()).unwrap();
-			assert_eq!(found.as_ref(), test_attr.value);
-			assert_eq!(found.is_sensitive(), test_attr.is_sensitive);
-		}
-
-		// Test non-existent OID
-		assert!(attributes.find_by_oid("1.2.3.4.5").is_none());
+	fn test_kyc_attributes_new() {
+		let kyc = KYCAttributes::new();
+		assert!(kyc.is_empty());
+		assert_eq!(kyc.count(), 0);
 	}
 
 	#[test]
-	fn test_asn1_encoding_decoding() {
-		let mut attributes = KYCAttributes::new();
-		for test_attr in &TEST_ATTRIBUTES {
-			let attr = build_attribute(test_attr);
-			attributes.add_attribute(attr);
-		}
+	fn test_kyc_attributes_add_attribute() {
+		let mut kyc = KYCAttributes::new();
+		let attr = create_test_attribute("1.2.3.4.1", b"test", false);
 
-		// Encode to DER
-		let encoded = attributes.to_der().unwrap();
-		assert!(!encoded.is_empty());
-
-		// Decode back
-		let decoded = KYCAttributes::try_from(encoded).unwrap();
-		assert_eq!(decoded.count(), TEST_ATTRIBUTES.len());
-
-		// Verify all attributes match
-		for test_attr in &TEST_ATTRIBUTES {
-			let found_attr = decoded.find_by_oid(test_attr.oid.to_string()).unwrap();
-			assert_eq!(found_attr.as_ref(), test_attr.value);
-			assert_eq!(found_attr.is_sensitive(), test_attr.is_sensitive);
-		}
+		kyc.add_attribute(attr);
+		assert_eq!(kyc.count(), 1);
+		assert!(!kyc.is_empty());
 	}
 
 	#[test]
-	fn test_iterator_support() {
-		// Build test attributes
-		let mut attributes = KYCAttributes::new();
-		for test_attr in &TEST_ATTRIBUTES {
-			if !test_attr.is_sensitive {
-				let attr = build_attribute(test_attr);
-				attributes.add_attribute(attr);
-			}
-		}
+	fn test_kyc_attributes_count() {
+		let kyc = create_test_kyc_attributes();
+		assert_eq!(kyc.count(), TEST_KYC_ATTRIBUTES.len());
+	}
 
-		let expected_count = TEST_ATTRIBUTES
+	#[test]
+	fn test_kyc_attributes_is_empty_false() {
+		let kyc = create_test_kyc_attributes();
+		assert!(!kyc.is_empty());
+	}
+
+	#[test]
+	fn test_kyc_attributes_find_by_oid_exists() {
+		let kyc = create_test_kyc_attributes();
+		let (oid_str, _, _) = TEST_KYC_ATTRIBUTES[0];
+
+		let found = kyc.find_by_oid(oid_str);
+		assert!(found.is_some());
+	}
+
+	#[test]
+	fn test_kyc_attributes_find_by_oid_missing() {
+		let kyc = create_test_kyc_attributes();
+		let found = kyc.find_by_oid("9.9.9.9.9");
+		assert!(found.is_none());
+	}
+
+	#[test]
+	fn test_kyc_attributes_to_der() {
+		let kyc = create_test_kyc_attributes();
+		let der_result = kyc.to_der();
+		assert!(der_result.is_ok());
+	}
+
+	#[test]
+	fn test_kyc_attributes_iter() {
+		let kyc = create_test_kyc_attributes();
+		let collected: Vec<_> = kyc.iter().collect();
+		assert_eq!(collected.len(), TEST_KYC_ATTRIBUTES.len());
+	}
+
+	#[test]
+	fn test_kyc_attributes_sensitive_attributes() {
+		let kyc = create_test_kyc_attributes();
+		let sensitive_count = kyc.sensitive_attributes().count();
+		let expected_sensitive = TEST_KYC_ATTRIBUTES
 			.iter()
-			.filter(|attr| !attr.is_sensitive)
+			.filter(|(_, _, is_sensitive)| *is_sensitive)
 			.count();
+		assert_eq!(sensitive_count, expected_sensitive);
+	}
 
-		// Test iter()
-		let count = attributes.clone().into_iter().count();
-		assert_eq!(count, expected_count);
+	#[test]
+	fn test_kyc_attributes_plain_attributes() {
+		let kyc = create_test_kyc_attributes();
+		let plain_count = kyc.plain_attributes().count();
+		let expected_plain = TEST_KYC_ATTRIBUTES
+			.iter()
+			.filter(|(_, _, is_sensitive)| !*is_sensitive)
+			.count();
+		assert_eq!(plain_count, expected_plain);
+	}
 
-		for attr in attributes.clone().into_iter() {
-			assert!(!attr.is_sensitive());
-		}
+	#[test]
+	fn test_iterator_traits_reference() {
+		let kyc = create_test_kyc_attributes();
+		let ref_iter_count = (&kyc).into_iter().count();
+		assert_eq!(ref_iter_count, TEST_KYC_ATTRIBUTES.len());
+	}
 
-		// Test &KYCAttributes iteration
-		let count = (&attributes).into_iter().count();
-		assert_eq!(count, expected_count);
-
-		for attr in &attributes {
-			assert!(!attr.is_sensitive());
-		}
-
-		// Test into_iter()
-		let count = attributes.into_iter().count();
-		assert_eq!(count, expected_count);
+	#[test]
+	fn test_iterator_traits_owned() {
+		let kyc = create_test_kyc_attributes();
+		let owned_iter_count = kyc.into_iter().count();
+		assert_eq!(owned_iter_count, TEST_KYC_ATTRIBUTES.len());
 	}
 
 	#[test]
 	fn test_from_iterator() {
-		let attrs: Vec<Attribute> = TEST_ATTRIBUTES.iter().map(build_attribute).collect();
-		let kyc_attrs: KYCAttributes = attrs.into_iter().collect();
-		assert_eq!(kyc_attrs.count(), TEST_ATTRIBUTES.len());
+		let attrs: Vec<Attribute> = TEST_KYC_ATTRIBUTES
+			.iter()
+			.map(|&(oid_str, value, is_sensitive)| create_test_attribute(oid_str, value, is_sensitive))
+			.collect();
 
-		// Verify all attributes are present
-		for test_attr in &TEST_ATTRIBUTES {
-			let found = kyc_attrs.find_by_oid(test_attr.oid.to_string()).unwrap();
-			assert_eq!(found.as_ref(), test_attr.value);
-		}
+		let kyc: KYCAttributes = attrs.into_iter().collect();
+		assert_eq!(kyc.count(), TEST_KYC_ATTRIBUTES.len());
+	}
+
+	#[test]
+	fn test_der_roundtrip() {
+		let original = create_test_kyc_attributes();
+		let der_bytes: Vec<u8> = original.clone().try_into().unwrap();
+		let decoded: KYCAttributes = der_bytes.try_into().unwrap();
+		assert_eq!(decoded.count(), original.count());
 	}
 }

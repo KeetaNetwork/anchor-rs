@@ -77,7 +77,7 @@ pub mod utils;
 #[cfg(feature = "serde")]
 pub mod serde;
 
-use std::hash::{Hash, Hasher};
+use std::hash::Hash;
 
 use accounts::KeyPair;
 use crypto::operations::encryption::Aead;
@@ -173,15 +173,10 @@ pub struct SensitiveAttributeProof {
 	pub hash: SensitiveAttributeProofHash,
 }
 
-impl Hash for SensitiveAttributeProof {
-	fn hash<H: Hasher>(&self, state: &mut H) {
-		self.hash.hash(state);
-	}
-}
-
 impl PartialEq for SensitiveAttributeProof {
 	fn eq(&self, other: &Self) -> bool {
-		self.hash == other.hash
+		// Two proofs are equal if both their hash and value match
+		self.hash == other.hash && self.value.expose_secret() == other.value.expose_secret()
 	}
 }
 
@@ -598,7 +593,7 @@ mod tests {
 		assert_eq!(der_bytes, der_bytes2);
 
 		// Test round-trip: decode the DER bytes back to SensitiveAttribute
-		let decoded_attr: SensitiveAttribute = rasn::der::decode(&der_bytes).unwrap();
+		let decoded_attr = SensitiveAttribute::try_from(der_bytes).unwrap();
 		// Verify the decoded attribute has the same functionality
 		let decrypted_original = sensitive_attr.decrypt(&account.keypair).unwrap();
 		let decrypted_roundtrip = decoded_attr.decrypt(&account.keypair).unwrap();

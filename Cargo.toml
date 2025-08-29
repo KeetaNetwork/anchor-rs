@@ -56,8 +56,7 @@ branch = "main"
 git = "ssh://git@github.com/KeetaNetwork/node-rs.git"
 branch = "main"
 default-features = false
-# TODO support rasn everywhere else first...
-features = ["der"]
+features = ["rasn"]
 
 [dependencies.accounts]
 git = "ssh://git@github.com/KeetaNetwork/node-rs.git"

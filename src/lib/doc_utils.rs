@@ -7,9 +7,9 @@
 
 use accounts::{Account, Accountable, KeyECDSASECP256K1, KeyED25519, KeyNETWORK, KeyPair, Keyable};
 use asn1::SubjectPublicKeyInfo;
-use crypto::bigint::U256;
 use crypto::prelude::IntoSecret;
 use x509::utils::create_dn;
+use x509::{certificates::Certificate as X509Certificate, SerialNumber};
 
 use crate::{
 	certificates::CertificateBuilder,
@@ -66,12 +66,13 @@ where
 	T: accounts::KeyPair,
 {
 	let subject_dn = create_dn(&[(x509::oids::CN, "Test Subject")]).expect("Failed to create test subject DN");
+	let issuer_dn = create_dn(&[(x509::oids::CN, "Test Issuer")]).expect("Failed to create test issuer DN");
 	let public_key_info = SubjectPublicKeyInfo::try_from(account).expect("Failed to create SubjectPublicKeyInfo");
 
 	CertificateBuilder::for_end_entity()
 		.with_subject_dn(subject_dn.clone())
-		.with_issuer_dn(subject_dn)
-		.with_serial_number(U256::from(12345u64))
+		.with_issuer_dn(issuer_dn)
+		.with_serial_number(SerialNumber::from(12345u64))
 		.with_validity_days(365)
 		.with_subject_public_key(public_key_info)
 }
@@ -98,6 +99,22 @@ pub fn create_test_hex_seed(suffix: Option<&str>) -> String {
 	let base = "D6986115BE7334E50DA8D73B1A4670A510E8BF47E8C5C9960B8F5248EC7D6E";
 	let suffix = suffix.unwrap_or("01");
 	format!("{base}{suffix}")
+}
+
+/// Create a simple test X.509 certificate for documentation examples.
+pub fn create_test_x509_cert() -> X509Certificate {
+	let account = create_secp256k1_test_account(None);
+	let subject_dn = create_dn(&[(x509::oids::CN, "Test")]).expect("Failed to create test DN");
+	let public_key = account.keypair.to_public_key();
+
+	x509::certificates::CertificateBuilder::new()
+		.with_subject_dn(subject_dn.clone())
+		.with_issuer_dn(subject_dn)
+		.with_subject_public_key(public_key.into())
+		.with_serial_number(SerialNumber::from(1u64))
+		.with_validity_days(365)
+		.build(&account.keypair)
+		.expect("Failed to create test X.509 certificate")
 }
 
 #[cfg(test)]

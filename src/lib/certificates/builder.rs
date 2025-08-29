@@ -2,10 +2,9 @@ use std::collections::HashMap;
 
 use accounts::{Account, KeyPair};
 use asn1::SubjectPublicKeyInfo;
-use crypto::bigint::U256;
 use crypto::prelude::{CryptoSignerWithOptions, ExposeSecret, SecretBox, SignatureEncoding};
 use x509::certificates::{CertificateBuilder as X509CertificateBuilder, Extension, ExtensionBuilder};
-use x509::DistinguishedName;
+use x509::{DistinguishedName, SerialNumber};
 
 use crate::asn1::oids;
 use crate::asn1::utils::get_sensitive_attribute_oid;
@@ -121,7 +120,7 @@ impl CertificateBuilder {
 	}
 
 	/// Set the serial number
-	pub fn with_serial_number(mut self, serial: U256) -> Self {
+	pub fn with_serial_number(mut self, serial: SerialNumber) -> Self {
 		self.inner = self.inner.with_serial_number(serial);
 		self
 	}
@@ -278,9 +277,9 @@ mod tests {
 
 	#[test]
 	fn test_builder_chaining() {
-		let subject_dn = DistinguishedName::new();
-		let issuer_dn = DistinguishedName::new();
-		let serial = U256::from(12345u64);
+		let subject_dn = DistinguishedName::default();
+		let issuer_dn = DistinguishedName::default();
+		let serial = SerialNumber::from(12345u64);
 
 		// Create a test extension using ExtensionBuilder
 		let test_extension = ExtensionBuilder::for_key_usage(0x01);

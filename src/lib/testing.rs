@@ -5,17 +5,23 @@ use std::convert::TryFrom;
 
 use accounts::{Account, Accountable, KeyPair, Keyable, Seed};
 use asn1::SubjectPublicKeyInfo;
-use crypto::bigint::U256;
-use crypto::IntoSecret;
+use crypto::prelude::IntoSecret;
+use x509::SerialNumber;
 
-use crate::{
-	certificates::CertificateBuilder,
-	generated::SensitiveAttribute,
-	sensitive_attributes::{SensitiveAttributeBuilder, SensitiveAttributeProof},
-};
+use crate::certificates::CertificateBuilder;
+use crate::kyc_schema::{Attribute, AttributeBuilder, KYCAttributes, KYCAttributesBuilder};
+use crate::sensitive_attributes::{SensitiveAttribute, SensitiveAttributeBuilder, SensitiveAttributeProof};
 
 /// Test data from TypeScript test
 pub const TEST_SEED: &str = "D6986115BE7334E50DA8D73B1A4670A510E8BF47E8C5C9960B8F5248EC7D6E3D";
+
+/// Test data for KYC attributes - (oid, value, is_sensitive)
+pub const TEST_KYC_ATTRIBUTES: &[(&str, &[u8], bool)] = &[
+	("1.2.3.4.1", b"John Doe", false),        // Plain name
+	("1.2.3.4.2", b"john@example.com", true), // Sensitive email
+	("1.2.3.4.3", b"12345", false),           // Plain postal code
+	("1.2.3.4.4", b"+1234567890", true),      // Sensitive phone
+];
 
 /// Macro to test functionality across all supported key types
 #[macro_export]
@@ -51,7 +57,7 @@ pub fn create_test_seed_array() -> Seed {
 /// Helper function to create an account from seed for different key types.
 pub fn create_account_from_seed<T>(index: u32) -> Account<T>
 where
-	T: accounts::KeyPair,
+	T: KeyPair,
 	Account<T>: TryFrom<Accountable<T>, Error = accounts::AccountError>,
 {
 	let seed_array = create_test_seed_array();
@@ -63,7 +69,7 @@ where
 /// Helper function to create a public key only account (no private key).
 pub fn create_public_key_only_account<T>(full_account: &Account<T>) -> Account<T>
 where
-	T: accounts::KeyPair,
+	T: KeyPair,
 	Account<T>: TryFrom<Accountable<T>, Error = accounts::AccountError>,
 {
 	let public_key_string = full_account.keypair.to_public_key_string();
@@ -100,7 +106,35 @@ pub fn create_test_certificate_builder<T: KeyPair>(account: &Account<T>) -> Cert
 	CertificateBuilder::for_end_entity()
 		.with_subject_dn(subject_dn.clone())
 		.with_issuer_dn(subject_dn)
-		.with_serial_number(U256::from(12345u64))
+		.with_serial_number(SerialNumber::from(12345u64))
 		.with_validity_days(365)
 		.with_subject_public_key(subject_public_key_info)
+}
+
+/// Helper to create a KYCAttributes collection from test data
+pub fn create_test_kyc_attributes() -> KYCAttributes {
+	let mut builder = KYCAttributesBuilder::new();
+
+	for &(oid_str, value, is_sensitive) in TEST_KYC_ATTRIBUTES {
+		if is_sensitive {
+			builder = builder.with_sensitive(oid_str, value);
+		} else {
+			builder = builder.with_plain(oid_str, value);
+		}
+	}
+
+	builder.build().unwrap()
+}
+
+/// Helper to create individual test attributes
+pub fn create_test_attribute(oid_str: &str, value: &[u8], is_sensitive: bool) -> Attribute {
+	let mut builder = AttributeBuilder::new().with_oid(oid_str).with_value(value);
+
+	if is_sensitive {
+		builder = builder.as_sensitive();
+	} else {
+		builder = builder.as_plain();
+	}
+
+	builder.build().unwrap()
 }

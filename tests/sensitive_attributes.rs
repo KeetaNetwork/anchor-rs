@@ -290,7 +290,6 @@ fn test_custom_values_functionality<T: KeyPair>(account: Account<T>)
 where
 	Account<T>: TryFrom<Accountable<T>, Error = AccountError>,
 {
-	// Test with TypeScript test data
 	let scenario_original = TestScenario::with_account(account);
 	test_basic_functionality(&scenario_original);
 	test_proof_validation(scenario_original);
