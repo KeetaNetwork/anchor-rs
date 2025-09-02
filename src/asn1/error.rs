@@ -1,5 +1,5 @@
+use keetanetwork_utils::impl_error_from_with_fields;
 use snafu::Snafu;
-use utils::impl_error_from_with_fields;
 
 /// Error type for ASN.1.
 #[derive(Debug, Clone, PartialEq, Eq, Snafu)]
@@ -23,7 +23,7 @@ impl_error_from_with_fields!(AnchorAsn1Error, {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use utils::{test_error_from_conversions, test_error_variants};
+	use keetanetwork_utils::{test_error_from_conversions, test_error_variants};
 
 	test_error_from_conversions!(
 		test_from_conversions,

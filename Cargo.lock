@@ -3,25 +3,6 @@
 version = 4
 
 [[package]]
-name = "accounts"
-version = "0.1.0"
-source = "git+ssh://git@github.com/KeetaNetwork/node-rs.git?branch=main#ecabe33047b53291c10e98ceda318b23313a7023"
-dependencies = [
- "asn1",
- "base32",
- "bip39-dict",
- "crypto",
- "hex",
- "keetanet-error",
- "rand_core 0.9.3",
- "snafu",
- "strum",
- "strum_macros",
- "utils",
- "zeroize",
-]
-
-[[package]]
 name = "aead"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -57,27 +38,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "anchor-rs"
-version = "0.1.0"
-dependencies = [
- "accounts",
- "asn1",
- "base64",
- "crypto",
- "hex",
- "lazy_static",
- "rasn",
- "rasn-compiler",
- "rasn-derive",
- "serde",
- "serde_json",
- "snafu",
- "strum",
- "utils",
- "x509",
-]
-
-[[package]]
 name = "android-tzdata"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -90,20 +50,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "819e7219dbd41043ac279b19830f2efc897156490d7fd6ea916720117ee66311"
 dependencies = [
  "libc",
-]
-
-[[package]]
-name = "asn1"
-version = "0.1.0"
-source = "git+ssh://git@github.com/KeetaNetwork/node-rs.git?branch=main#ecabe33047b53291c10e98ceda318b23313a7023"
-dependencies = [
- "der",
- "hex",
- "rasn",
- "serde",
- "snafu",
- "spki",
- "utils",
 ]
 
 [[package]]
@@ -214,10 +160,11 @@ dependencies = [
 
 [[package]]
 name = "cc"
-version = "1.2.34"
+version = "1.2.35"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "42bc4aea80032b7bf409b0bc7ccad88853858911b7713a8062fdc0623867bedc"
+checksum = "590f9024a68a8c40351881787f1934dc11afd69090f5edb6831464694d836ea3"
 dependencies = [
+ "find-msvc-tools",
  "shlex",
 ]
 
@@ -298,46 +245,6 @@ name = "crossbeam-utils"
 version = "0.8.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d0a5c400df2834b80a4c3327b3aad3a4c4cd4de0629063962b03235697506a28"
-
-[[package]]
-name = "crypto"
-version = "0.1.0"
-source = "git+ssh://git@github.com/KeetaNetwork/node-rs.git?branch=main#ecabe33047b53291c10e98ceda318b23313a7023"
-dependencies = [
- "aead",
- "aes",
- "aes-gcm",
- "asn1",
- "base32",
- "base64",
- "bip39-dict",
- "cbc",
- "crypto-bigint 0.6.1",
- "ctr",
- "curve25519-dalek",
- "ed25519-dalek",
- "hex",
- "hkdf",
- "hmac",
- "k256",
- "keetanet-error",
- "p256",
- "pbkdf2",
- "rand",
- "rand_core 0.9.3",
- "secrecy",
- "sha1",
- "sha2",
- "sha3",
- "signature",
- "snafu",
- "strum",
- "strum_macros",
- "subtle",
- "utils",
- "x25519-dalek",
- "zeroize",
-]
 
 [[package]]
 name = "crypto-bigint"
@@ -538,6 +445,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "28dea519a9695b9977216879a3ebfddf92f1c08c05d984f8996aecd6ecdc811d"
 
 [[package]]
+name = "find-msvc-tools"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e178e4fba8a2726903f6ba98a6d221e76f9c12c650d5dc0e6afdc50677b49650"
+
+[[package]]
 name = "flagset"
 version = "0.4.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -720,11 +633,134 @@ dependencies = [
 ]
 
 [[package]]
-name = "keetanet-error"
+name = "keetanetwork-account"
 version = "0.1.0"
-source = "git+ssh://git@github.com/KeetaNetwork/node-rs.git?branch=main#ecabe33047b53291c10e98ceda318b23313a7023"
+source = "git+ssh://git@github.com/KeetaNetwork/node-rs.git?branch=main#c65f2deaf23a0bf26a09db598d521544bac4db8c"
+dependencies = [
+ "base32",
+ "bip39-dict",
+ "hex",
+ "keetanetwork-asn1",
+ "keetanetwork-crypto",
+ "keetanetwork-error",
+ "keetanetwork-utils",
+ "rand_core 0.9.3",
+ "snafu",
+ "strum",
+ "strum_macros",
+ "zeroize",
+]
+
+[[package]]
+name = "keetanetwork-anchor"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "hex",
+ "keetanetwork-account",
+ "keetanetwork-asn1",
+ "keetanetwork-crypto",
+ "keetanetwork-utils",
+ "keetanetwork-x509",
+ "lazy_static",
+ "rasn",
+ "rasn-compiler",
+ "rasn-derive",
+ "serde",
+ "serde_json",
+ "snafu",
+ "strum",
+]
+
+[[package]]
+name = "keetanetwork-asn1"
+version = "0.1.0"
+source = "git+ssh://git@github.com/KeetaNetwork/node-rs.git?branch=main#c65f2deaf23a0bf26a09db598d521544bac4db8c"
+dependencies = [
+ "der",
+ "hex",
+ "keetanetwork-utils",
+ "rasn",
+ "serde",
+ "snafu",
+ "spki",
+]
+
+[[package]]
+name = "keetanetwork-crypto"
+version = "0.1.0"
+source = "git+ssh://git@github.com/KeetaNetwork/node-rs.git?branch=main#c65f2deaf23a0bf26a09db598d521544bac4db8c"
+dependencies = [
+ "aead",
+ "aes",
+ "aes-gcm",
+ "base32",
+ "base64",
+ "bip39-dict",
+ "cbc",
+ "crypto-bigint 0.6.1",
+ "ctr",
+ "curve25519-dalek",
+ "ed25519-dalek",
+ "hex",
+ "hkdf",
+ "hmac",
+ "k256",
+ "keetanetwork-asn1",
+ "keetanetwork-error",
+ "keetanetwork-utils",
+ "p256",
+ "pbkdf2",
+ "rand",
+ "rand_core 0.9.3",
+ "secrecy",
+ "sha1",
+ "sha2",
+ "sha3",
+ "signature",
+ "snafu",
+ "strum",
+ "strum_macros",
+ "subtle",
+ "x25519-dalek",
+ "zeroize",
+]
+
+[[package]]
+name = "keetanetwork-error"
+version = "0.1.0"
+source = "git+ssh://git@github.com/KeetaNetwork/node-rs.git?branch=main#c65f2deaf23a0bf26a09db598d521544bac4db8c"
 dependencies = [
  "snafu",
+]
+
+[[package]]
+name = "keetanetwork-utils"
+version = "0.1.0"
+source = "git+ssh://git@github.com/KeetaNetwork/node-rs.git?branch=main#c65f2deaf23a0bf26a09db598d521544bac4db8c"
+dependencies = [
+ "rasn-compiler",
+]
+
+[[package]]
+name = "keetanetwork-x509"
+version = "0.1.0"
+source = "git+ssh://git@github.com/KeetaNetwork/node-rs.git?branch=main#c65f2deaf23a0bf26a09db598d521544bac4db8c"
+dependencies = [
+ "base64",
+ "chrono",
+ "der",
+ "hex",
+ "keetanetwork-account",
+ "keetanetwork-asn1",
+ "keetanetwork-crypto",
+ "keetanetwork-error",
+ "keetanetwork-utils",
+ "rasn",
+ "serde",
+ "serde_json",
+ "snafu",
+ "x509-cert",
 ]
 
 [[package]]
@@ -1410,14 +1446,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "utils"
-version = "0.1.0"
-source = "git+ssh://git@github.com/KeetaNetwork/node-rs.git?branch=main#ecabe33047b53291c10e98ceda318b23313a7023"
-dependencies = [
- "rasn-compiler",
-]
-
-[[package]]
 name = "uuid"
 version = "1.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1592,27 +1620,6 @@ dependencies = [
  "rand_core 0.6.4",
  "serde",
  "zeroize",
-]
-
-[[package]]
-name = "x509"
-version = "0.1.0"
-source = "git+ssh://git@github.com/KeetaNetwork/node-rs.git?branch=main#ecabe33047b53291c10e98ceda318b23313a7023"
-dependencies = [
- "accounts",
- "asn1",
- "base64",
- "chrono",
- "crypto",
- "der",
- "hex",
- "keetanet-error",
- "rasn",
- "serde",
- "serde_json",
- "snafu",
- "utils",
- "x509-cert",
 ]
 
 [[package]]

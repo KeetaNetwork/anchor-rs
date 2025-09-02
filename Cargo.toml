@@ -1,15 +1,11 @@
 [package]
-name = "anchor-rs"
+name = "keetanetwork-anchor"
 version = "0.1.0"
 edition = "2021"
 
 [lib]
-name = "anchor_rs"
-path = "src/lib/mod.rs"
-
-[[bin]]
-name = "anchor-rs"
-path = "src/main.rs"
+crate-type = ["staticlib", "rlib"]
+path = "src/lib.rs"
 
 [[example]]
 name = "certificates"
@@ -44,25 +40,25 @@ optional = true
 # From node-rs
 # TODO Publish these crates
 
-[dependencies.crypto]
+[dependencies.keetanetwork-crypto]
 git = "ssh://git@github.com/KeetaNetwork/node-rs.git"
 branch = "main"
 
-[dependencies.x509]
+[dependencies.keetanetwork-x509]
 git = "ssh://git@github.com/KeetaNetwork/node-rs.git"
 branch = "main"
 
-[dependencies.asn1]
+[dependencies.keetanetwork-asn1]
 git = "ssh://git@github.com/KeetaNetwork/node-rs.git"
 branch = "main"
 default-features = false
 features = ["rasn"]
 
-[dependencies.accounts]
+[dependencies.keetanetwork-account]
 git = "ssh://git@github.com/KeetaNetwork/node-rs.git"
 branch = "main"
 
-[dependencies.utils]
+[dependencies.keetanetwork-utils]
 git = "ssh://git@github.com/KeetaNetwork/node-rs.git"
 branch = "main"
 
@@ -70,10 +66,11 @@ branch = "main"
 
 [build-dependencies]
 rasn-compiler = "0.14.2"
-utils = { git = "ssh://git@github.com/KeetaNetwork/node-rs.git", branch = "main", features = [
+serde_json = "1.0"
+keetanetwork-utils = { git = "ssh://git@github.com/KeetaNetwork/node-rs.git", branch = "main", features = [
 	"build",
 ] }
 
 [features]
 default = ["serde"]
-serde = ["dep:serde", "dep:serde_json", "asn1/serde"]
+serde = ["dep:serde", "dep:serde_json", "keetanetwork-asn1/serde"]

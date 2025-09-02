@@ -40,10 +40,10 @@ pub enum SensitiveAttributeError {
 	InvalidAttributeIsPlain { name: String },
 
 	#[snafu(display("Account error: {source}"))]
-	AccountError { source: accounts::error::AccountError },
+	AccountError { source: keetanetwork_account::error::AccountError },
 
 	#[snafu(display("Cryptographic error: {source}"))]
-	CryptoError { source: crypto::error::CryptoError },
+	CryptoError { source: keetanetwork_crypto::error::CryptoError },
 
 	#[snafu(display("ASN.1 error: {source}"))]
 	Asn1Error { source: crate::asn1::error::AnchorAsn1Error },
@@ -55,9 +55,9 @@ crate::impl_variant_error_from!(SensitiveAttributeError, {
 
 crate::impl_source_error_from!(SensitiveAttributeError, {
 	crate::asn1::error::AnchorAsn1Error => Asn1Error,
-	crypto::error::CryptoError => CryptoError,
-	accounts::error::AccountError => AccountError,
-	crypto::error::AeadError => CryptoError
+	keetanetwork_crypto::error::CryptoError => CryptoError,
+	keetanetwork_account::error::AccountError => AccountError,
+	keetanetwork_crypto::error::AeadError => CryptoError
 });
 
 crate::impl_source_error_from_via!(SensitiveAttributeError, {
@@ -68,7 +68,7 @@ crate::impl_source_error_from_via!(SensitiveAttributeError, {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use utils::{test_error_from_conversions, test_error_variants};
+	use keetanetwork_utils::{test_error_from_conversions, test_error_variants};
 
 	test_error_from_conversions!(
 		test_from_conversions,
@@ -76,9 +76,9 @@ mod tests {
 		[
 			std::string::String::from_utf8(vec![0, 159, 146, 150]).unwrap_err(),
 			crate::asn1::error::AnchorAsn1Error::InvalidOid { reason: "test".to_string() },
-			crypto::error::CryptoError::InvalidKeyMaterial,
-			accounts::error::AccountError::InvalidKeyType,
-			crypto::error::AeadError,
+			keetanetwork_crypto::error::CryptoError::InvalidKeyMaterial,
+			keetanetwork_account::error::AccountError::InvalidKeyType,
+			keetanetwork_crypto::error::AeadError,
 		]
 	);
 

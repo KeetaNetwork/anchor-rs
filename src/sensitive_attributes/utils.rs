@@ -1,6 +1,6 @@
-use accounts::KeyPair;
-use crypto::algorithms::aes_gcm::Aes256Gcm;
-use crypto::operations::encryption::NonceGeneration;
+use keetanetwork_account::KeyPair;
+use keetanetwork_crypto::algorithms::aes_gcm::Aes256Gcm;
+use keetanetwork_crypto::operations::encryption::NonceGeneration;
 use rasn::prelude::*;
 
 use crate::generated::SensitiveAttributeCipher;
@@ -105,11 +105,11 @@ pub fn assert_attribute_is_plain(attribute: &crate::kyc_schema::Attribute, name:
 
 #[cfg(test)]
 mod tests {
-	use accounts::KeyECDSASECP256K1;
-	use crypto::algorithms::aes_gcm::Aes256Gcm;
-	use crypto::operations::encryption::{Aead, NonceGeneration};
-	use crypto::prelude::ExposeSecret;
-	use crypto::utils::generate_random_seed;
+	use keetanetwork_account::KeyECDSASECP256K1;
+	use keetanetwork_crypto::algorithms::aes_gcm::Aes256Gcm;
+	use keetanetwork_crypto::operations::encryption::{Aead, NonceGeneration};
+	use keetanetwork_crypto::prelude::ExposeSecret;
+	use keetanetwork_crypto::utils::generate_random_seed;
 	use rasn::prelude::*;
 
 	use super::*;

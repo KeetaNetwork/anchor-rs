@@ -39,7 +39,7 @@ crate::impl_source_error_from_via!(KycSchemaError, {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use utils::{test_error_from_conversions, test_error_variants};
+	use keetanetwork_utils::{test_error_from_conversions, test_error_variants};
 
 	test_error_from_conversions!(
 		test_from_conversions,

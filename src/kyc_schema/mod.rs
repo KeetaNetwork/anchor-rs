@@ -8,8 +8,8 @@
 //! # Quick Start
 //!
 //! ```rust
-//! use anchor_rs::kyc_schema::{AttributeBuilder, KYCAttributesBuilder};
-//! use anchor_rs::asn1::oids;
+//! use keetanetwork_anchor::kyc_schema::{AttributeBuilder, KYCAttributesBuilder};
+//! use keetanetwork_anchor::asn1::oids;
 //!
 //! // Create individual attributes
 //! let name_attr = AttributeBuilder::new()
@@ -50,8 +50,8 @@
 //! The module distinguishes between plain and sensitive attributes:
 //!
 //! ```rust
-//! use anchor_rs::kyc_schema::KYCAttributesBuilder;
-//! use anchor_rs::asn1::oids;
+//! use keetanetwork_anchor::kyc_schema::KYCAttributesBuilder;
+//! use keetanetwork_anchor::asn1::oids;
 //!
 //! let kyc_data = KYCAttributesBuilder::new()
 //!     // Plain text - for non-sensitive information
@@ -75,11 +75,11 @@
 //! KYC attributes support ASN.1 DER encoding for storage and transmission:
 //!
 //! ```rust
-//! use anchor_rs::kyc_schema::{
+//! use keetanetwork_anchor::kyc_schema::{
 //!     KYCAttributes,
 //!     KYCAttributesBuilder
 //! };
-//! use anchor_rs::asn1::oids;
+//! use keetanetwork_anchor::asn1::oids;
 //!
 //! let kyc_attributes = KYCAttributesBuilder::new()
 //!     .with_plain(oids::keeta::FULL_NAME, b"John Doe")
@@ -115,8 +115,8 @@ impl Attribute {
 	/// # Examples
 	///
 	/// ```rust
-	/// use anchor_rs::kyc_schema::AttributeBuilder;
-	/// use anchor_rs::asn1::oids;
+	/// use keetanetwork_anchor::kyc_schema::AttributeBuilder;
+	/// use keetanetwork_anchor::asn1::oids;
 	///
 	/// let sensitive_attr = AttributeBuilder::new()
 	///     .with_oid(oids::keeta::EMAIL)
@@ -158,8 +158,8 @@ impl KYCAttributes {
 	/// # Examples
 	///
 	/// ```rust
-	/// use anchor_rs::kyc_schema::{KYCAttributes, AttributeBuilder};
-	/// use anchor_rs::asn1::oids;
+	/// use keetanetwork_anchor::kyc_schema::{KYCAttributes, AttributeBuilder};
+	/// use keetanetwork_anchor::asn1::oids;
 	///
 	/// let mut kyc = KYCAttributes::new();
 	/// let attr = AttributeBuilder::new()
@@ -184,8 +184,8 @@ impl KYCAttributes {
 	/// # Examples
 	///
 	/// ```rust
-	/// use anchor_rs::kyc_schema::KYCAttributesBuilder;
-	/// use anchor_rs::asn1::oids;
+	/// use keetanetwork_anchor::kyc_schema::KYCAttributesBuilder;
+	/// use keetanetwork_anchor::asn1::oids;
 	///
 	/// let kyc = KYCAttributesBuilder::new()
 	///     .with_plain(oids::keeta::FULL_NAME, b"John Doe")
@@ -210,8 +210,8 @@ impl KYCAttributes {
 	/// # Examples
 	///
 	/// ```rust
-	/// use anchor_rs::kyc_schema::KYCAttributesBuilder;
-	/// use anchor_rs::asn1::oids;
+	/// use keetanetwork_anchor::kyc_schema::KYCAttributesBuilder;
+	/// use keetanetwork_anchor::asn1::oids;
 	///
 	/// let kyc = KYCAttributesBuilder::new()
 	///     .with_sensitive(oids::keeta::FULL_NAME, b"John Doe")
@@ -235,7 +235,7 @@ impl KYCAttributes {
 	/// # Examples
 	///
 	/// ```rust
-	/// use anchor_rs::kyc_schema::KYCAttributes;
+	/// use keetanetwork_anchor::kyc_schema::KYCAttributes;
 	///
 	/// let empty_kyc = KYCAttributes::new();
 	/// assert!(empty_kyc.is_empty());
@@ -252,8 +252,8 @@ impl KYCAttributes {
 	/// # Examples
 	///
 	/// ```rust
-	/// use anchor_rs::kyc_schema::KYCAttributesBuilder;
-	/// use anchor_rs::asn1::oids;
+	/// use keetanetwork_anchor::kyc_schema::KYCAttributesBuilder;
+	/// use keetanetwork_anchor::asn1::oids;
 	///
 	/// let kyc = KYCAttributesBuilder::new()
 	///     .with_sensitive(oids::keeta::FULL_NAME, b"John Doe")
@@ -283,8 +283,8 @@ impl KYCAttributes {
 	/// # Examples
 	///
 	/// ```rust
-	/// use anchor_rs::kyc_schema::KYCAttributesBuilder;
-	/// use anchor_rs::asn1::oids;
+	/// use keetanetwork_anchor::kyc_schema::KYCAttributesBuilder;
+	/// use keetanetwork_anchor::asn1::oids;
 	///
 	/// let kyc = KYCAttributesBuilder::new()
 	///     .with_plain(oids::ADDRESS_POSTAL_CODE, b"12345")
@@ -306,8 +306,8 @@ impl KYCAttributes {
 	/// # Examples
 	///
 	/// ```rust
-	/// use anchor_rs::kyc_schema::KYCAttributesBuilder;
-	/// use anchor_rs::asn1::oids;
+	/// use keetanetwork_anchor::kyc_schema::KYCAttributesBuilder;
+	/// use keetanetwork_anchor::asn1::oids;
 	///
 	/// let kyc = KYCAttributesBuilder::new()
 	///     .with_plain(oids::ADDRESS_POSTAL_CODE, b"12345")

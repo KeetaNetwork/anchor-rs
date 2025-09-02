@@ -7,7 +7,7 @@ use base64::Engine;
 ///
 /// # Example
 /// ```rust
-/// use anchor_rs::impl_source_error_from;
+/// use keetanetwork_anchor::impl_source_error_from;
 ///
 /// #[derive(Debug)]
 /// enum MyError {
@@ -41,8 +41,8 @@ macro_rules! impl_source_error_from {
 ///
 /// # Example
 /// ```rust
-/// use anchor_rs::impl_source_error_from_via;
-/// use anchor_rs::asn1::error::AnchorAsn1Error;
+/// use keetanetwork_anchor::impl_source_error_from_via;
+/// use keetanetwork_anchor::asn1::error::AnchorAsn1Error;
 ///
 /// #[derive(Debug)]
 /// enum MyError {
@@ -74,7 +74,7 @@ macro_rules! impl_source_error_from_via {
 ///
 /// # Example
 /// ```rust
-/// use anchor_rs::impl_variant_error_from;
+/// use keetanetwork_anchor::impl_variant_error_from;
 ///
 /// #[derive(Debug)]
 /// enum MyError {

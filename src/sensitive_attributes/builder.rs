@@ -6,9 +6,9 @@
 //! # Example
 //!
 //! ```rust
-//! # use anchor_rs::doc_utils;
-//! use anchor_rs::sensitive_attributes::SensitiveAttributeBuilder;
-//! use crypto::prelude::ExposeSecret;
+//! # use keetanetwork_anchor::doc_utils;
+//! use keetanetwork_anchor::sensitive_attributes::SensitiveAttributeBuilder;
+//! use keetanetwork_crypto::prelude::ExposeSecret;
 //!
 //! // Create a test account
 //! # let account = doc_utils::create_secp256k1_test_account(None);
@@ -29,11 +29,11 @@
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 
-use accounts::KeyPair;
-use crypto::algorithms::aes_gcm::Aes256Gcm;
-use crypto::operations::encryption::{Aead, NonceGeneration};
-use crypto::prelude::{ExposeSecret, HashAlgorithm};
-use crypto::utils::generate_random_seed;
+use keetanetwork_account::KeyPair;
+use keetanetwork_crypto::algorithms::aes_gcm::Aes256Gcm;
+use keetanetwork_crypto::operations::encryption::{Aead, NonceGeneration};
+use keetanetwork_crypto::prelude::{ExposeSecret, HashAlgorithm};
+use keetanetwork_crypto::utils::generate_random_seed;
 use rasn::prelude::*;
 
 use crate::asn1::oids;
@@ -49,10 +49,9 @@ pub type Result<T> = std::result::Result<T, SensitiveAttributeError>;
 /// # Example
 ///
 /// ```rust
-/// # use anchor_rs::doc_utils;
-/// use anchor_rs::sensitive_attributes::SensitiveAttributeBuilder;
+/// # use keetanetwork_anchor::doc_utils;
+/// use keetanetwork_anchor::sensitive_attributes::SensitiveAttributeBuilder;
 ///
-/// // Create an account with encryption support
 /// # let account = doc_utils::create_secp256k1_test_account(None);
 ///
 /// // Create a sensitive attribute containing personal data
@@ -68,6 +67,7 @@ pub type Result<T> = std::result::Result<T, SensitiveAttributeError>;
 pub struct SensitiveAttributeBuilder {
 	value: Option<Vec<u8>>,
 }
+
 impl SensitiveAttributeBuilder {
 	/// Creates a new empty builder.
 	pub fn new() -> Self {
@@ -83,7 +83,7 @@ impl SensitiveAttributeBuilder {
 	/// # Example
 	///
 	/// ```rust
-	/// use anchor_rs::sensitive_attributes::SensitiveAttributeBuilder;
+	/// use keetanetwork_anchor::sensitive_attributes::SensitiveAttributeBuilder;
 	///
 	/// // With byte slice
 	/// let builder1 = SensitiveAttributeBuilder::new()
@@ -117,8 +117,8 @@ impl SensitiveAttributeBuilder {
 	/// # Example
 	///
 	/// ```rust
-	/// # use anchor_rs::doc_utils;
-	/// use anchor_rs::sensitive_attributes::SensitiveAttributeBuilder;
+	/// # use keetanetwork_anchor::doc_utils;
+	/// use keetanetwork_anchor::sensitive_attributes::SensitiveAttributeBuilder;
 	///
 	/// let account = doc_utils::create_secp256k1_test_account(None);
 	///
@@ -183,16 +183,18 @@ impl SensitiveAttributeBuilder {
 
 #[cfg(test)]
 mod tests {
+	use keetanetwork_account::{Account, KeyNETWORK};
+
 	use super::*;
 	use crate::test_all_key_types;
 
-	test_all_key_types!(test_sensitive_attribute_builder_with_real_keypair, |account: accounts::Account<_>| {
+	test_all_key_types!(test_sensitive_attribute_builder_with_real_keypair, |account: Account<_>| {
 		let builder = SensitiveAttributeBuilder::new().with_value(b"test value");
 		let result = builder.build(&account.keypair);
 		assert!(result.is_ok());
 	});
 
-	test_all_key_types!(test_sensitive_attribute_builder_missing_value, |account: accounts::Account<_>| {
+	test_all_key_types!(test_sensitive_attribute_builder_missing_value, |account: Account<_>| {
 		let builder = SensitiveAttributeBuilder::new();
 		let result = builder.build(&account.keypair);
 		assert!(result.is_err());
@@ -201,7 +203,7 @@ mod tests {
 
 	#[test]
 	fn test_sensitive_attribute_builder_unsupported_key_type() {
-		let network_account = accounts::Account::<accounts::KeyNETWORK>::generate_network_address(1).unwrap();
+		let network_account = Account::<KeyNETWORK>::generate_network_address(1).unwrap();
 		let builder = SensitiveAttributeBuilder::new().with_value(b"test value");
 		let result = builder.build(&network_account.keypair);
 		assert!(result.is_err());

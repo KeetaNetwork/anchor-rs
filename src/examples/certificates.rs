@@ -3,8 +3,8 @@
 //! This example demonstrates creating accounts from seeds.
 //! This is a basic building block for certificate creation.
 
-use accounts::{Account, Accountable, KeyPair, Keyable};
-use crypto::prelude::IntoSecret;
+use keetanetwork_account::{Account, Accountable, KeyECDSASECP256K1, KeyPair, Keyable};
+use keetanetwork_crypto::prelude::IntoSecret;
 
 const TEST_SEED: &str = "D6986115BE7334E50DA8D73B1A4670A510E8BF47E8C5C9960B8F5248EC7D6E3D";
 
@@ -28,11 +28,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 fn create_account_from_seed(
 	seed_hex: &str,
 	index: u32,
-) -> Result<Account<accounts::KeyECDSASECP256K1>, Box<dyn std::error::Error>> {
+) -> Result<Account<KeyECDSASECP256K1>, Box<dyn std::error::Error>> {
 	// Use the HexSeed variant directly - much cleaner!
 	let keyable = Keyable::HexSeed((seed_hex.to_string().into_secret(), index));
-	let accountable = Accountable::KeyAndType(keyable, accounts::KeyECDSASECP256K1::KEY_PAIR_TYPE);
-	let account = Account::<accounts::KeyECDSASECP256K1>::try_from(accountable)?;
+	let accountable = Accountable::KeyAndType(keyable, KeyECDSASECP256K1::KEY_PAIR_TYPE);
+	let account = Account::<KeyECDSASECP256K1>::try_from(accountable)?;
 
 	Ok(account)
 }

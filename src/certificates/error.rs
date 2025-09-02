@@ -12,7 +12,7 @@ pub enum CertificateError {
 	SensitiveAttributeError { source: SensitiveAttributeError },
 
 	#[snafu(display("X.509 certificate error: {}", source))]
-	X509Error { source: x509::error::CertificateError },
+	X509Error { source: keetanetwork_x509::error::CertificateError },
 
 	#[snafu(display("ASN.1 error: {}", source))]
 	Asn1Error { source: AnchorAsn1Error },
@@ -32,7 +32,7 @@ pub enum CertificateError {
 
 crate::impl_source_error_from!(CertificateError, {
 	SensitiveAttributeError => SensitiveAttributeError,
-	x509::error::CertificateError => X509Error,
+	keetanetwork_x509::error::CertificateError => X509Error,
 	AnchorAsn1Error => Asn1Error,
 	KycSchemaError => KycSchemaError,
 	rasn::error::EncodeError => Asn1Error,
@@ -42,7 +42,7 @@ crate::impl_source_error_from!(CertificateError, {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use utils::{test_error_from_conversions, test_error_variants};
+	use keetanetwork_utils::{test_error_from_conversions, test_error_variants};
 
 	test_error_from_conversions!(
 		test_from_conversions,

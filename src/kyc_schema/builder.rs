@@ -12,8 +12,8 @@
 //! # Basic Usage
 //!
 //! ```rust
-//! use anchor_rs::asn1::oids;
-//! use anchor_rs::kyc_schema::builder::{
+//! use keetanetwork_anchor::asn1::oids;
+//! use keetanetwork_anchor::kyc_schema::builder::{
 //!     AttributeBuilder,
 //!     KYCAttributesBuilder
 //! };
@@ -51,8 +51,8 @@ use crate::generated::{Attribute, AttributeValue, KYCAttributes};
 /// # Examples
 ///
 /// ```rust
-/// use anchor_rs::asn1::oids;
-/// use anchor_rs::kyc_schema::builder::AttributeBuilder;
+/// use keetanetwork_anchor::asn1::oids;
+/// use keetanetwork_anchor::kyc_schema::builder::AttributeBuilder;
 ///
 /// // Create a plain text attribute
 /// let name_attr = AttributeBuilder::new()
@@ -94,8 +94,8 @@ impl AttributeBuilder {
 	/// # Examples
 	///
 	/// ```rust
-	/// use anchor_rs::asn1::oids;
-	/// use anchor_rs::kyc_schema::builder::AttributeBuilder;
+	/// use keetanetwork_anchor::asn1::oids;
+	/// use keetanetwork_anchor::kyc_schema::builder::AttributeBuilder;
 	///
 	/// let builder = AttributeBuilder::new()
 	///     .with_oid(oids::keeta::FULL_NAME);
@@ -114,7 +114,7 @@ impl AttributeBuilder {
 	/// # Examples
 	///
 	/// ```rust
-	/// use anchor_rs::kyc_schema::builder::AttributeBuilder;
+	/// use keetanetwork_anchor::kyc_schema::builder::AttributeBuilder;
 	///
 	/// let builder = AttributeBuilder::new()
 	///     .with_value(b"John Doe")
@@ -134,8 +134,8 @@ impl AttributeBuilder {
 	/// # Examples
 	///
 	/// ```rust
-	/// use anchor_rs::kyc_schema::builder::AttributeBuilder;
-	/// use anchor_rs::asn1::oids;
+	/// use keetanetwork_anchor::kyc_schema::builder::AttributeBuilder;
+	/// use keetanetwork_anchor::asn1::oids;
 	///
 	/// let sensitive_attr = AttributeBuilder::new()
 	///     .with_oid(oids::keeta::EMAIL)
@@ -158,8 +158,8 @@ impl AttributeBuilder {
 	/// # Examples
 	///
 	/// ```rust
-	/// use anchor_rs::kyc_schema::builder::AttributeBuilder;
-	/// use anchor_rs::asn1::oids;
+	/// use keetanetwork_anchor::kyc_schema::builder::AttributeBuilder;
+	/// use keetanetwork_anchor::asn1::oids;
 	///
 	/// let plain_attr = AttributeBuilder::new()
 	///     .with_oid(oids::ADDRESS_POSTAL_CODE)
@@ -186,8 +186,8 @@ impl AttributeBuilder {
 	/// # Examples
 	///
 	/// ```rust
-	/// use anchor_rs::kyc_schema::builder::AttributeBuilder;
-	/// use anchor_rs::asn1::oids;
+	/// use keetanetwork_anchor::kyc_schema::builder::AttributeBuilder;
+	/// use keetanetwork_anchor::asn1::oids;
 	///
 	/// let attribute = AttributeBuilder::new()
 	///     .with_oid(oids::keeta::FULL_NAME)
@@ -223,8 +223,8 @@ impl AttributeBuilder {
 /// # Examples
 ///
 /// ```rust
-/// use anchor_rs::kyc_schema::builder::KYCAttributesBuilder;
-/// use anchor_rs::asn1::oids;
+/// use keetanetwork_anchor::kyc_schema::builder::KYCAttributesBuilder;
+/// use keetanetwork_anchor::asn1::oids;
 ///
 /// let kyc_attributes = KYCAttributesBuilder::new()
 ///     .with_sensitive(oids::keeta::FULL_NAME, b"John Doe")
@@ -256,8 +256,8 @@ impl KYCAttributesBuilder {
 	/// # Examples
 	///
 	/// ```rust
-	/// use anchor_rs::kyc_schema::builder::{AttributeBuilder, KYCAttributesBuilder};
-	/// use anchor_rs::asn1::oids;
+	/// use keetanetwork_anchor::kyc_schema::builder::{AttributeBuilder, KYCAttributesBuilder};
+	/// use keetanetwork_anchor::asn1::oids;
 	///
 	/// let attribute = AttributeBuilder::new()
 	///     .with_oid(oids::keeta::FULL_NAME)
@@ -290,8 +290,8 @@ impl KYCAttributesBuilder {
 	/// # Examples
 	///
 	/// ```rust
-	/// use anchor_rs::kyc_schema::builder::KYCAttributesBuilder;
-	/// use anchor_rs::asn1::oids;
+	/// use keetanetwork_anchor::kyc_schema::builder::KYCAttributesBuilder;
+	/// use keetanetwork_anchor::asn1::oids;
 	///
 	/// let kyc_attributes = KYCAttributesBuilder::new()
 	///     .with_plain(oids::ADDRESS_POSTAL_CODE, b"12345")
@@ -332,8 +332,8 @@ impl KYCAttributesBuilder {
 	/// # Examples
 	///
 	/// ```rust
-	/// use anchor_rs::kyc_schema::builder::KYCAttributesBuilder;
-	/// use anchor_rs::asn1::oids;
+	/// use keetanetwork_anchor::kyc_schema::builder::KYCAttributesBuilder;
+	/// use keetanetwork_anchor::asn1::oids;
 	///
 	/// let kyc_attributes = KYCAttributesBuilder::new()
 	///     .with_sensitive(oids::keeta::EMAIL, b"john@example.com")
@@ -374,8 +374,8 @@ impl KYCAttributesBuilder {
 	/// # Examples
 	///
 	/// ```rust
-	/// use anchor_rs::kyc_schema::builder::KYCAttributesBuilder;
-	/// use anchor_rs::asn1::oids;
+	/// use keetanetwork_anchor::kyc_schema::builder::KYCAttributesBuilder;
+	/// use keetanetwork_anchor::asn1::oids;
 	///
 	/// let kyc_attributes = KYCAttributesBuilder::new()
 	///     .with_plain(oids::keeta::FULL_NAME, b"John Doe")

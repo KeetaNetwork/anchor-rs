@@ -3,10 +3,10 @@
 
 use std::convert::TryFrom;
 
-use accounts::{Account, Accountable, KeyPair, Keyable, Seed};
-use asn1::SubjectPublicKeyInfo;
-use crypto::prelude::IntoSecret;
-use x509::SerialNumber;
+use keetanetwork_account::{Account, AccountError, Accountable, KeyPair, Keyable, Seed};
+use keetanetwork_asn1::SubjectPublicKeyInfo;
+use keetanetwork_crypto::prelude::IntoSecret;
+use keetanetwork_x509::SerialNumber;
 
 use crate::certificates::CertificateBuilder;
 use crate::kyc_schema::{Attribute, AttributeBuilder, KYCAttributes, KYCAttributesBuilder};
@@ -29,7 +29,7 @@ macro_rules! test_all_key_types {
 	($test_name:ident, $test_body:expr) => {
 		#[test]
 		fn $test_name() {
-			use accounts::{KeyECDSASECP256K1, KeyECDSASECP256R1, KeyED25519};
+			use keetanetwork_account::{KeyECDSASECP256K1, KeyECDSASECP256R1, KeyED25519};
 			use $crate::testing::create_account_from_seed;
 
 			// Test with ECDSA SECP256K1
@@ -58,7 +58,7 @@ pub fn create_test_seed_array() -> Seed {
 pub fn create_account_from_seed<T>(index: u32) -> Account<T>
 where
 	T: KeyPair,
-	Account<T>: TryFrom<Accountable<T>, Error = accounts::AccountError>,
+	Account<T>: TryFrom<Accountable<T>, Error = AccountError>,
 {
 	let seed_array = create_test_seed_array();
 	let seed = Keyable::Seed((seed_array, index));
@@ -70,7 +70,7 @@ where
 pub fn create_public_key_only_account<T>(full_account: &Account<T>) -> Account<T>
 where
 	T: KeyPair,
-	Account<T>: TryFrom<Accountable<T>, Error = accounts::AccountError>,
+	Account<T>: TryFrom<Accountable<T>, Error = AccountError>,
 {
 	let public_key_string = full_account.keypair.to_public_key_string();
 	let keyable = Keyable::PublicKeyString(public_key_string);
@@ -80,7 +80,7 @@ where
 
 /// Helper function to create a sensitive attribute and proof for testing.
 pub fn create_test_sensitive_attribute_with_proof<T: KeyPair>(
-	account: &accounts::Account<T>,
+	account: &Account<T>,
 	test_value: &[u8],
 ) -> (SensitiveAttribute, SensitiveAttributeProof) {
 	let builder = SensitiveAttributeBuilder::new().with_value(test_value);
@@ -90,17 +90,14 @@ pub fn create_test_sensitive_attribute_with_proof<T: KeyPair>(
 }
 
 /// Helper function to create just a sensitive attribute for testing.
-pub fn create_test_sensitive_attribute<T: KeyPair>(
-	account: &accounts::Account<T>,
-	test_value: &[u8],
-) -> SensitiveAttribute {
+pub fn create_test_sensitive_attribute<T: KeyPair>(account: &Account<T>, test_value: &[u8]) -> SensitiveAttribute {
 	let builder = SensitiveAttributeBuilder::new().with_value(test_value);
 	builder.build(&account.keypair).unwrap()
 }
 
 /// Helper function to create a CertificateBuilder with default test data.
 pub fn create_test_certificate_builder<T: KeyPair>(account: &Account<T>) -> CertificateBuilder {
-	let subject_dn = x509::utils::create_dn(&[(x509::oids::CN, "Test Subject")]).unwrap();
+	let subject_dn = keetanetwork_x509::utils::create_dn(&[(keetanetwork_x509::oids::CN, "Test Subject")]).unwrap();
 	let subject_public_key_info = SubjectPublicKeyInfo::try_from(account).unwrap();
 
 	CertificateBuilder::for_end_entity()

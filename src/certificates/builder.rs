@@ -13,19 +13,22 @@
 //! # Basic Usage
 //!
 //! ```rust
-//! # use anchor_rs::doc_utils;
-//! use anchor_rs::certificates::CertificateBuilder;
-//! use crypto::prelude::IntoSecret;
-//! use x509::SerialNumber;
+//! # use keetanetwork_anchor::doc_utils;
+//! use keetanetwork_anchor::certificates::CertificateBuilder;
+//! use keetanetwork_asn1::SubjectPublicKeyInfo;
+//! use keetanetwork_crypto::prelude::IntoSecret;
+//! use keetanetwork_x509::SerialNumber;
+//! use keetanetwork_x509::utils::create_dn;
+//! use keetanetwork_x509::oids;
 //!
 //! # let subject_account = doc_utils::create_secp256k1_test_account(Some(0));
 //! # let issuer_account = doc_utils::create_secp256k1_test_account(Some(1));
-//! # let issuer_dn = x509::utils::create_dn(&[(x509::oids::CN, "Test Issuer")])?;
+//! # let issuer_dn = create_dn(&[(oids::CN, "Test Issuer")])?;
 //!
 //! // Create a distinguished name for the subject
-//! let subject_dn = x509::utils::create_dn(&[(x509::oids::CN, "Test Subject")])?;
+//! let subject_dn = create_dn(&[(oids::CN, "Test Subject")])?;
 //! // Get the subject public key info from the subject's account
-//! let subject_public_key_info = asn1::SubjectPublicKeyInfo::try_from(&subject_account)?;
+//! let subject_public_key_info = SubjectPublicKeyInfo::try_from(&subject_account)?;
 //! // Create a certificate with KYC attributes
 //! let certificate = CertificateBuilder::for_end_entity()
 //!     .with_subject_dn(subject_dn)
@@ -46,18 +49,22 @@
 //! # Creating Different Certificate Types
 //!
 //! ```rust
-//! # use anchor_rs::doc_utils;
-//! use anchor_rs::certificates::CertificateBuilder;
+//! # use keetanetwork_anchor::doc_utils;
+//! # use keetanetwork_x509::utils::create_dn;
+//! # use keetanetwork_asn1::SubjectPublicKeyInfo;
+//! # use keetanetwork_x509::oids;
+//! use keetanetwork_anchor::certificates::CertificateBuilder;
+//! use keetanetwork_x509::SerialNumber;
 //!
 //! # let account = doc_utils::create_secp256k1_test_account(None);
-//! # let dn = x509::utils::create_dn(&[(x509::oids::CN, "Test")]).unwrap();
-//! # let public_key_info = asn1::SubjectPublicKeyInfo::try_from(&account).unwrap();
+//! # let dn = create_dn(&[(oids::CN, "Test")]).unwrap();
+//! # let public_key_info = SubjectPublicKeyInfo::try_from(&account).unwrap();
 //!
 //! // End-entity certificate (default for user certificates)
 //! let end_entity_cert = CertificateBuilder::for_end_entity()
 //!     .with_subject_dn(dn.clone())
 //!     .with_issuer_dn(dn.clone())
-//!     .with_serial_number(x509::SerialNumber::from(1u64))
+//!     .with_serial_number(SerialNumber::from(1u64))
 //!     .with_validity_days(365)
 //!     .with_subject_public_key(public_key_info.clone())
 //!     .build(&account.keypair, &account.keypair)?;
@@ -66,7 +73,7 @@
 //! let ca_cert = CertificateBuilder::for_ca()
 //!     .with_subject_dn(dn.clone())
 //!     .with_issuer_dn(dn)
-//!     .with_serial_number(x509::SerialNumber::from(2u64))
+//!     .with_serial_number(SerialNumber::from(2u64))
 //!     .with_validity_days(3650) // 10 years for CA
 //!     .with_subject_public_key(public_key_info)
 //!     .with_basic_constraints(true, Some(5)) // CA with path length 5
@@ -77,9 +84,9 @@
 //! # Working with KYC Attributes
 //!
 //! ```rust
-//! # use anchor_rs::doc_utils;
-//! use anchor_rs::certificates::CertificateBuilder;
-//! use crypto::prelude::IntoSecret;
+//! # use keetanetwork_anchor::doc_utils;
+//! use keetanetwork_anchor::certificates::CertificateBuilder;
+//! use keetanetwork_crypto::prelude::{IntoSecret, ExposeSecret};
 //!
 //! # let account = doc_utils::create_secp256k1_test_account(None);
 //! # let certificate_builder = doc_utils::create_test_certificate_builder(&account);
@@ -108,24 +115,23 @@
 //! # Advanced X.509 Features
 //!
 //! ```rust
-//! # use anchor_rs::doc_utils;
-//! use anchor_rs::certificates::CertificateBuilder;
-//! use x509::certificates::ExtensionBuilder;
+//! # use keetanetwork_anchor::doc_utils;
+//! use keetanetwork_anchor::certificates::CertificateBuilder;
+//! use keetanetwork_x509::certificates::ExtensionBuilder;
 //!
 //! # let account = doc_utils::create_secp256k1_test_account(None);
 //! # let certificate_builder = doc_utils::create_test_certificate_builder(&account);
+//! let extension = ExtensionBuilder::new()
+//!     .with_oid("2.5.29.37") // Extended Key Usage
+//!     .with_value(vec![0x30, 0x0a, 0x06, 0x08, 0x2b, 0x06, 0x01, 0x05, 0x05, 0x07, 0x03, 0x02])
+//!     .with_critical(false)
+//!     .build()?;
 //!
 //! // Add custom X.509 extensions and constraints
 //! let certificate = certificate_builder
 //!     .with_key_usage(0x06) // Digital signature and key encipherment
 //!     .with_basic_constraints(false, None) // Not a CA
-//!     .with_extension(
-//!         ExtensionBuilder::new()
-//!             .with_oid("2.5.29.37") // Extended Key Usage
-//!             .with_value(vec![0x30, 0x0a, 0x06, 0x08, 0x2b, 0x06, 0x01, 0x05, 0x05, 0x07, 0x03, 0x02])
-//!             .with_critical(false)
-//!             .build()?
-//!     )
+//!     .with_extension(extension)
 //!     .build(&account.keypair, &account.keypair)?;
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
@@ -133,9 +139,9 @@
 //! # Error Handling
 //!
 //! ```rust
-//! # use anchor_rs::doc_utils;
-//! use anchor_rs::certificates::{CertificateBuilder, CertificateError};
-//! use crypto::prelude::IntoSecret;
+//! # use keetanetwork_anchor::doc_utils;
+//! use keetanetwork_anchor::certificates::{CertificateBuilder, CertificateError};
+//! use keetanetwork_crypto::prelude::IntoSecret;
 //!
 //! # let account = doc_utils::create_secp256k1_test_account(None);
 //! # let certificate_builder = doc_utils::create_test_certificate_builder(&account);
@@ -164,11 +170,11 @@
 
 use std::collections::HashMap;
 
-use accounts::{Account, KeyPair};
-use asn1::SubjectPublicKeyInfo;
-use crypto::prelude::{CryptoSignerWithOptions, SecretBox, SignatureEncoding};
-use x509::certificates::{CertificateBuilder as X509CertificateBuilder, Extension, ExtensionBuilder};
-use x509::{DistinguishedName, SerialNumber};
+use keetanetwork_account::{Account, AccountError, Accountable, KeyPair};
+use keetanetwork_asn1::SubjectPublicKeyInfo;
+use keetanetwork_crypto::prelude::{CryptoSignerWithOptions, SecretBox, SignatureEncoding};
+use keetanetwork_x509::certificates::{CertificateBuilder as X509CertificateBuilder, Extension, ExtensionBuilder};
+use keetanetwork_x509::{DistinguishedName, SerialNumber};
 
 use crate::asn1::oids;
 use crate::certificates::{Certificate, CertificateError};
@@ -194,16 +200,19 @@ use crate::sensitive_attributes::{KycAttributeEntry, SensitiveAttributeBuilder};
 /// ## Basic End-Entity Certificate
 ///
 /// ```rust
-/// # use anchor_rs::doc_utils;
-/// use anchor_rs::certificates::CertificateBuilder;
-/// use crypto::prelude::IntoSecret;
-/// use x509::SerialNumber;
+/// # use keetanetwork_anchor::doc_utils;
+/// # use keetanetwork_x509::utils::create_dn;
+/// # use keetanetwork_x509::oids;
+/// # use keetanetwork_asn1::SubjectPublicKeyInfo;
+/// use keetanetwork_anchor::certificates::CertificateBuilder;
+/// use keetanetwork_crypto::prelude::IntoSecret;
+/// use keetanetwork_x509::SerialNumber;
 ///
 /// # let subject_account = doc_utils::create_secp256k1_test_account(Some(0));
 /// # let issuer_account = doc_utils::create_secp256k1_test_account(Some(1));
-/// # let subject_dn = x509::utils::create_dn(&[(x509::oids::CN, "Test Subject")]).unwrap();
-/// # let issuer_dn = x509::utils::create_dn(&[(x509::oids::CN, "Test Issuer")]).unwrap();
-/// # let subject_public_key_info = asn1::SubjectPublicKeyInfo::try_from(&subject_account).unwrap();
+/// # let subject_dn = create_dn(&[(oids::CN, "Test Subject")]).unwrap();
+/// # let issuer_dn = create_dn(&[(oids::CN, "Test Issuer")]).unwrap();
+/// # let subject_public_key_info = SubjectPublicKeyInfo::try_from(&subject_account).unwrap();
 ///
 /// let certificate = CertificateBuilder::for_end_entity()
 ///     .with_subject_dn(subject_dn)
@@ -222,17 +231,21 @@ use crate::sensitive_attributes::{KycAttributeEntry, SensitiveAttributeBuilder};
 /// ## CA Certificate with Advanced Features
 ///
 /// ```rust
-/// # use anchor_rs::doc_utils;
-/// use anchor_rs::certificates::CertificateBuilder;
+/// # use keetanetwork_anchor::doc_utils;
+/// # use keetanetwork_x509::utils::create_dn;
+/// # use keetanetwork_x509::oids;
+/// # use keetanetwork_asn1::SubjectPublicKeyInfo;
+/// use keetanetwork_x509::SerialNumber;
+/// use keetanetwork_anchor::certificates::CertificateBuilder;
 ///
 /// # let ca_account = doc_utils::create_secp256k1_test_account(None);
-/// # let ca_dn = x509::utils::create_dn(&[(x509::oids::CN, "Test CA")]).unwrap();
-/// # let ca_public_key_info = asn1::SubjectPublicKeyInfo::try_from(&ca_account).unwrap();
+/// # let ca_dn = create_dn(&[(oids::CN, "Test CA")]).unwrap();
+/// # let ca_public_key_info = SubjectPublicKeyInfo::try_from(&ca_account).unwrap();
 ///
 /// let ca_certificate = CertificateBuilder::for_ca()
 ///     .with_subject_dn(ca_dn.clone())
 ///     .with_issuer_dn(ca_dn) // Self-signed
-///     .with_serial_number(x509::SerialNumber::from(1u64))
+///     .with_serial_number(SerialNumber::from(1u64))
 ///     .with_validity_days(3650) // 10 years
 ///     .with_subject_public_key(ca_public_key_info)
 ///     .with_basic_constraints(true, Some(3)) // CA with path length 3
@@ -270,7 +283,7 @@ impl CertificateBuilder {
 	/// # Examples
 	///
 	/// ```rust
-	/// use anchor_rs::certificates::CertificateBuilder;
+	/// use keetanetwork_anchor::certificates::CertificateBuilder;
 	///
 	/// let builder = CertificateBuilder::for_end_entity();
 	/// // Add subject, issuer, and other required fields...
@@ -287,7 +300,7 @@ impl CertificateBuilder {
 	/// # Examples
 	///
 	/// ```rust
-	/// use anchor_rs::certificates::CertificateBuilder;
+	/// use keetanetwork_anchor::certificates::CertificateBuilder;
 	///
 	/// let builder = CertificateBuilder::for_ca();
 	/// // Add required extensions...
@@ -321,9 +334,9 @@ impl CertificateBuilder {
 	/// # Examples
 	///
 	/// ```rust
-	/// use anchor_rs::certificates::CertificateBuilder;
-	/// use anchor_rs::sensitive_attributes::KycAttributeEntry;
-	/// use crypto::prelude::IntoSecret;
+	/// use keetanetwork_anchor::certificates::CertificateBuilder;
+	/// use keetanetwork_anchor::sensitive_attributes::KycAttributeEntry;
+	/// use keetanetwork_crypto::prelude::IntoSecret;
 	///
 	/// let builder = CertificateBuilder::new()
 	///     // Add plain text attribute
@@ -370,7 +383,7 @@ impl CertificateBuilder {
 	/// # Examples
 	///
 	/// ```rust
-	/// use anchor_rs::certificates::CertificateBuilder;
+	/// use keetanetwork_anchor::certificates::CertificateBuilder;
 	///
 	/// let builder = CertificateBuilder::new()
 	///     .with_plain_attribute("postalCode", "12345");
@@ -396,8 +409,8 @@ impl CertificateBuilder {
 	/// # Examples
 	///
 	/// ```rust
-	/// use anchor_rs::certificates::CertificateBuilder;
-	/// use crypto::prelude::IntoSecret;
+	/// use keetanetwork_anchor::certificates::CertificateBuilder;
+	/// use keetanetwork_crypto::prelude::IntoSecret;
 	///
 	/// let builder = CertificateBuilder::new()
 	///     .with_sensitive_attribute("email", b"john@example.com".to_vec().into_secret())
@@ -421,10 +434,11 @@ impl CertificateBuilder {
 	/// # Examples
 	///
 	/// ```rust
-	/// use anchor_rs::certificates::CertificateBuilder;
-	/// use x509::oids;
+	/// use keetanetwork_anchor::certificates::CertificateBuilder;
+	/// use keetanetwork_x509::oids;
+	/// use keetanetwork_x509::utils::create_dn;
 	///
-	/// let subject_dn = x509::utils::create_dn(&[
+	/// let subject_dn = create_dn(&[
 	///     (oids::CN, "John Doe"),
 	///     (oids::O, "Example Corp"),
 	///     (oids::C, "US"),
@@ -452,10 +466,11 @@ impl CertificateBuilder {
 	/// # Examples
 	///
 	/// ```rust
-	/// use anchor_rs::certificates::CertificateBuilder;
-	/// use x509::oids;
+	/// use keetanetwork_anchor::certificates::CertificateBuilder;
+	/// use keetanetwork_x509::oids;
+	/// use keetanetwork_x509::utils::create_dn;
 	///
-	/// let issuer_dn = x509::utils::create_dn(&[
+	/// let issuer_dn = create_dn(&[
 	///     (oids::CN, "Example CA"),
 	///     (oids::O, "Example Corp"),
 	///     (oids::C, "US"),
@@ -483,8 +498,8 @@ impl CertificateBuilder {
 	/// # Examples
 	///
 	/// ```rust
-	/// use anchor_rs::certificates::CertificateBuilder;
-	/// use x509::SerialNumber;
+	/// use keetanetwork_anchor::certificates::CertificateBuilder;
+	/// use keetanetwork_x509::SerialNumber;
 	///
 	/// let builder = CertificateBuilder::new()
 	///     .with_serial_number(SerialNumber::from(12345u64));
@@ -507,7 +522,7 @@ impl CertificateBuilder {
 	/// # Examples
 	///
 	/// ```rust
-	/// use anchor_rs::certificates::CertificateBuilder;
+	/// use keetanetwork_anchor::certificates::CertificateBuilder;
 	///
 	/// // End-entity certificate valid for 1 year
 	/// let user_cert_builder = CertificateBuilder::for_end_entity()
@@ -534,9 +549,9 @@ impl CertificateBuilder {
 	/// # Examples
 	///
 	/// ```rust
-	/// # use anchor_rs::doc_utils;
-	/// use anchor_rs::certificates::CertificateBuilder;
-	/// use asn1::SubjectPublicKeyInfo;
+	/// # use keetanetwork_anchor::doc_utils;
+	/// use keetanetwork_anchor::certificates::CertificateBuilder;
+	/// use keetanetwork_asn1::SubjectPublicKeyInfo;
 	///
 	/// # let account = doc_utils::create_secp256k1_test_account(None);
 	/// let public_key_info = SubjectPublicKeyInfo::try_from(&account)?;
@@ -567,7 +582,7 @@ impl CertificateBuilder {
 	/// # Examples
 	///
 	/// ```rust
-	/// use anchor_rs::certificates::CertificateBuilder;
+	/// use keetanetwork_anchor::certificates::CertificateBuilder;
 	///
 	/// // Create a CA certificate
 	/// let ca_builder = CertificateBuilder::new()
@@ -594,8 +609,8 @@ impl CertificateBuilder {
 	/// # Examples
 	///
 	/// ```rust
-	/// use anchor_rs::certificates::CertificateBuilder;
-	/// use x509::certificates::ExtensionBuilder;
+	/// use keetanetwork_anchor::certificates::CertificateBuilder;
+	/// use keetanetwork_x509::certificates::ExtensionBuilder;
 	///
 	/// let custom_extension = ExtensionBuilder::new()
 	///     .with_oid("1.2.3.4.5") // Custom OID
@@ -626,7 +641,7 @@ impl CertificateBuilder {
 	/// # Examples
 	///
 	/// ```rust
-	/// use anchor_rs::certificates::CertificateBuilder;
+	/// use keetanetwork_anchor::certificates::CertificateBuilder;
 	///
 	/// // Root CA with unlimited path length
 	/// let root_ca = CertificateBuilder::for_ca()
@@ -668,7 +683,7 @@ impl CertificateBuilder {
 	/// # Examples
 	///
 	/// ```rust
-	/// use anchor_rs::certificates::CertificateBuilder;
+	/// use keetanetwork_anchor::certificates::CertificateBuilder;
 	///
 	/// // CA certificate that can sign certificates and CRLs
 	/// let ca_builder = CertificateBuilder::for_ca()
@@ -710,14 +725,17 @@ impl CertificateBuilder {
 	/// ## Self-Signed Certificate
 	///
 	/// ```rust
-	/// # use anchor_rs::doc_utils;
-	/// use anchor_rs::certificates::CertificateBuilder;
-	/// use crypto::prelude::IntoSecret;
-	/// use x509::SerialNumber;
+	/// # use keetanetwork_anchor::doc_utils;
+	/// # use keetanetwork_x509::utils::create_dn;
+	/// # use keetanetwork_asn1::SubjectPublicKeyInfo;
+	/// use keetanetwork_anchor::certificates::CertificateBuilder;
+	/// use keetanetwork_crypto::prelude::IntoSecret;
+	/// use keetanetwork_x509::SerialNumber;
+	/// use keetanetwork_x509::oids;
 	///
 	/// # let account = doc_utils::create_secp256k1_test_account(None);
-	/// # let dn = x509::utils::create_dn(&[(x509::oids::CN, "Test User")])?;
-	/// # let public_key_info = asn1::SubjectPublicKeyInfo::try_from(&account)?;
+	/// # let dn = create_dn(&[(oids::CN, "Test User")])?;
+	/// # let public_key_info = SubjectPublicKeyInfo::try_from(&account)?;
 	///
 	/// let certificate = CertificateBuilder::for_ca()
 	///     .with_subject_dn(dn.clone())
@@ -734,16 +752,19 @@ impl CertificateBuilder {
 	/// ## CA-Signed Certificate
 	///
 	/// ```rust
-	/// # use anchor_rs::doc_utils;
-	/// use anchor_rs::certificates::CertificateBuilder;
-	/// use crypto::prelude::IntoSecret;
-	/// use x509::SerialNumber;
+	/// # use keetanetwork_anchor::doc_utils;
+	/// # use keetanetwork_x509::utils::create_dn;
+	/// # use keetanetwork_x509::oids;
+	/// # use keetanetwork_asn1::SubjectPublicKeyInfo;
+	/// use keetanetwork_anchor::certificates::CertificateBuilder;
+	/// use keetanetwork_crypto::prelude::IntoSecret;
+	/// use keetanetwork_x509::SerialNumber;
 	///
 	/// # let subject_account = doc_utils::create_secp256k1_test_account(Some(0));
 	/// # let ca_account = doc_utils::create_secp256k1_test_account(Some(1));
-	/// # let subject_dn = x509::utils::create_dn(&[(x509::oids::CN, "John Doe")])?;
-	/// # let ca_dn = x509::utils::create_dn(&[(x509::oids::CN, "Example CA")])?;
-	/// # let subject_public_key_info = asn1::SubjectPublicKeyInfo::try_from(&subject_account)?;
+	/// # let subject_dn = create_dn(&[(oids::CN, "John Doe")])?;
+	/// # let ca_dn = create_dn(&[(oids::CN, "Example CA")])?;
+	/// # let subject_public_key_info = SubjectPublicKeyInfo::try_from(&subject_account)?;
 	///
 	/// let certificate = CertificateBuilder::for_end_entity()
 	///     .with_subject_dn(subject_dn)
@@ -758,7 +779,7 @@ impl CertificateBuilder {
 	/// ```
 	pub fn build<T, S>(mut self, subject_keypair: &T, signing_keypair: &T) -> Result<Certificate, CertificateError>
 	where
-		Account<T>: TryFrom<accounts::Accountable<T>, Error = accounts::AccountError>,
+		Account<T>: TryFrom<Accountable<T>, Error = AccountError>,
 		T: KeyPair + CryptoSignerWithOptions<S> + 'static,
 		S: SignatureEncoding,
 	{
@@ -794,7 +815,7 @@ impl CertificateBuilder {
 	/// - `Err(_)` - If extension creation fails
 	fn build_kyc_extension<T: KeyPair>(&self, subject_keypair: &T) -> Result<Extension, CertificateError>
 	where
-		Account<T>: TryFrom<accounts::Accountable<T>, Error = accounts::AccountError>,
+		Account<T>: TryFrom<Accountable<T>, Error = AccountError>,
 	{
 		let mut kyc_attributes = KYCAttributes::new();
 		for (name, entry) in &self.kyc_attributes {
@@ -827,9 +848,10 @@ impl CertificateBuilder {
 
 #[cfg(test)]
 mod tests {
-	use crypto::prelude::{ExposeSecret, IntoSecret};
-	use x509::certificates::ExtensionBuilder;
-	use x509::DistinguishedName;
+	use keetanetwork_account::KeyECDSASECP256K1;
+	use keetanetwork_crypto::prelude::{ExposeSecret, IntoSecret};
+	use keetanetwork_x509::certificates::ExtensionBuilder;
+	use keetanetwork_x509::DistinguishedName;
 
 	use super::*;
 	use crate::testing::{create_account_from_seed, create_test_certificate_builder};
@@ -905,7 +927,7 @@ mod tests {
 
 	#[test]
 	fn test_invalid_attribute_name() {
-		let account = create_account_from_seed::<accounts::KeyECDSASECP256K1>(0);
+		let account = create_account_from_seed::<KeyECDSASECP256K1>(0);
 		let invalid_names = ["invalidAttribute", "unknown", ""];
 		for name in invalid_names {
 			let builder = create_test_certificate_builder(&account).with_plain_attribute(name, "value");
@@ -918,7 +940,7 @@ mod tests {
 	/// Helper function to test conversion from KycAttributeEntry to SensitiveAttribute
 	fn test_entry_to_sensitive_attribute<T, S>(account: &Account<T>, entry: KycAttributeEntry, expected_data: &[u8])
 	where
-		Account<T>: TryFrom<accounts::Accountable<T>, Error = accounts::AccountError>,
+		Account<T>: TryFrom<Accountable<T>, Error = AccountError>,
 		T: KeyPair + CryptoSignerWithOptions<S> + 'static,
 		S: SignatureEncoding,
 	{
@@ -930,7 +952,7 @@ mod tests {
 
 	fn test_kyc_attribute_entry_plain_text_conversion<T, S>(account: Account<T>)
 	where
-		Account<T>: TryFrom<accounts::Accountable<T>, Error = accounts::AccountError>,
+		Account<T>: TryFrom<Accountable<T>, Error = AccountError>,
 		T: KeyPair + CryptoSignerWithOptions<S> + 'static,
 		S: SignatureEncoding,
 	{
@@ -941,7 +963,7 @@ mod tests {
 
 	fn test_kyc_attribute_entry_sensitive_conversion<T, S>(account: Account<T>)
 	where
-		Account<T>: TryFrom<accounts::Accountable<T>, Error = accounts::AccountError>,
+		Account<T>: TryFrom<Accountable<T>, Error = AccountError>,
 		T: KeyPair + CryptoSignerWithOptions<S> + 'static,
 		S: SignatureEncoding,
 	{

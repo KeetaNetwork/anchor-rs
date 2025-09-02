@@ -5,11 +5,11 @@
 //! documentation examples and provide consistent test data for KYC
 //! certificate and sensitive attribute operations.
 
-use accounts::{Account, Accountable, KeyECDSASECP256K1, KeyED25519, KeyNETWORK, KeyPair, Keyable};
-use asn1::SubjectPublicKeyInfo;
-use crypto::prelude::IntoSecret;
-use x509::utils::create_dn;
-use x509::{certificates::Certificate as X509Certificate, SerialNumber};
+use keetanetwork_account::{Account, Accountable, KeyECDSASECP256K1, KeyED25519, KeyNETWORK, KeyPair, Keyable};
+use keetanetwork_asn1::SubjectPublicKeyInfo;
+use keetanetwork_crypto::prelude::IntoSecret;
+use keetanetwork_x509::utils::create_dn;
+use keetanetwork_x509::{certificates::Certificate as X509Certificate, SerialNumber};
 
 use crate::{
 	certificates::CertificateBuilder,
@@ -63,10 +63,12 @@ pub fn create_network_test_account(network_id: Option<u64>) -> Account<KeyNETWOR
 /// Create a test certificate builder with standard configuration.
 pub fn create_test_certificate_builder<T>(account: &Account<T>) -> CertificateBuilder
 where
-	T: accounts::KeyPair,
+	T: KeyPair,
 {
-	let subject_dn = create_dn(&[(x509::oids::CN, "Test Subject")]).expect("Failed to create test subject DN");
-	let issuer_dn = create_dn(&[(x509::oids::CN, "Test Issuer")]).expect("Failed to create test issuer DN");
+	let subject_dn =
+		create_dn(&[(keetanetwork_x509::oids::CN, "Test Subject")]).expect("Failed to create test subject DN");
+	let issuer_dn =
+		create_dn(&[(keetanetwork_x509::oids::CN, "Test Issuer")]).expect("Failed to create test issuer DN");
 	let public_key_info = SubjectPublicKeyInfo::try_from(account).expect("Failed to create SubjectPublicKeyInfo");
 
 	CertificateBuilder::for_end_entity()
@@ -80,7 +82,7 @@ where
 /// Create a test sensitive attribute with standard data.
 pub fn create_test_sensitive_attribute<T>(account: &Account<T>, data: Option<&[u8]>) -> SensitiveAttribute
 where
-	T: accounts::KeyPair,
+	T: KeyPair,
 {
 	let test_data = data.unwrap_or(TestKycData::default().email.as_bytes());
 	SensitiveAttributeBuilder::new()
@@ -104,10 +106,10 @@ pub fn create_test_hex_seed(suffix: Option<&str>) -> String {
 /// Create a simple test X.509 certificate for documentation examples.
 pub fn create_test_x509_cert() -> X509Certificate {
 	let account = create_secp256k1_test_account(None);
-	let subject_dn = create_dn(&[(x509::oids::CN, "Test")]).expect("Failed to create test DN");
+	let subject_dn = create_dn(&[(keetanetwork_x509::oids::CN, "Test")]).expect("Failed to create test DN");
 	let public_key = account.keypair.to_public_key();
 
-	x509::certificates::CertificateBuilder::new()
+	keetanetwork_x509::certificates::CertificateBuilder::new()
 		.with_subject_dn(subject_dn.clone())
 		.with_issuer_dn(subject_dn)
 		.with_subject_public_key(public_key.into())
@@ -120,7 +122,7 @@ pub fn create_test_x509_cert() -> X509Certificate {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use accounts::KeyPair;
+	use keetanetwork_account::KeyPair;
 
 	#[test]
 	fn test_create_secp256k1_test_account() {
@@ -176,6 +178,16 @@ mod tests {
 		assert_eq!(seed2.len(), 64);
 		assert_ne!(seed1, seed2);
 		assert!(seed2.ends_with("FF"));
+	}
+
+	#[test]
+	fn test_create_test_x509_cert() {
+		let cert = create_test_x509_cert();
+		assert!(!cert.to_serial_number().as_bytes().is_empty());
+		assert!(!cert.is_ca());
+
+		let subject_name = cert.to_subject().to_string();
+		assert!(subject_name.contains("Test"));
 	}
 
 	#[test]

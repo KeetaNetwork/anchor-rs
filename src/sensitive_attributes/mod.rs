@@ -16,12 +16,12 @@
 //! # Basic Usage
 //!
 //! ```rust
-//! # use anchor_rs::doc_utils;
-//! use anchor_rs::sensitive_attributes::{
+//! # use keetanetwork_anchor::doc_utils;
+//! use keetanetwork_anchor::sensitive_attributes::{
 //!     SensitiveAttribute,
 //!     SensitiveAttributeBuilder
 //! };
-//! use crypto::prelude::ExposeSecret;
+//! use keetanetwork_crypto::prelude::ExposeSecret;
 //!
 //! # let account = doc_utils::create_secp256k1_test_account(None);
 //!
@@ -51,8 +51,8 @@
 //! # Proof-Based Validation
 //!
 //! ```rust
-//! # use anchor_rs::doc_utils;
-//! use anchor_rs::sensitive_attributes::SensitiveAttributeBuilder;
+//! # use keetanetwork_anchor::doc_utils;
+//! use keetanetwork_anchor::sensitive_attributes::SensitiveAttributeBuilder;
 //!
 //! # let account = doc_utils::create_secp256k1_test_account(None);
 //! let ssn = b"123-45-6789";
@@ -79,9 +79,9 @@ pub mod serde;
 
 use std::hash::Hash;
 
-use accounts::KeyPair;
-use crypto::operations::encryption::Aead;
-use crypto::prelude::{ExposeSecret, HashAlgorithm, IntoSecret, SecretBox};
+use keetanetwork_account::KeyPair;
+use keetanetwork_crypto::operations::encryption::Aead;
+use keetanetwork_crypto::prelude::{ExposeSecret, HashAlgorithm, IntoSecret, SecretBox};
 use rasn::prelude::*;
 use strum::AsRefStr;
 
@@ -125,8 +125,8 @@ pub use builder::SensitiveAttributeBuilder;
 /// # Examples
 ///
 /// ```rust
-/// use anchor_rs::sensitive_attributes::KycAttributeEntry;
-/// use crypto::prelude::IntoSecret;
+/// use keetanetwork_anchor::sensitive_attributes::KycAttributeEntry;
+/// use keetanetwork_crypto::prelude::IntoSecret;
 ///
 /// // Plain text attribute for non-sensitive data
 /// let name_entry = KycAttributeEntry::PlainText(b"John Doe".to_vec());
@@ -141,14 +141,12 @@ pub enum KycAttributeEntry {
 	/// Plain text attribute value
 	///
 	/// Used for non-sensitive information that can be stored unencrypted.
-	/// Examples: full name, job title, public identifiers.
 	PlainText(Vec<u8>),
 	/// Sensitive attribute value
 	///
 	/// Used for personally identifiable information (PII) that should be
 	/// encrypted for privacy protection. The value is wrapped in a `SecretBox`
 	/// to prevent accidental exposure in logs or debug output.
-	/// Examples: email addresses, phone numbers, home addresses.
 	Sensitive(SecretBox<Vec<u8>>),
 }
 
@@ -170,8 +168,8 @@ impl KycAttributeEntry {
 	/// # Examples
 	///
 	/// ```rust
-	/// use anchor_rs::sensitive_attributes::KycAttributeEntry;
-	/// use crypto::prelude::IntoSecret;
+	/// use keetanetwork_anchor::sensitive_attributes::KycAttributeEntry;
+	/// use keetanetwork_crypto::prelude::IntoSecret;
 	///
 	/// let plain_entry = KycAttributeEntry::PlainText(b"12345".to_vec());
 	/// let oid = plain_entry.to_oid("postalCode")?;
@@ -216,7 +214,7 @@ impl From<KycAttributeEntry> for SensitiveAttributeBuilder {
 /// # Example
 ///
 /// ```rust
-/// use anchor_rs::sensitive_attributes::SensitiveAttributeName;
+/// use keetanetwork_anchor::sensitive_attributes::SensitiveAttributeName;
 /// use rasn::types::ObjectIdentifier;
 ///
 /// // Convert attribute names to OIDs
@@ -307,9 +305,9 @@ impl SensitiveAttribute {
 	/// # Example
 	///
 	/// ```rust
-	/// # use anchor_rs::doc_utils;
-	/// use anchor_rs::sensitive_attributes::SensitiveAttributeBuilder;
-	/// use crypto::prelude::ExposeSecret;
+	/// # use keetanetwork_anchor::doc_utils;
+	/// use keetanetwork_anchor::sensitive_attributes::SensitiveAttributeBuilder;
+	/// use keetanetwork_crypto::prelude::ExposeSecret;
 	///
 	/// # let account = doc_utils::create_secp256k1_test_account(None);
 	/// // Create an encrypted sensitive attribute
@@ -356,8 +354,8 @@ impl SensitiveAttribute {
 	/// # Example
 	///
 	/// ```rust
-	/// # use anchor_rs::doc_utils;
-	/// use anchor_rs::sensitive_attributes::SensitiveAttributeBuilder;
+	/// # use keetanetwork_anchor::doc_utils;
+	/// use keetanetwork_anchor::sensitive_attributes::SensitiveAttributeBuilder;
 	///
 	/// # let account = doc_utils::create_secp256k1_test_account(None);
 	/// // Create an encrypted sensitive attribute with UTF-8 text
@@ -380,7 +378,6 @@ impl SensitiveAttribute {
 		Ok(String::from_utf8(bytes.clone())?)
 	}
 
-	/// TODO: I am not sure this approach makes sense. - TW
 	/// Generate a proof that is used to validate the sensitive attribute value.
 	///
 	/// # Arguments
@@ -401,8 +398,8 @@ impl SensitiveAttribute {
 	/// # Example
 	///
 	/// ```rust
-	/// # use anchor_rs::doc_utils;
-	/// use anchor_rs::sensitive_attributes::SensitiveAttributeBuilder;
+	/// # use keetanetwork_anchor::doc_utils;
+	/// use keetanetwork_anchor::sensitive_attributes::SensitiveAttributeBuilder;
 	///
 	/// # let account = doc_utils::create_secp256k1_test_account(None);
 	/// // Create an encrypted sensitive attribute
@@ -449,13 +446,13 @@ impl SensitiveAttribute {
 	/// # Example
 	///
 	/// ```rust
-	/// # use anchor_rs::doc_utils;
-	/// use anchor_rs::sensitive_attributes::{
+	/// # use keetanetwork_anchor::doc_utils;
+	/// use keetanetwork_anchor::sensitive_attributes::{
 	///     SensitiveAttributeBuilder,
 	///     SensitiveAttributeProof,
 	///     SensitiveAttributeProofHash
 	/// };
-	/// use crypto::prelude::IntoSecret;
+	/// use keetanetwork_crypto::prelude::IntoSecret;
 	///
 	/// # let account = doc_utils::create_secp256k1_test_account(None);
 	/// // Create an encrypted sensitive attribute
@@ -512,12 +509,12 @@ impl SensitiveAttribute {
 	/// # Example
 	///
 	/// ```rust
-	/// # use anchor_rs::doc_utils;
-	/// use anchor_rs::sensitive_attributes::{
+	/// # use keetanetwork_anchor::doc_utils;
+	/// use keetanetwork_anchor::sensitive_attributes::{
 	///     SensitiveAttribute,
 	///     SensitiveAttributeBuilder
 	/// };
-	/// use crypto::prelude::ExposeSecret;
+	/// use keetanetwork_crypto::prelude::ExposeSecret;
 	///
 	/// let account = doc_utils::create_secp256k1_test_account(None);
 	/// let data = b"data-to-be-serialized";
@@ -576,6 +573,8 @@ impl TryFrom<Vec<u8>> for SensitiveAttribute {
 
 #[cfg(test)]
 mod tests {
+	use keetanetwork_account::Account;
+
 	use super::*;
 	use crate::asn1::oids;
 	use crate::test_all_key_types;
@@ -607,21 +606,21 @@ mod tests {
 		}
 	}
 
-	test_all_key_types!(test_sensitive_attribute_decrypt, |account: accounts::Account<_>| {
+	test_all_key_types!(test_sensitive_attribute_decrypt, |account: Account<_>| {
 		let test_value = b"test value for decryption";
 		let sensitive_attr = create_test_sensitive_attribute(&account, test_value);
 		let decrypted = sensitive_attr.decrypt(&account.keypair).unwrap();
 		assert_eq!(decrypted.expose_secret(), test_value);
 	});
 
-	test_all_key_types!(test_sensitive_attribute_decrypt_string, |account: accounts::Account<_>| {
+	test_all_key_types!(test_sensitive_attribute_decrypt_string, |account: Account<_>| {
 		let test_string = "Hello, world! 🦀";
 		let sensitive_attr = create_test_sensitive_attribute(&account, test_string.as_bytes());
 		let decrypted_string = sensitive_attr.decrypt_as_string(&account.keypair).unwrap();
 		assert_eq!(decrypted_string, test_string);
 	});
 
-	test_all_key_types!(test_sensitive_attribute_prove, |account: accounts::Account<_>| {
+	test_all_key_types!(test_sensitive_attribute_prove, |account: Account<_>| {
 		let test_value = b"test value for proof";
 		let (_, proof) = create_test_sensitive_attribute_with_proof(&account, test_value);
 		assert!(!proof.value.expose_secret().is_empty());
@@ -631,7 +630,7 @@ mod tests {
 		assert_eq!(decoded_value, test_value);
 	});
 
-	test_all_key_types!(test_sensitive_attribute_validate_proof, |account: accounts::Account<_>| {
+	test_all_key_types!(test_sensitive_attribute_validate_proof, |account: Account<_>| {
 		let test_value = b"test value for validation";
 		let (sensitive_attr, proof) = create_test_sensitive_attribute_with_proof(&account, test_value);
 		let salt = proof.hash.salt.clone();
@@ -660,7 +659,7 @@ mod tests {
 			.unwrap());
 	});
 
-	test_all_key_types!(test_sensitive_attribute_proof_partial_eq, |account: accounts::Account<_>| {
+	test_all_key_types!(test_sensitive_attribute_proof_partial_eq, |account: Account<_>| {
 		let test_value = b"test value for equality";
 		let sensitive_attr = create_test_sensitive_attribute(&account, test_value);
 
@@ -678,7 +677,7 @@ mod tests {
 		assert_ne!(proof1.hash, proof3.hash);
 	});
 
-	test_all_key_types!(test_sensitive_attribute_to_der, |account: accounts::Account<_>| {
+	test_all_key_types!(test_sensitive_attribute_to_der, |account: Account<_>| {
 		let test_value = b"test value for DER encoding";
 		let sensitive_attr = create_test_sensitive_attribute(&account, test_value);
 

@@ -3,7 +3,7 @@
 pub(crate) use serde::{Deserialize, Deserializer, Serialize, Serializer};
 pub(crate) use serde_json::Value;
 
-use crypto::prelude::{ExposeSecret, IntoSecret};
+use keetanetwork_crypto::prelude::{ExposeSecret, IntoSecret};
 use rasn::types::Integer;
 use serde::ser::SerializeStruct;
 
@@ -137,6 +137,8 @@ impl<'de> Deserialize<'de> for SensitiveAttribute {
 
 #[cfg(test)]
 mod tests {
+	use keetanetwork_account::{Account, KeyECDSASECP256K1};
+
 	use super::*;
 	use crate::sensitive_attributes::SensitiveAttributeBuilder;
 	use crate::test_all_key_types;
@@ -144,7 +146,7 @@ mod tests {
 
 	#[test]
 	fn test_sensitive_attribute_serialize() {
-		let account = create_account_from_seed::<accounts::KeyECDSASECP256K1>(0);
+		let account = create_account_from_seed::<KeyECDSASECP256K1>(0);
 		let test_value = b"test value for serialization";
 		let builder = SensitiveAttributeBuilder::new().with_value(test_value);
 		let sensitive_attr = builder.build(&account.keypair).unwrap();
@@ -161,7 +163,7 @@ mod tests {
 
 	#[test]
 	fn test_sensitive_attribute_proof_serde() {
-		let account = create_account_from_seed::<accounts::KeyECDSASECP256K1>(0);
+		let account = create_account_from_seed::<KeyECDSASECP256K1>(0);
 		let test_value = b"test value for proof serde";
 		let builder = SensitiveAttributeBuilder::new().with_value(test_value);
 		let sensitive_attr = builder.build(&account.keypair).unwrap();
@@ -191,7 +193,7 @@ mod tests {
 			.unwrap());
 	}
 
-	test_all_key_types!(test_sensitive_attribute_roundtrip, |account: accounts::Account<_>| {
+	test_all_key_types!(test_sensitive_attribute_roundtrip, |account: Account<_>| {
 		let test_value = b"test value for roundtrip";
 		let original_attr = create_test_sensitive_attribute(&account, test_value);
 
