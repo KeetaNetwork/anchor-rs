@@ -12,29 +12,33 @@
 //! # Basic Usage
 //!
 //! ```rust
-//! use keetanetwork_anchor::asn1::oids;
+//! use keetanetwork_anchor::iso20022::{ContactDetails, PhoneNumber};
 //! use keetanetwork_anchor::kyc_schema::builder::{
 //!     AttributeBuilder,
-//!     KYCAttributesBuilder
+//!     KYCAttributesBuilder,
+//!     AttributeBuilderExtensions
 //! };
 //!
-//! // Create a single attribute
-//! let attribute = AttributeBuilder::new()
-//!     .with_oid(oids::keeta::FULL_NAME)
-//!     .with_value(b"John Doe")
-//!     .as_sensitive()
-//!     .build();
-//! assert!(attribute.is_ok());
+//! // Create attributes with compile-time helpers
+//! let attribute_name = AttributeBuilder::for_full_name(b"John Doe");
+//! let attribute_email = AttributeBuilder::for_email(b"john@example.com");
+//! let attribute_contact = ContactDetails {
+//!     phone_number: Some(PhoneNumber::from("123-456-7890")),
+//!     ..Default::default()
+//! };
 //!
 //! // Create a collection of attributes
 //! let kyc_attributes = KYCAttributesBuilder::new()
-//!     .with_sensitive(oids::keeta::FULL_NAME, b"John Doe")
-//!     .with_sensitive(oids::keeta::EMAIL, b"john@example.com")
-//!     .with_plain(oids::ADDRESS_POSTAL_CODE, b"12345")
+//!     .with_attribute(attribute_name)
+//!     .with_attribute(attribute_email)
+//!     .with_attribute(attribute_contact.try_into()?)
 //!     .build();
 //! assert!(kyc_attributes.is_ok());
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
+
+// Re-export generated extension
+pub use crate::generated::builder_ext::AttributeBuilderExtensions;
 
 use rasn::types::OctetString;
 
@@ -42,46 +46,12 @@ use super::error::KycSchemaError;
 use crate::asn1::utils::parse_oid_string;
 use crate::generated::{Attribute, AttributeValue, KYCAttributes};
 
-/// Builder for creating KYC attributes.
-///
-/// This builder provides a fluent API for constructing individual KYC
-/// attributes with proper validation and type safety. Attributes can be marked
-/// as either plain text or sensitive (encrypted).
-///
-/// # Examples
-///
-/// ```rust
-/// use keetanetwork_anchor::asn1::oids;
-/// use keetanetwork_anchor::kyc_schema::builder::AttributeBuilder;
-///
-/// // Create a plain text attribute
-/// let name_attr = AttributeBuilder::new()
-///     .with_oid(oids::ADDRESS_POSTAL_CODE)
-///     .with_value(b"12345")
-///     .as_plain()
-///     .build()?;
-///
-/// // Create a sensitive attribute
-/// let email_attr = AttributeBuilder::new()
-///     .with_oid(oids::keeta::EMAIL)
-///     .with_value(b"john@example.com")
-///     .as_sensitive()
-///     .build()?;
-/// # Ok::<(), Box<dyn std::error::Error>>(())
-/// ```
-#[derive(Debug, Default, Clone)]
-pub struct AttributeBuilder {
-	name_oid: Option<String>,
-	value: Option<Vec<u8>>,
-	sensitive: bool,
-}
-
-impl AttributeBuilder {
+pub trait AttributeBuilderLike: Default {
 	/// Create a new attribute builder
 	///
 	/// Returns a new builder instance with default values. All fields must be
 	/// set before calling [`build()`](Self::build).
-	pub fn new() -> Self {
+	fn new() -> Self {
 		Self::default()
 	}
 
@@ -95,15 +65,15 @@ impl AttributeBuilder {
 	///
 	/// ```rust
 	/// use keetanetwork_anchor::asn1::oids;
-	/// use keetanetwork_anchor::kyc_schema::builder::AttributeBuilder;
+	/// use keetanetwork_anchor::kyc_schema::builder::{
+	///     AttributeBuilder,
+	///     AttributeBuilderLike
+	/// };
 	///
-	/// let builder = AttributeBuilder::new()
+	/// let builder = AttributeBuilder::default()    
 	///     .with_oid(oids::keeta::FULL_NAME);
 	/// ```
-	pub fn with_oid<S: ToString>(mut self, oid: S) -> Self {
-		self.name_oid = Some(oid.to_string());
-		self
-	}
+	fn with_oid<S: ToString>(self, oid: S) -> Self;
 
 	/// Set the value for the attribute
 	///
@@ -114,16 +84,16 @@ impl AttributeBuilder {
 	/// # Examples
 	///
 	/// ```rust
-	/// use keetanetwork_anchor::kyc_schema::builder::AttributeBuilder;
+	/// use keetanetwork_anchor::kyc_schema::builder::{
+	///     AttributeBuilder,
+	///     AttributeBuilderLike
+	/// };
 	///
-	/// let builder = AttributeBuilder::new()
+	/// let builder = AttributeBuilder::default()    
 	///     .with_value(b"John Doe")
 	///     .with_value("Hello".as_bytes());
 	/// ```
-	pub fn with_value<V: AsRef<[u8]>>(mut self, value: V) -> Self {
-		self.value = Some(value.as_ref().to_vec());
-		self
-	}
+	fn with_value<V: AsRef<[u8]>>(self, value: V) -> Self;
 
 	/// Mark this attribute as sensitive (encrypted)
 	///
@@ -134,10 +104,13 @@ impl AttributeBuilder {
 	/// # Examples
 	///
 	/// ```rust
-	/// use keetanetwork_anchor::kyc_schema::builder::AttributeBuilder;
 	/// use keetanetwork_anchor::asn1::oids;
+	/// use keetanetwork_anchor::kyc_schema::builder::{
+	///     AttributeBuilder,
+	///     AttributeBuilderLike
+	/// };
 	///
-	/// let sensitive_attr = AttributeBuilder::new()
+	/// let sensitive_attr = AttributeBuilder::default()    
 	///     .with_oid(oids::keeta::EMAIL)
 	///     .with_value(b"john@example.com")
 	///     .as_sensitive()
@@ -145,10 +118,8 @@ impl AttributeBuilder {
 	/// assert!(sensitive_attr.is_ok());
 	/// # Ok::<(), Box<dyn std::error::Error>>(())
 	/// ```
-	pub fn as_sensitive(mut self) -> Self {
-		self.sensitive = true;
-		self
-	}
+	#[allow(clippy::wrong_self_convention)]
+	fn as_sensitive(self) -> Self;
 
 	/// Mark this attribute as plain text
 	///
@@ -158,10 +129,13 @@ impl AttributeBuilder {
 	/// # Examples
 	///
 	/// ```rust
-	/// use keetanetwork_anchor::kyc_schema::builder::AttributeBuilder;
 	/// use keetanetwork_anchor::asn1::oids;
+	/// use keetanetwork_anchor::kyc_schema::builder::{
+	///     AttributeBuilder,
+	///     AttributeBuilderLike
+	/// };
 	///
-	/// let plain_attr = AttributeBuilder::new()
+	/// let plain_attr = AttributeBuilder::default()    
 	///     .with_oid(oids::ADDRESS_POSTAL_CODE)
 	///     .with_value(b"12345")
 	///     .as_plain()
@@ -169,10 +143,8 @@ impl AttributeBuilder {
 	/// assert!(plain_attr.is_ok());
 	/// # Ok::<(), Box<dyn std::error::Error>>(())
 	/// ```
-	pub fn as_plain(mut self) -> Self {
-		self.sensitive = false;
-		self
-	}
+	#[allow(clippy::wrong_self_convention)]
+	fn as_plain(self) -> Self;
 
 	/// Build the attribute
 	///
@@ -186,10 +158,13 @@ impl AttributeBuilder {
 	/// # Examples
 	///
 	/// ```rust
-	/// use keetanetwork_anchor::kyc_schema::builder::AttributeBuilder;
 	/// use keetanetwork_anchor::asn1::oids;
+	/// use keetanetwork_anchor::kyc_schema::builder::{
+	///     AttributeBuilder,
+	///     AttributeBuilderLike
+	/// };
 	///
-	/// let attribute = AttributeBuilder::new()
+	/// let attribute = AttributeBuilder::default()    
 	///     .with_oid(oids::keeta::FULL_NAME)
 	///     .with_value(b"John Doe")
 	///     .as_sensitive()
@@ -197,7 +172,67 @@ impl AttributeBuilder {
 	/// assert!(attribute.is_ok());
 	/// # Ok::<(), Box<dyn std::error::Error>>(())
 	/// ```
-	pub fn build(self) -> Result<Attribute, KycSchemaError> {
+	fn build(self) -> Result<Attribute, KycSchemaError>;
+}
+
+/// Builder for creating KYC attributes.
+///
+/// This builder provides a fluent API for constructing individual KYC
+/// attributes with proper validation and type safety. Attributes can be marked
+/// as either plain text or sensitive (encrypted).
+///
+/// # Examples
+///
+/// ```rust
+/// use keetanetwork_anchor::asn1::oids;
+/// use keetanetwork_anchor::kyc_schema::builder::{
+///     AttributeBuilder,
+///     AttributeBuilderLike
+/// };
+///
+/// // Create a plain text attribute
+/// let name_attr = AttributeBuilder::default()    
+///     .with_oid(oids::ADDRESS_POSTAL_CODE)
+///     .with_value(b"12345")
+///     .as_plain()
+///     .build()?;
+///
+/// // Create a sensitive attribute
+/// let email_attr = AttributeBuilder::default()    
+///     .with_oid(oids::keeta::EMAIL)
+///     .with_value(b"john@example.com")
+///     .as_sensitive()
+///     .build()?;
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
+#[derive(Debug, Default, Clone)]
+pub struct AttributeBuilder {
+	name_oid: Option<String>,
+	value: Option<Vec<u8>>,
+	sensitive: bool,
+}
+
+impl AttributeBuilderLike for AttributeBuilder {
+	fn with_oid<S: ToString>(mut self, oid: S) -> Self {
+		self.name_oid = Some(oid.to_string());
+		self
+	}
+	fn with_value<V: AsRef<[u8]>>(mut self, value: V) -> Self {
+		self.value = Some(value.as_ref().to_vec());
+		self
+	}
+
+	fn as_sensitive(mut self) -> Self {
+		self.sensitive = true;
+		self
+	}
+
+	fn as_plain(mut self) -> Self {
+		self.sensitive = false;
+		self
+	}
+
+	fn build(self) -> Result<Attribute, KycSchemaError> {
 		// Validate and extract OID and value
 		let oid_str = self.name_oid.ok_or(KycSchemaError::MissingOid)?;
 		let value_bytes = self.value.ok_or(KycSchemaError::MissingValue)?;
@@ -256,20 +291,53 @@ impl KYCAttributesBuilder {
 	/// # Examples
 	///
 	/// ```rust
-	/// use keetanetwork_anchor::kyc_schema::builder::{AttributeBuilder, KYCAttributesBuilder};
+	/// #[cfg(feature = "chrono")]
+	/// use chrono::NaiveDate;
 	/// use keetanetwork_anchor::asn1::oids;
+	/// use keetanetwork_anchor::kyc_schema::Attribute;
+	/// use keetanetwork_anchor::kyc_schema::builder::{
+	///     AttributeBuilder,
+	///     AttributeBuilderExtensions,
+	///     KYCAttributesBuilder,
+	/// };
+	/// use keetanetwork_anchor::iso20022::{
+	///     DateAndPlaceOfBirth,
+	///     BirthDate,
+	///     TownName,
+	///     Country,
+	///     CountrySubDivision
+	/// };
 	///
-	/// let attribute = AttributeBuilder::new()
-	///     .with_oid(oids::keeta::FULL_NAME)
-	///     .with_value(b"John Doe")
-	///     .as_plain()
-	///     .build()?;
+	/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+	/// let attribute_name = AttributeBuilder::for_full_name(b"John Doe");
+	/// let attribute_email = AttributeBuilder::for_email(b"john@example.com");
 	///
-	/// let kyc_attributes = KYCAttributesBuilder::new()
-	///     .with_attribute(attribute)
-	///     .build();
+	/// #[cfg(feature = "chrono")]
+	/// let birth_info = DateAndPlaceOfBirth::new(
+	///     BirthDate::from(NaiveDate::from_ymd_opt(1990, 1, 1).unwrap()),
+	///     TownName::from("New York"),
+	///     Country::from("US"),
+	///     Some(CountrySubDivision::from("NY"))
+	/// );
+	///
+	/// #[cfg(feature = "chrono")]
+	/// let attribute_birth = Attribute::try_from(birth_info)?;
+	/// let mut kyc_attributes_builder = KYCAttributesBuilder::new()
+	///     .with_attribute(attribute_name)
+	///     .with_attribute(attribute_email);
+	///
+	/// #[cfg(feature = "chrono")] {
+	///     kyc_attributes_builder = kyc_attributes_builder.with_attribute(attribute_birth);
+	/// }
+	///
+	/// let kyc_attributes = kyc_attributes_builder.build();
 	/// assert!(kyc_attributes.is_ok());
-	/// # Ok::<(), Box<dyn std::error::Error>>(())
+	/// #[cfg(feature = "chrono")]
+	/// assert_eq!(kyc_attributes.unwrap().count(), 3);
+	/// #[cfg(not(feature = "chrono"))]
+	/// assert_eq!(kyc_attributes.unwrap().count(), 2);
+	/// # Ok(())
+	/// # }
 	/// ```
 	pub fn with_attribute(mut self, attribute: Attribute) -> Self {
 		self.attributes.push(attribute);
@@ -300,7 +368,7 @@ impl KYCAttributesBuilder {
 	/// # Ok::<(), Box<dyn std::error::Error>>(())
 	/// ```
 	pub fn with_plain<S: ToString, V: AsRef<[u8]>>(mut self, oid: S, value: V) -> Self {
-		let result = AttributeBuilder::new()
+		let result = AttributeBuilder::default()
 			.with_oid(oid)
 			.with_value(value)
 			.as_plain()
@@ -342,7 +410,7 @@ impl KYCAttributesBuilder {
 	/// # Ok::<(), Box<dyn std::error::Error>>(())
 	/// ```
 	pub fn with_sensitive<S: ToString, V: AsRef<[u8]>>(mut self, oid: S, value: V) -> Self {
-		let result = AttributeBuilder::new()
+		let result = AttributeBuilder::default()
 			.with_oid(oid)
 			.with_value(value)
 			.as_sensitive()
@@ -417,7 +485,7 @@ mod tests {
 
 	/// Helper function to build test attributes.
 	fn build_test_attribute(test_data: &TestData) -> Attribute {
-		let builder = AttributeBuilder::new()
+		let builder = AttributeBuilder::default()
 			.with_oid(test_data.oid.clone())
 			.with_value(test_data.value);
 
@@ -441,15 +509,15 @@ mod tests {
 	#[test]
 	fn test_attribute_builder_errors() {
 		// Missing OID
-		let result = AttributeBuilder::new().with_value(b"test").build();
+		let result = AttributeBuilder::default().with_value(b"test").build();
 		assert!(result.is_err());
 
 		// Missing value
-		let result = AttributeBuilder::new().with_oid("1.2.3.4").build();
+		let result = AttributeBuilder::default().with_oid("1.2.3.4").build();
 		assert!(result.is_err());
 
 		// Invalid OID
-		let result = AttributeBuilder::new()
+		let result = AttributeBuilder::default()
 			.with_oid("invalid.oid")
 			.with_value(b"test")
 			.build();

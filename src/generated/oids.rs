@@ -24,12 +24,26 @@ pub mod keeta {
     // Sensitive attribute OID constants
     /// Physical address
     pub const ADDRESS: ObjectIdentifier = ObjectIdentifier::new_unchecked(Cow::Borrowed(&[1, 3, 6, 1, 4, 1, 62675, 1, 2]));
+    /// Contact details
+    pub const CONTACT_DETAILS: ObjectIdentifier = ObjectIdentifier::new_unchecked(Cow::Borrowed(&[1, 3, 6, 1, 4, 1, 62675, 1, 9]));
+    /// Date and place of birth information
+    pub const DATE_AND_PLACE_OF_BIRTH: ObjectIdentifier = ObjectIdentifier::new_unchecked(Cow::Borrowed(&[1, 3, 6, 1, 4, 1, 62675, 1, 5]));
     /// Date of birth
     pub const DATE_OF_BIRTH: ObjectIdentifier = ObjectIdentifier::new_unchecked(Cow::Borrowed(&[1, 3, 6, 1, 4, 1, 62675, 1, 1]));
     /// Email address
     pub const EMAIL: ObjectIdentifier = ObjectIdentifier::new_unchecked(Cow::Borrowed(&[1, 3, 6, 1, 4, 1, 62675, 1, 3]));
+    /// Entity type (organization or person)
+    pub const ENTITY_TYPE: ObjectIdentifier = ObjectIdentifier::new_unchecked(Cow::Borrowed(&[1, 3, 6, 1, 4, 1, 62675, 1, 8]));
     /// Person's full name
     pub const FULL_NAME: ObjectIdentifier = ObjectIdentifier::new_unchecked(Cow::Borrowed(&[1, 3, 6, 1, 4, 1, 62675, 1, 0]));
+    /// Identifier
+    pub const ID: ObjectIdentifier = ObjectIdentifier::new_unchecked(Cow::Borrowed(&[1, 3, 6, 1, 4, 1, 62675, 1, 7]));
+    /// Issuer identifier
+    pub const ISSUER: ObjectIdentifier = ObjectIdentifier::new_unchecked(Cow::Borrowed(&[1, 3, 6, 1, 4, 1, 62675, 1, 7, 1]));
+    /// Job responsibility
+    pub const JOB_RESPONSIBILITY: ObjectIdentifier = ObjectIdentifier::new_unchecked(Cow::Borrowed(&[1, 3, 6, 1, 4, 1, 62675, 1, 6, 1]));
+    /// Job title
+    pub const JOB_TITLE: ObjectIdentifier = ObjectIdentifier::new_unchecked(Cow::Borrowed(&[1, 3, 6, 1, 4, 1, 62675, 1, 6]));
     /// Phone number
     pub const PHONE_NUMBER: ObjectIdentifier = ObjectIdentifier::new_unchecked(Cow::Borrowed(&[1, 3, 6, 1, 4, 1, 62675, 1, 4]));
 
@@ -38,9 +52,16 @@ pub mod keeta {
         pub static ref SENSITIVE_ATTRIBUTES: HashMap<&'static str, ObjectIdentifier> = {
             [
                 ("address", ADDRESS),
+                ("contactDetails", CONTACT_DETAILS),
+                ("dateAndPlaceOfBirth", DATE_AND_PLACE_OF_BIRTH),
                 ("dateOfBirth", DATE_OF_BIRTH),
                 ("email", EMAIL),
+                ("entityType", ENTITY_TYPE),
                 ("fullName", FULL_NAME),
+                ("id", ID),
+                ("issuer", ISSUER),
+                ("jobResponsibility", JOB_RESPONSIBILITY),
+                ("jobTitle", JOB_TITLE),
                 ("phoneNumber", PHONE_NUMBER),
             ]
             .iter()

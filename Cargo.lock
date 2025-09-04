@@ -635,7 +635,7 @@ dependencies = [
 [[package]]
 name = "keetanetwork-account"
 version = "0.1.0"
-source = "git+ssh://git@github.com/KeetaNetwork/node-rs.git?branch=main#c65f2deaf23a0bf26a09db598d521544bac4db8c"
+source = "git+ssh://git@github.com/KeetaNetwork/node-rs.git?branch=main#832814720ca14c8609771632f6c59454f34888e7"
 dependencies = [
  "base32",
  "bip39-dict",
@@ -656,6 +656,7 @@ name = "keetanetwork-anchor"
 version = "0.1.0"
 dependencies = [
  "base64",
+ "chrono",
  "hex",
  "keetanetwork-account",
  "keetanetwork-asn1",
@@ -675,7 +676,7 @@ dependencies = [
 [[package]]
 name = "keetanetwork-asn1"
 version = "0.1.0"
-source = "git+ssh://git@github.com/KeetaNetwork/node-rs.git?branch=main#c65f2deaf23a0bf26a09db598d521544bac4db8c"
+source = "git+ssh://git@github.com/KeetaNetwork/node-rs.git?branch=main#832814720ca14c8609771632f6c59454f34888e7"
 dependencies = [
  "der",
  "hex",
@@ -689,7 +690,7 @@ dependencies = [
 [[package]]
 name = "keetanetwork-crypto"
 version = "0.1.0"
-source = "git+ssh://git@github.com/KeetaNetwork/node-rs.git?branch=main#c65f2deaf23a0bf26a09db598d521544bac4db8c"
+source = "git+ssh://git@github.com/KeetaNetwork/node-rs.git?branch=main#832814720ca14c8609771632f6c59454f34888e7"
 dependencies = [
  "aead",
  "aes",
@@ -729,7 +730,7 @@ dependencies = [
 [[package]]
 name = "keetanetwork-error"
 version = "0.1.0"
-source = "git+ssh://git@github.com/KeetaNetwork/node-rs.git?branch=main#c65f2deaf23a0bf26a09db598d521544bac4db8c"
+source = "git+ssh://git@github.com/KeetaNetwork/node-rs.git?branch=main#832814720ca14c8609771632f6c59454f34888e7"
 dependencies = [
  "snafu",
 ]
@@ -737,7 +738,7 @@ dependencies = [
 [[package]]
 name = "keetanetwork-utils"
 version = "0.1.0"
-source = "git+ssh://git@github.com/KeetaNetwork/node-rs.git?branch=main#c65f2deaf23a0bf26a09db598d521544bac4db8c"
+source = "git+ssh://git@github.com/KeetaNetwork/node-rs.git?branch=main#832814720ca14c8609771632f6c59454f34888e7"
 dependencies = [
  "rasn-compiler",
 ]
@@ -745,7 +746,7 @@ dependencies = [
 [[package]]
 name = "keetanetwork-x509"
 version = "0.1.0"
-source = "git+ssh://git@github.com/KeetaNetwork/node-rs.git?branch=main#c65f2deaf23a0bf26a09db598d521544bac4db8c"
+source = "git+ssh://git@github.com/KeetaNetwork/node-rs.git?branch=main#832814720ca14c8609771632f6c59454f34888e7"
 dependencies = [
  "base64",
  "chrono",
@@ -777,9 +778,9 @@ checksum = "6a82ae493e598baaea5209805c49bbf2ea7de956d50d7da0da1164f9c6d28543"
 
 [[package]]
 name = "log"
-version = "0.4.27"
+version = "0.4.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "13dc2df351e3202783a1fe0d44375f7295ffb4049267b0f3018346dc122a1d94"
+checksum = "34080505efa8e45a4b816c349525ebe327ceaa8559756f0356cba97ef3bf7432"
 
 [[package]]
 name = "memchr"

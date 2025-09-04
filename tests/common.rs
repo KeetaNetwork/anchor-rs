@@ -9,7 +9,7 @@ use keetanetwork_crypto::prelude::{CryptoSignerWithOptions, SignatureEncoding};
 
 use keetanetwork_anchor::certificates::Certificate;
 use keetanetwork_anchor::generated::KYCAttributes;
-use keetanetwork_anchor::kyc_schema::{Attribute, AttributeBuilder, KYCAttributesBuilder};
+use keetanetwork_anchor::kyc_schema::{Attribute, AttributeBuilder, AttributeBuilderLike, KYCAttributesBuilder};
 use keetanetwork_anchor::testing::{create_account_from_seed, create_public_key_only_account};
 
 /// Test seed used in TypeScript tests for deterministic account generation
@@ -121,7 +121,7 @@ pub fn create_kyc_with_attributes<T: ToString>(
 
 /// Create a plain attribute using AttributeBuilder
 pub fn create_plain_attribute<T: ToString>(oid: T, value: &[u8]) -> Attribute {
-	AttributeBuilder::new()
+	AttributeBuilder::default()
 		.with_oid(oid.to_string())
 		.with_value(value)
 		.as_plain()
@@ -131,7 +131,7 @@ pub fn create_plain_attribute<T: ToString>(oid: T, value: &[u8]) -> Attribute {
 
 /// Create a sensitive attribute using AttributeBuilder
 pub fn create_sensitive_attribute<T: ToString>(oid: T, value: &[u8]) -> Attribute {
-	AttributeBuilder::new()
+	AttributeBuilder::default()
 		.with_oid(oid.to_string())
 		.with_value(value)
 		.as_sensitive()

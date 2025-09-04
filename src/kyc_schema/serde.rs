@@ -84,6 +84,7 @@ impl<'de> Deserialize<'de> for Attribute {
 mod tests {
 	use super::*;
 	use crate::asn1::oids;
+	use crate::kyc_schema::builder::AttributeBuilderLike;
 	use crate::kyc_schema::{AttributeBuilder, KYCAttributes};
 
 	struct TestAttribute {

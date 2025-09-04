@@ -8,17 +8,21 @@
 //! # Quick Start
 //!
 //! ```rust
-//! use keetanetwork_anchor::kyc_schema::{AttributeBuilder, KYCAttributesBuilder};
 //! use keetanetwork_anchor::asn1::oids;
+//! use keetanetwork_anchor::kyc_schema::{
+//!     AttributeBuilder,
+//!     KYCAttributesBuilder,
+//!     AttributeBuilderLike
+//! };
 //!
 //! // Create individual attributes
-//! let name_attr = AttributeBuilder::new()
+//! let name_attr = AttributeBuilder::default()    
 //!     .with_oid(oids::keeta::FULL_NAME)
 //!     .with_value(b"John Doe")
 //!     .as_plain()
 //!     .build()?;
 //!
-//! let email_attr = AttributeBuilder::new()
+//! let email_attr = AttributeBuilder::default()    
 //!     .with_oid(oids::keeta::EMAIL)
 //!     .with_value(b"john@example.com")
 //!     .as_sensitive()
@@ -103,7 +107,7 @@ pub mod serde;
 
 // Re-exports
 pub use crate::generated::{Attribute, AttributeValue, KYCAttributes};
-pub use builder::{AttributeBuilder, KYCAttributesBuilder};
+pub use builder::{AttributeBuilder, AttributeBuilderLike, KYCAttributesBuilder};
 pub use error::KycSchemaError;
 
 impl Attribute {
@@ -115,17 +119,20 @@ impl Attribute {
 	/// # Examples
 	///
 	/// ```rust
-	/// use keetanetwork_anchor::kyc_schema::AttributeBuilder;
 	/// use keetanetwork_anchor::asn1::oids;
+	/// use keetanetwork_anchor::kyc_schema::{
+	///    AttributeBuilder,
+	///    AttributeBuilderLike
+	/// };
 	///
-	/// let sensitive_attr = AttributeBuilder::new()
+	/// let sensitive_attr = AttributeBuilder::default()    
 	///     .with_oid(oids::keeta::EMAIL)
 	///     .with_value(b"john@example.com")
 	///     .as_sensitive()
 	///     .build()?;
 	/// assert!(sensitive_attr.is_sensitive());
 	///
-	/// let plain_attr = AttributeBuilder::new()
+	/// let plain_attr = AttributeBuilder::default()    
 	///     .with_oid(oids::ADDRESS_POSTAL_CODE)
 	///     .with_value(b"12345")
 	///     .as_plain()
@@ -158,11 +165,15 @@ impl KYCAttributes {
 	/// # Examples
 	///
 	/// ```rust
-	/// use keetanetwork_anchor::kyc_schema::{KYCAttributes, AttributeBuilder};
 	/// use keetanetwork_anchor::asn1::oids;
+	/// use keetanetwork_anchor::kyc_schema::{
+	///    KYCAttributes,
+	///    AttributeBuilder,
+	///    AttributeBuilderLike
+	/// };
 	///
 	/// let mut kyc = KYCAttributes::new();
-	/// let attr = AttributeBuilder::new()
+	/// let attr = AttributeBuilder::default()    
 	///     .with_oid(oids::keeta::FULL_NAME)
 	///     .with_value(b"John Doe")
 	///     .as_plain()

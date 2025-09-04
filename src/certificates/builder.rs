@@ -178,6 +178,7 @@ use keetanetwork_x509::{DistinguishedName, SerialNumber};
 
 use crate::asn1::oids;
 use crate::certificates::{Certificate, CertificateError};
+use crate::kyc_schema::builder::AttributeBuilderLike;
 use crate::kyc_schema::{AttributeBuilder, KYCAttributes};
 use crate::sensitive_attributes::{KycAttributeEntry, SensitiveAttributeBuilder};
 

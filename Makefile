@@ -59,6 +59,7 @@ do-lint-ci:
 # Test crate packages features
 test-feat:
 	cargo test --no-default-features --features serde
+	cargo test --no-default-features --features chrono
 
 # Run tests with host system's default target
 test:

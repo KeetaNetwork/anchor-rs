@@ -114,6 +114,7 @@ mod tests {
 
 	use super::*;
 	use crate::asn1::oids;
+	use crate::kyc_schema::builder::AttributeBuilderLike;
 	use crate::testing::create_account_from_seed;
 
 	/// Helper function to create a test attribute for assertion testing

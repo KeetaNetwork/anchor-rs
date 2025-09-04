@@ -20,6 +20,11 @@ hex = "0.4"
 base64 = "0.22.1"
 lazy_static = "1.5.0"
 
+[dependencies.chrono]
+version = "0.4.41"
+features = ["std", "serde"]
+optional = true
+
 [dependencies.snafu]
 version = "0.8.6"
 features = ["std"]
@@ -72,5 +77,6 @@ keetanetwork-utils = { git = "ssh://git@github.com/KeetaNetwork/node-rs.git", br
 ] }
 
 [features]
-default = ["serde"]
+default = ["serde", "chrono"]
 serde = ["dep:serde", "dep:serde_json", "keetanetwork-asn1/serde"]
+chrono = ["dep:chrono"]

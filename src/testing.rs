@@ -9,6 +9,7 @@ use keetanetwork_crypto::prelude::IntoSecret;
 use keetanetwork_x509::SerialNumber;
 
 use crate::certificates::CertificateBuilder;
+use crate::kyc_schema::builder::AttributeBuilderLike;
 use crate::kyc_schema::{Attribute, AttributeBuilder, KYCAttributes, KYCAttributesBuilder};
 use crate::sensitive_attributes::{SensitiveAttribute, SensitiveAttributeBuilder, SensitiveAttributeProof};
 
