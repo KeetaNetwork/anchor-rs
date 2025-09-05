@@ -4,4 +4,4 @@
 //! generated ASN.1 code. All types are re-exported from the generated module
 //! for easier access.
 
-pub use crate::generated::iso20022::*;
+pub use keetanetwork_asn1::generated::iso20022::*;

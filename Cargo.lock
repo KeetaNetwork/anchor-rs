@@ -635,7 +635,7 @@ dependencies = [
 [[package]]
 name = "keetanetwork-account"
 version = "0.1.0"
-source = "git+ssh://git@github.com/KeetaNetwork/node-rs.git?branch=main#832814720ca14c8609771632f6c59454f34888e7"
+source = "git+ssh://git@github.com/KeetaNetwork/node-rs.git?branch=main#4bf92723ece4f69b153dff75c95d2ce452df8c8a"
 dependencies = [
  "base32",
  "bip39-dict",
@@ -676,13 +676,17 @@ dependencies = [
 [[package]]
 name = "keetanetwork-asn1"
 version = "0.1.0"
-source = "git+ssh://git@github.com/KeetaNetwork/node-rs.git?branch=main#832814720ca14c8609771632f6c59454f34888e7"
+source = "git+ssh://git@github.com/KeetaNetwork/node-rs.git?branch=main#4bf92723ece4f69b153dff75c95d2ce452df8c8a"
 dependencies = [
+ "chrono",
  "der",
  "hex",
  "keetanetwork-utils",
+ "lazy_static",
  "rasn",
+ "rasn-compiler",
  "serde",
+ "serde_json",
  "snafu",
  "spki",
 ]
@@ -690,7 +694,7 @@ dependencies = [
 [[package]]
 name = "keetanetwork-crypto"
 version = "0.1.0"
-source = "git+ssh://git@github.com/KeetaNetwork/node-rs.git?branch=main#832814720ca14c8609771632f6c59454f34888e7"
+source = "git+ssh://git@github.com/KeetaNetwork/node-rs.git?branch=main#4bf92723ece4f69b153dff75c95d2ce452df8c8a"
 dependencies = [
  "aead",
  "aes",
@@ -730,7 +734,7 @@ dependencies = [
 [[package]]
 name = "keetanetwork-error"
 version = "0.1.0"
-source = "git+ssh://git@github.com/KeetaNetwork/node-rs.git?branch=main#832814720ca14c8609771632f6c59454f34888e7"
+source = "git+ssh://git@github.com/KeetaNetwork/node-rs.git?branch=main#4bf92723ece4f69b153dff75c95d2ce452df8c8a"
 dependencies = [
  "snafu",
 ]
@@ -738,7 +742,7 @@ dependencies = [
 [[package]]
 name = "keetanetwork-utils"
 version = "0.1.0"
-source = "git+ssh://git@github.com/KeetaNetwork/node-rs.git?branch=main#832814720ca14c8609771632f6c59454f34888e7"
+source = "git+ssh://git@github.com/KeetaNetwork/node-rs.git?branch=main#4bf92723ece4f69b153dff75c95d2ce452df8c8a"
 dependencies = [
  "rasn-compiler",
 ]
@@ -746,7 +750,7 @@ dependencies = [
 [[package]]
 name = "keetanetwork-x509"
 version = "0.1.0"
-source = "git+ssh://git@github.com/KeetaNetwork/node-rs.git?branch=main#832814720ca14c8609771632f6c59454f34888e7"
+source = "git+ssh://git@github.com/KeetaNetwork/node-rs.git?branch=main#4bf92723ece4f69b153dff75c95d2ce452df8c8a"
 dependencies = [
  "base64",
  "chrono",

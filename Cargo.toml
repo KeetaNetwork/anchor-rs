@@ -72,6 +72,7 @@ branch = "main"
 [build-dependencies]
 rasn-compiler = "0.14.2"
 serde_json = "1.0"
+keetanetwork-asn1 = { git = "ssh://git@github.com/KeetaNetwork/node-rs.git", branch = "main" }
 keetanetwork-utils = { git = "ssh://git@github.com/KeetaNetwork/node-rs.git", branch = "main", features = [
 	"build",
 ] }
