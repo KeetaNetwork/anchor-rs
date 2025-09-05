@@ -12,6 +12,8 @@ mod sensitive_attributes;
 
 #[path = "generated/builder_ext.rs"]
 pub mod builder_ext;
+#[path = "generated/from_impls.rs"]
+mod from_impls;
 
 // Re-export all types from the generated modules
 pub use k_y_c_attributes::{Attribute, AttributeValue, KYCAttributes};

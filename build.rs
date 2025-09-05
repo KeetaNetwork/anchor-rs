@@ -41,8 +41,9 @@ fn format_oid_comment(oid_array: &[Value]) -> String {
 fn generate_attribute_from_impl(oids: &Value) {
 	let dest_path = Path::new("src/generated").join("from_impls.rs");
 	let mut generated_code = String::new();
-	generated_code.push_str("use crate::oids;\n");
-	generated_code.push_str("use crate::error::Asn1Error;\n");
+	generated_code.push_str("use crate::asn1::{oids, error::AnchorAsn1Error};\n");
+	generated_code.push_str("use crate::generated::{Attribute, AttributeValue};\n");
+	generated_code.push_str("use keetanetwork_asn1::generated::iso20022::*;\n");
 	generated_code.push_str("use rasn::types::OctetString;\n\n");
 
 	// Generate TryFrom implementations for structured types in sensitive attributes
@@ -63,7 +64,7 @@ fn generate_attribute_from_impl(oids: &Value) {
 
 						generated_code.push_str(&format!(
 							r#"impl TryFrom<{type_name}> for Attribute {{
-	type Error = Asn1Error;
+	type Error = AnchorAsn1Error;
 
 	fn try_from(value: {type_name}) -> Result<Self, Self::Error> {{
 		let name = {const_name};
@@ -88,7 +89,6 @@ fn generate_attribute_from_impl(oids: &Value) {
 	}
 
 	fs::write(&dest_path, generated_code).expect("Failed to write from_impls.rs");
-	println!("Generated {}", dest_path.display());
 }
 
 fn generate_builder_trait_extension(oids: &Value) {
@@ -297,7 +297,6 @@ mod tests {
 	}
 
 	fs::write(&dest_path, generated_code).expect("Failed to write builder_ext.rs");
-	println!("Generated {}", dest_path.display());
 
 	// Generate builder trait extension and update generated.rs
 	update_generated_rs_with_builder_trait();
@@ -305,12 +304,10 @@ mod tests {
 
 fn update_generated_rs_with_builder_trait() {
 	let generated_rs_path = Path::new("src/generated.rs");
-
-	// Read the current generated.rs content
 	let current_content = fs::read_to_string(generated_rs_path).expect("Failed to read generated.rs");
 
-	// Check if builder_ext module is already included
-	if current_content.contains("mod builder_ext;") {
+	// Check if both modules are already included
+	if current_content.contains("mod builder_ext;") && current_content.contains("mod from_impls;") {
 		return; // Already updated
 	}
 
@@ -322,8 +319,14 @@ fn update_generated_rs_with_builder_trait() {
 	for line in lines {
 		// Insert before the first re-export line (which starts with "// Re-export" or "pub use")
 		if (line.starts_with("// Re-export") || line.starts_with("pub use")) && !inserted {
-			updated_lines.push("#[path = \"generated/builder_ext.rs\"]".to_string());
-			updated_lines.push("pub mod builder_ext;".to_string());
+			if !current_content.contains("mod from_impls;") {
+				updated_lines.push("#[path = \"generated/from_impls.rs\"]".to_string());
+				updated_lines.push("mod from_impls;".to_string());
+			}
+			if !current_content.contains("mod builder_ext;") {
+				updated_lines.push("#[path = \"generated/builder_ext.rs\"]".to_string());
+				updated_lines.push("pub mod builder_ext;".to_string());
+			}
 			updated_lines.push("".to_string()); // Add empty line before re-exports
 			inserted = true;
 		}
@@ -334,15 +337,19 @@ fn update_generated_rs_with_builder_trait() {
 	// If we didn't find re-exports, append at the end
 	if !inserted {
 		updated_lines.push("".to_string());
-		updated_lines.push("#[path = \"generated/builder_ext.rs\"]".to_string());
-		updated_lines.push("pub mod builder_ext;".to_string());
+		if !current_content.contains("mod from_impls;") {
+			updated_lines.push("#[path = \"generated/from_impls.rs\"]".to_string());
+			updated_lines.push("mod from_impls;".to_string());
+		}
+		if !current_content.contains("mod builder_ext;") {
+			updated_lines.push("#[path = \"generated/builder_ext.rs\"]".to_string());
+			updated_lines.push("pub mod builder_ext;".to_string());
+		}
 	}
 
 	// Write the updated content back
 	let updated_content = updated_lines.join("\n");
 	fs::write(generated_rs_path, updated_content).expect("Failed to update generated.rs");
-
-	println!("Updated generated.rs with builder_ext module");
 }
 
 fn camel_to_snake_case(s: &str) -> String {

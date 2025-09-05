@@ -1,9 +1,10 @@
-use crate::oids;
-use crate::error::Asn1Error;
+use crate::asn1::{error::AnchorAsn1Error, oids};
+use crate::generated::{Attribute, AttributeValue};
+use keetanetwork_asn1::generated::iso20022::*;
 use rasn::types::OctetString;
 
 impl TryFrom<Address> for Attribute {
-	type Error = Asn1Error;
+	type Error = AnchorAsn1Error;
 
 	fn try_from(value: Address) -> Result<Self, Self::Error> {
 		let name = oids::keeta::ADDRESS;
@@ -14,7 +15,7 @@ impl TryFrom<Address> for Attribute {
 }
 
 impl TryFrom<ContactDetails> for Attribute {
-	type Error = Asn1Error;
+	type Error = AnchorAsn1Error;
 
 	fn try_from(value: ContactDetails) -> Result<Self, Self::Error> {
 		let name = oids::keeta::CONTACT_DETAILS;
@@ -25,7 +26,7 @@ impl TryFrom<ContactDetails> for Attribute {
 }
 
 impl TryFrom<DateAndPlaceOfBirth> for Attribute {
-	type Error = Asn1Error;
+	type Error = AnchorAsn1Error;
 
 	fn try_from(value: DateAndPlaceOfBirth) -> Result<Self, Self::Error> {
 		let name = oids::keeta::DATE_AND_PLACE_OF_BIRTH;
@@ -36,7 +37,7 @@ impl TryFrom<DateAndPlaceOfBirth> for Attribute {
 }
 
 impl TryFrom<EntityType> for Attribute {
-	type Error = Asn1Error;
+	type Error = AnchorAsn1Error;
 
 	fn try_from(value: EntityType) -> Result<Self, Self::Error> {
 		let name = oids::keeta::ENTITY_TYPE;
@@ -45,4 +46,3 @@ impl TryFrom<EntityType> for Attribute {
 		Ok(Attribute { name, value })
 	}
 }
-

@@ -635,7 +635,7 @@ dependencies = [
 [[package]]
 name = "keetanetwork-account"
 version = "0.1.0"
-source = "git+ssh://git@github.com/KeetaNetwork/node-rs.git?branch=main#4bf92723ece4f69b153dff75c95d2ce452df8c8a"
+source = "git+ssh://git@github.com/KeetaNetwork/node-rs.git?branch=main#42107e2b11ee00e7b4dbc2c7468260a1208f27a0"
 dependencies = [
  "base32",
  "bip39-dict",
@@ -676,7 +676,7 @@ dependencies = [
 [[package]]
 name = "keetanetwork-asn1"
 version = "0.1.0"
-source = "git+ssh://git@github.com/KeetaNetwork/node-rs.git?branch=main#4bf92723ece4f69b153dff75c95d2ce452df8c8a"
+source = "git+ssh://git@github.com/KeetaNetwork/node-rs.git?branch=main#42107e2b11ee00e7b4dbc2c7468260a1208f27a0"
 dependencies = [
  "chrono",
  "der",
@@ -694,7 +694,7 @@ dependencies = [
 [[package]]
 name = "keetanetwork-crypto"
 version = "0.1.0"
-source = "git+ssh://git@github.com/KeetaNetwork/node-rs.git?branch=main#4bf92723ece4f69b153dff75c95d2ce452df8c8a"
+source = "git+ssh://git@github.com/KeetaNetwork/node-rs.git?branch=main#42107e2b11ee00e7b4dbc2c7468260a1208f27a0"
 dependencies = [
  "aead",
  "aes",
@@ -734,7 +734,7 @@ dependencies = [
 [[package]]
 name = "keetanetwork-error"
 version = "0.1.0"
-source = "git+ssh://git@github.com/KeetaNetwork/node-rs.git?branch=main#4bf92723ece4f69b153dff75c95d2ce452df8c8a"
+source = "git+ssh://git@github.com/KeetaNetwork/node-rs.git?branch=main#42107e2b11ee00e7b4dbc2c7468260a1208f27a0"
 dependencies = [
  "snafu",
 ]
@@ -742,7 +742,7 @@ dependencies = [
 [[package]]
 name = "keetanetwork-utils"
 version = "0.1.0"
-source = "git+ssh://git@github.com/KeetaNetwork/node-rs.git?branch=main#4bf92723ece4f69b153dff75c95d2ce452df8c8a"
+source = "git+ssh://git@github.com/KeetaNetwork/node-rs.git?branch=main#42107e2b11ee00e7b4dbc2c7468260a1208f27a0"
 dependencies = [
  "rasn-compiler",
 ]
@@ -750,7 +750,7 @@ dependencies = [
 [[package]]
 name = "keetanetwork-x509"
 version = "0.1.0"
-source = "git+ssh://git@github.com/KeetaNetwork/node-rs.git?branch=main#4bf92723ece4f69b153dff75c95d2ce452df8c8a"
+source = "git+ssh://git@github.com/KeetaNetwork/node-rs.git?branch=main#42107e2b11ee00e7b4dbc2c7468260a1208f27a0"
 dependencies = [
  "base64",
  "chrono",
