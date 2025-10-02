@@ -83,14 +83,12 @@ use keetanetwork_account::KeyPair;
 use keetanetwork_crypto::operations::encryption::Aead;
 use keetanetwork_crypto::prelude::{ExposeSecret, HashAlgorithm, IntoSecret, SecretBox};
 use rasn::prelude::*;
-use strum::AsRefStr;
 
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 use crate::asn1::error::AnchorAsn1Error;
 use crate::asn1::utils::{get_plain_attribute_oid, get_sensitive_attribute_oid};
-use crate::asn1::*;
 use crate::sensitive_attributes::error::SensitiveAttributeError;
 use crate::sensitive_attributes::utils::{assert_valid_version, create_hash_input, setup_cipher_for_decryption};
 use crate::utils::{base64_decode, base64_encode};
@@ -202,49 +200,6 @@ impl From<&KycAttributeEntry> for SensitiveAttributeBuilder {
 impl From<KycAttributeEntry> for SensitiveAttributeBuilder {
 	fn from(entry: KycAttributeEntry) -> Self {
 		(&entry).into()
-	}
-}
-
-/// Certificate attribute names
-///
-/// Predefined attribute names for common KYC data types, each mapped to a
-/// specific Object Identifier (OID). ,These provide standardized ways to
-/// identify different types of sensitive personal information.
-///
-/// # Example
-///
-/// ```rust
-/// use keetanetwork_anchor::sensitive_attributes::SensitiveAttributeName;
-/// use rasn::types::ObjectIdentifier;
-///
-/// // Convert attribute names to OIDs
-/// let email_oid = ObjectIdentifier::from(SensitiveAttributeName::Email);
-/// let name_oid = ObjectIdentifier::from(SensitiveAttributeName::FullName);
-///
-/// // Use in attribute identification
-/// println!("Email OID: {}", email_oid);
-/// println!("Full Name OID: {}", name_oid);
-/// ```
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, AsRefStr)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[strum(serialize_all = "camelCase")]
-pub enum SensitiveAttributeName {
-	FullName,
-	DateOfBirth,
-	Address,
-	Email,
-	PhoneNumber,
-}
-
-impl From<SensitiveAttributeName> for ObjectIdentifier {
-	fn from(attr: SensitiveAttributeName) -> Self {
-		match attr {
-			SensitiveAttributeName::FullName => oids::keeta::FULL_NAME,
-			SensitiveAttributeName::DateOfBirth => oids::keeta::DATE_OF_BIRTH,
-			SensitiveAttributeName::Address => oids::keeta::ADDRESS,
-			SensitiveAttributeName::Email => oids::keeta::EMAIL,
-			SensitiveAttributeName::PhoneNumber => oids::keeta::PHONE_NUMBER,
-		}
 	}
 }
 
@@ -576,35 +531,8 @@ mod tests {
 	use keetanetwork_account::Account;
 
 	use super::*;
-	use crate::asn1::oids;
 	use crate::test_all_key_types;
 	use crate::testing::{create_test_sensitive_attribute, create_test_sensitive_attribute_with_proof};
-
-	#[test]
-	fn test_certificate_attribute_name_oid() {
-		let full_name_oid: ObjectIdentifier = SensitiveAttributeName::FullName.into();
-		let email_oid: ObjectIdentifier = SensitiveAttributeName::Email.into();
-		assert_eq!(full_name_oid, rasn::oid!("1.3.6.1.4.1.62675.1.0"));
-		assert_eq!(email_oid, rasn::oid!("1.3.6.1.4.1.62675.1.3"));
-	}
-
-	#[test]
-	fn test_certificate_attribute_name_conversion() {
-		let test_cases = [
-			(SensitiveAttributeName::FullName, oids::keeta::FULL_NAME),
-			(SensitiveAttributeName::DateOfBirth, oids::keeta::DATE_OF_BIRTH),
-			(SensitiveAttributeName::Address, oids::keeta::ADDRESS),
-			(SensitiveAttributeName::Email, oids::keeta::EMAIL),
-			(SensitiveAttributeName::PhoneNumber, oids::keeta::PHONE_NUMBER),
-		];
-
-		for (attr_name, expected_oid) in test_cases {
-			let oid = ObjectIdentifier::from(attr_name);
-			assert_eq!(oid, expected_oid);
-			let oid2: ObjectIdentifier = attr_name.into();
-			assert_eq!(oid2, expected_oid);
-		}
-	}
 
 	test_all_key_types!(test_sensitive_attribute_decrypt, |account: Account<_>| {
 		let test_value = b"test value for decryption";
