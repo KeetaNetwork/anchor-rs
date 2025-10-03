@@ -290,7 +290,11 @@ impl CertificateBuilder {
 	/// // Add subject, issuer, and other required fields...
 	/// ```
 	pub fn for_end_entity() -> Self {
-		Self { inner: X509CertificateBuilder::for_end_entity(), kyc_attributes: HashMap::new(), errors: Vec::new() }
+		Self {
+			inner: X509CertificateBuilder::for_end_entity().without_common_extensions(),
+			kyc_attributes: HashMap::new(),
+			errors: Vec::new(),
+		}
 	}
 
 	/// Create a builder for a CA (Certificate Authority) certificate.
@@ -307,7 +311,11 @@ impl CertificateBuilder {
 	/// // Add required extensions...
 	/// ```
 	pub fn for_ca() -> Self {
-		Self { inner: X509CertificateBuilder::for_ca(), kyc_attributes: HashMap::new(), errors: Vec::new() }
+		Self {
+			inner: X509CertificateBuilder::for_ca().without_common_extensions(),
+			kyc_attributes: HashMap::new(),
+			errors: Vec::new(),
+		}
 	}
 
 	/// Set a KYC attribute to a given value.
