@@ -168,9 +168,9 @@ impl SensitiveAttributeBuilder {
 		let hash_input = create_hash_input(salt.as_slice(), public_key_bytes, &encrypted_value, value);
 
 		let version: Integer = 0u64.into(); // version 0
-		let hashed_and_salted_value: OctetString = HashAlgorithm::Sha2_256.hash(&hash_input).into();
+		let hashed_and_salted_value: OctetString = HashAlgorithm::Sha3_256.hash(&hash_input).into();
 		let encrypted_salt: OctetString = encrypted_salt.into();
-		let hashed_value = SensitiveAttributeHashedValue::new(encrypted_salt, oids::SHA2_256, hashed_and_salted_value);
+		let hashed_value = SensitiveAttributeHashedValue::new(encrypted_salt, oids::SHA3_256, hashed_and_salted_value);
 		let nonce = nonce.to_vec();
 		let cipher = SensitiveAttributeCipher::new(oids::AES_256_GCM, nonce.into(), encrypted_key.into());
 		let encrypted_value: OctetString = encrypted_value.into();

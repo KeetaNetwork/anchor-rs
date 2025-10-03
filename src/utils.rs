@@ -170,6 +170,7 @@ pub mod serde_helpers {
 		match algorithm {
 			"aes-256-gcm" => Ok(oids::AES_256_GCM),
 			"sha2-256" => Ok(oids::SHA2_256),
+			"sha3-256" => Ok(oids::SHA3_256),
 			_ => Err(E::custom(format!("Unknown algorithm: {algorithm}"))),
 		}
 	}

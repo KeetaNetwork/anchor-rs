@@ -448,7 +448,7 @@ impl SensitiveAttribute {
 		let hash_input = create_hash_input(&proof_salt, public_key_bytes, &self.encrypted_value, &plaintext_value);
 
 		// Hash the concatenated data and compare
-		let computed_hash = HashAlgorithm::Sha2_256.hash(&hash_input);
+		let computed_hash = HashAlgorithm::Sha3_256.hash(&hash_input);
 		Ok(computed_hash.as_slice() == self.hashed_value.value.as_ref())
 	}
 
