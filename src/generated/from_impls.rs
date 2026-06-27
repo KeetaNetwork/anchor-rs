@@ -1,4 +1,4 @@
-use crate::asn1::{error::AnchorAsn1Error, oids};
+use crate::asn1::{oids, error::AnchorAsn1Error};
 use crate::generated::{Attribute, AttributeValue};
 use keetanetwork_asn1::generated::iso20022::*;
 use rasn::types::OctetString;
@@ -36,6 +36,17 @@ impl TryFrom<DateAndPlaceOfBirth> for Attribute {
 	}
 }
 
+impl TryFrom<Document> for Attribute {
+	type Error = AnchorAsn1Error;
+
+	fn try_from(value: Document) -> Result<Self, Self::Error> {
+		let name = oids::keeta::DOCUMENT;
+		let encoded = rasn::der::encode(&value)?;
+		let value = AttributeValue::sensitiveValue(OctetString::from_slice(&encoded));
+		Ok(Attribute { name, value })
+	}
+}
+
 impl TryFrom<EntityType> for Attribute {
 	type Error = AnchorAsn1Error;
 
@@ -46,3 +57,4 @@ impl TryFrom<EntityType> for Attribute {
 		Ok(Attribute { name, value })
 	}
 }
+

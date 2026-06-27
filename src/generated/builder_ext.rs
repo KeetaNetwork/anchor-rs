@@ -3,9 +3,9 @@
 //! This module provides a trait extension that adds `for_*` methods for all
 //! available KYC attributes, making the builder API more ergonomic and type-safe.
 
-use crate::asn1::oids;
-use crate::generated::Attribute;
 use crate::kyc_schema::builder::AttributeBuilderLike;
+use crate::generated::Attribute;
+use crate::asn1::oids;
 
 /// Extension trait for [`AttributeBuilderLike`] providing typed methods for KYC attributes.
 ///
@@ -29,6 +29,118 @@ pub trait AttributeBuilderExtensions: AttributeBuilderLike + Sized {
 			.expect("Failed to build dateOfBirth attribute")
 	}
 
+	/// Create a documentDriversLicense attribute (sensitive)
+	///
+	/// Creates a sensitive attribute for documentDriversLicense with the predefined OID.
+	///
+	/// # Arguments
+	///
+	/// - `value` - The attribute value as bytes
+	fn for_document_drivers_license<V: AsRef<[u8]>>(value: V) -> Attribute {
+		Self::default()
+			.with_oid(oids::keeta::DOCUMENT_DRIVERS_LICENSE)
+			.with_value(value)
+			.as_sensitive()
+			.build()
+			.expect("Failed to build documentDriversLicense attribute")
+	}
+
+	/// Create a documentIdCard attribute (sensitive)
+	///
+	/// Creates a sensitive attribute for documentIdCard with the predefined OID.
+	///
+	/// # Arguments
+	///
+	/// - `value` - The attribute value as bytes
+	fn for_document_id_card<V: AsRef<[u8]>>(value: V) -> Attribute {
+		Self::default()
+			.with_oid(oids::keeta::DOCUMENT_ID_CARD)
+			.with_value(value)
+			.as_sensitive()
+			.build()
+			.expect("Failed to build documentIdCard attribute")
+	}
+
+	/// Create a documentPassport attribute (sensitive)
+	///
+	/// Creates a sensitive attribute for documentPassport with the predefined OID.
+	///
+	/// # Arguments
+	///
+	/// - `value` - The attribute value as bytes
+	fn for_document_passport<V: AsRef<[u8]>>(value: V) -> Attribute {
+		Self::default()
+			.with_oid(oids::keeta::DOCUMENT_PASSPORT)
+			.with_value(value)
+			.as_sensitive()
+			.build()
+			.expect("Failed to build documentPassport attribute")
+	}
+
+	/// Create a documentPassportCard attribute (sensitive)
+	///
+	/// Creates a sensitive attribute for documentPassportCard with the predefined OID.
+	///
+	/// # Arguments
+	///
+	/// - `value` - The attribute value as bytes
+	fn for_document_passport_card<V: AsRef<[u8]>>(value: V) -> Attribute {
+		Self::default()
+			.with_oid(oids::keeta::DOCUMENT_PASSPORT_CARD)
+			.with_value(value)
+			.as_sensitive()
+			.build()
+			.expect("Failed to build documentPassportCard attribute")
+	}
+
+	/// Create a documentPermit attribute (sensitive)
+	///
+	/// Creates a sensitive attribute for documentPermit with the predefined OID.
+	///
+	/// # Arguments
+	///
+	/// - `value` - The attribute value as bytes
+	fn for_document_permit<V: AsRef<[u8]>>(value: V) -> Attribute {
+		Self::default()
+			.with_oid(oids::keeta::DOCUMENT_PERMIT)
+			.with_value(value)
+			.as_sensitive()
+			.build()
+			.expect("Failed to build documentPermit attribute")
+	}
+
+	/// Create a documentResidenceDocument attribute (sensitive)
+	///
+	/// Creates a sensitive attribute for documentResidenceDocument with the predefined OID.
+	///
+	/// # Arguments
+	///
+	/// - `value` - The attribute value as bytes
+	fn for_document_residence_document<V: AsRef<[u8]>>(value: V) -> Attribute {
+		Self::default()
+			.with_oid(oids::keeta::DOCUMENT_RESIDENCE_DOCUMENT)
+			.with_value(value)
+			.as_sensitive()
+			.build()
+			.expect("Failed to build documentResidenceDocument attribute")
+	}
+
+	/// Create a documentVisa attribute (sensitive)
+	///
+	/// Creates a sensitive attribute for documentVisa with the predefined OID.
+	///
+	/// # Arguments
+	///
+	/// - `value` - The attribute value as bytes
+	fn for_document_visa<V: AsRef<[u8]>>(value: V) -> Attribute {
+		Self::default()
+			.with_oid(oids::keeta::DOCUMENT_VISA)
+			.with_value(value)
+			.as_sensitive()
+			.build()
+			.expect("Failed to build documentVisa attribute")
+	}
+
 	/// Create a email attribute (sensitive)
 	///
 	/// Creates a sensitive attribute for email with the predefined OID.
@@ -43,6 +155,22 @@ pub trait AttributeBuilderExtensions: AttributeBuilderLike + Sized {
 			.as_sensitive()
 			.build()
 			.expect("Failed to build email attribute")
+	}
+
+	/// Create a firstName attribute (sensitive)
+	///
+	/// Creates a sensitive attribute for firstName with the predefined OID.
+	///
+	/// # Arguments
+	///
+	/// - `value` - The attribute value as bytes
+	fn for_first_name<V: AsRef<[u8]>>(value: V) -> Attribute {
+		Self::default()
+			.with_oid(oids::keeta::FIRST_NAME)
+			.with_value(value)
+			.as_sensitive()
+			.build()
+			.expect("Failed to build firstName attribute")
 	}
 
 	/// Create a fullName attribute (sensitive)
@@ -125,6 +253,54 @@ pub trait AttributeBuilderExtensions: AttributeBuilderLike + Sized {
 			.expect("Failed to build jobTitle attribute")
 	}
 
+	/// Create a lastName attribute (sensitive)
+	///
+	/// Creates a sensitive attribute for lastName with the predefined OID.
+	///
+	/// # Arguments
+	///
+	/// - `value` - The attribute value as bytes
+	fn for_last_name<V: AsRef<[u8]>>(value: V) -> Attribute {
+		Self::default()
+			.with_oid(oids::keeta::LAST_NAME)
+			.with_value(value)
+			.as_sensitive()
+			.build()
+			.expect("Failed to build lastName attribute")
+	}
+
+	/// Create a middleName attribute (sensitive)
+	///
+	/// Creates a sensitive attribute for middleName with the predefined OID.
+	///
+	/// # Arguments
+	///
+	/// - `value` - The attribute value as bytes
+	fn for_middle_name<V: AsRef<[u8]>>(value: V) -> Attribute {
+		Self::default()
+			.with_oid(oids::keeta::MIDDLE_NAME)
+			.with_value(value)
+			.as_sensitive()
+			.build()
+			.expect("Failed to build middleName attribute")
+	}
+
+	/// Create a nationality attribute (sensitive)
+	///
+	/// Creates a sensitive attribute for nationality with the predefined OID.
+	///
+	/// # Arguments
+	///
+	/// - `value` - The attribute value as bytes
+	fn for_nationality<V: AsRef<[u8]>>(value: V) -> Attribute {
+		Self::default()
+			.with_oid(oids::keeta::NATIONALITY)
+			.with_value(value)
+			.as_sensitive()
+			.build()
+			.expect("Failed to build nationality attribute")
+	}
+
 	/// Create a phoneNumber attribute (sensitive)
 	///
 	/// Creates a sensitive attribute for phoneNumber with the predefined OID.
@@ -156,6 +332,7 @@ pub trait AttributeBuilderExtensions: AttributeBuilderLike + Sized {
 			.build()
 			.expect("Failed to build postalCode attribute")
 	}
+
 }
 
 // Implement the extension trait for any type that implements AttributeBuilderLike
@@ -178,14 +355,31 @@ mod tests {
 			test_value: b"test_dateOfBirth_value",
 			expected_sensitivity: true,
 		},
-		AttributeTestData { method_name: "for_email", test_value: b"test_email_value", expected_sensitivity: true },
+		AttributeTestData {
+			method_name: "for_email",
+			test_value: b"test_email_value",
+			expected_sensitivity: true,
+		},
+		AttributeTestData {
+			method_name: "for_first_name",
+			test_value: b"test_firstName_value",
+			expected_sensitivity: true,
+		},
 		AttributeTestData {
 			method_name: "for_full_name",
 			test_value: b"test_fullName_value",
 			expected_sensitivity: true,
 		},
-		AttributeTestData { method_name: "for_id", test_value: b"test_id_value", expected_sensitivity: true },
-		AttributeTestData { method_name: "for_issuer", test_value: b"test_issuer_value", expected_sensitivity: true },
+		AttributeTestData {
+			method_name: "for_id",
+			test_value: b"test_id_value",
+			expected_sensitivity: true,
+		},
+		AttributeTestData {
+			method_name: "for_issuer",
+			test_value: b"test_issuer_value",
+			expected_sensitivity: true,
+		},
 		AttributeTestData {
 			method_name: "for_job_responsibility",
 			test_value: b"test_jobResponsibility_value",
@@ -197,6 +391,21 @@ mod tests {
 			expected_sensitivity: true,
 		},
 		AttributeTestData {
+			method_name: "for_last_name",
+			test_value: b"test_lastName_value",
+			expected_sensitivity: true,
+		},
+		AttributeTestData {
+			method_name: "for_middle_name",
+			test_value: b"test_middleName_value",
+			expected_sensitivity: true,
+		},
+		AttributeTestData {
+			method_name: "for_nationality",
+			test_value: b"test_nationality_value",
+			expected_sensitivity: true,
+		},
+		AttributeTestData {
 			method_name: "for_phone_number",
 			test_value: b"test_phoneNumber_value",
 			expected_sensitivity: true,
@@ -205,7 +414,7 @@ mod tests {
 			method_name: "for_postal_code",
 			test_value: b"test_postalCode_value",
 			expected_sensitivity: false,
-		},
+		}
 	];
 
 	#[test]
@@ -215,39 +424,40 @@ mod tests {
 			let result = match test_data.method_name {
 				"for_date_of_birth" => AttributeBuilder::for_date_of_birth(test_data.test_value),
 				"for_email" => AttributeBuilder::for_email(test_data.test_value),
+				"for_first_name" => AttributeBuilder::for_first_name(test_data.test_value),
 				"for_full_name" => AttributeBuilder::for_full_name(test_data.test_value),
 				"for_id" => AttributeBuilder::for_id(test_data.test_value),
 				"for_issuer" => AttributeBuilder::for_issuer(test_data.test_value),
 				"for_job_responsibility" => AttributeBuilder::for_job_responsibility(test_data.test_value),
 				"for_job_title" => AttributeBuilder::for_job_title(test_data.test_value),
+				"for_last_name" => AttributeBuilder::for_last_name(test_data.test_value),
+				"for_middle_name" => AttributeBuilder::for_middle_name(test_data.test_value),
+				"for_nationality" => AttributeBuilder::for_nationality(test_data.test_value),
 				"for_phone_number" => AttributeBuilder::for_phone_number(test_data.test_value),
 				"for_postal_code" => AttributeBuilder::for_postal_code(test_data.test_value),
 				_ => panic!("Unknown method: {}", test_data.method_name),
 			};
 
 			// Verify the attribute was created correctly
-			assert_eq!(
-				result.is_sensitive(),
-				test_data.expected_sensitivity,
-				"Method {} should create {} attribute",
-				test_data.method_name,
-				if test_data.expected_sensitivity {
-					"sensitive"
-				} else {
-					"plain"
-				}
+			assert_eq!(result.is_sensitive(), test_data.expected_sensitivity, 
+				"Method {} should create {} attribute", 
+				test_data.method_name, 
+				if test_data.expected_sensitivity { "sensitive" } else { "plain" }
 			);
 
 			// Verify the value was set correctly
 			let expected_value = test_data.test_value;
 			let actual_value = result.as_ref();
-			assert_eq!(actual_value, expected_value, "Method {} should set value correctly", test_data.method_name);
+			assert_eq!(actual_value, expected_value,
+				"Method {} should set value correctly", test_data.method_name
+			);
 		}
 	}
 
 	#[test]
 	fn test_method_count() {
 		// Ensure we have the expected number of testable methods (simple types only)
-		assert_eq!(ATTRIBUTE_TEST_DATA.len(), 9, "Expected 9 testable attribute methods");
+		assert_eq!(ATTRIBUTE_TEST_DATA.len(), 13, 
+			"Expected 13 testable attribute methods"); 
 	}
 }

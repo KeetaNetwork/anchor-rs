@@ -3,7 +3,7 @@
 
 use std::convert::TryFrom;
 
-use keetanetwork_account::{Account, AccountError, Accountable, KeyPair, Keyable, Seed};
+use keetanetwork_account::{Account, AccountError, Accountable, KeyPair, Keyable};
 use keetanetwork_asn1::SubjectPublicKeyInfo;
 use keetanetwork_crypto::prelude::IntoSecret;
 use keetanetwork_x509::SerialNumber;
@@ -48,23 +48,26 @@ macro_rules! test_all_key_types {
 	};
 }
 
-/// Helper function to create a test seed array.
-pub fn create_test_seed_array() -> Seed {
-	let seed_bytes = hex::decode(TEST_SEED).unwrap();
-	let seed_array: [u8; 32] = seed_bytes.try_into().unwrap();
-	seed_array.into_secret()
+/// Helper function to create an account from a hex seed string for different key types.
+pub fn create_account_from_seed_hex<T>(hex_seed: &str, index: u32) -> Account<T>
+where
+	T: KeyPair,
+	Account<T>: TryFrom<Accountable<T>, Error = AccountError>,
+{
+	let seed_bytes = hex::decode(hex_seed).expect("Invalid hex seed");
+	let seed_array: [u8; 32] = seed_bytes.try_into().expect("Seed must be 32 bytes");
+	let seed = Keyable::Seed((seed_array.into_secret(), index));
+	let accountable = Accountable::KeyAndType(seed, T::KEY_PAIR_TYPE);
+	Account::<T>::try_from(accountable).expect("Failed to create account from seed")
 }
 
-/// Helper function to create an account from seed for different key types.
+/// Helper function to create an account from `TEST_SEED` for different key types.
 pub fn create_account_from_seed<T>(index: u32) -> Account<T>
 where
 	T: KeyPair,
 	Account<T>: TryFrom<Accountable<T>, Error = AccountError>,
 {
-	let seed_array = create_test_seed_array();
-	let seed = Keyable::Seed((seed_array, index));
-	let accountable = Accountable::KeyAndType(seed, T::KEY_PAIR_TYPE);
-	Account::<T>::try_from(accountable).unwrap()
+	create_account_from_seed_hex(TEST_SEED, index)
 }
 
 /// Helper function to create a public key only account (no private key).

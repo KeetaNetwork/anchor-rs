@@ -310,3 +310,9 @@ pub fn test_certificate_issued_by(
 		Err("User certificate is not issued by the CA certificate".into())
 	}
 }
+
+/// Load a PEM fixture from the tests/fixtures directory
+pub fn load_pem_fixture(name: &str) -> String {
+	let path = format!("tests/fixtures/{name}.pem");
+	std::fs::read_to_string(&path).unwrap_or_else(|_| panic!("Failed to load fixture: {path}"))
+}
