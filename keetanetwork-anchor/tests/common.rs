@@ -304,7 +304,7 @@ pub fn test_certificate_issued_by(
 	user_cert: &Certificate,
 	ca_cert: &Certificate,
 ) -> Result<(), Box<dyn std::error::Error>> {
-	if user_cert.to_x509().check_issued(ca_cert.to_x509()) {
+	if user_cert.to_x509().is_issued_by(ca_cert.to_x509()) {
 		Ok(())
 	} else {
 		Err("User certificate is not issued by the CA certificate".into())

@@ -76,7 +76,10 @@ where
 	T: KeyPair,
 	Account<T>: TryFrom<Accountable<T>, Error = AccountError>,
 {
-	let public_key_string = full_account.keypair.to_public_key_string();
+	let public_key_string = full_account
+		.keypair
+		.to_public_key_string()
+		.expect("Failed to get public key string");
 	let keyable = Keyable::PublicKeyString(public_key_string);
 	let accountable = Accountable::KeyAndType(keyable, T::KEY_PAIR_TYPE);
 	Account::<T>::try_from(accountable).unwrap()

@@ -12,13 +12,13 @@ const TEST_SEED: &str = "D6986115BE7334E50DA8D73B1A4670A510E8BF47E8C5C9960B8F524
 fn main() -> Result<(), Box<dyn std::error::Error>> {
 	// Step 1: Create an issuer account from a seed
 	let issuer_account = create_account_from_seed(TEST_SEED, 0)?;
-	let public_key = issuer_account.keypair.to_public_key_string();
+	let public_key = issuer_account.keypair.to_public_key_string()?;
 
 	println!("Public key: {public_key}");
 
 	// Step 2: Create a subject account (different index)
 	let subject_account = create_account_from_seed(TEST_SEED, 1)?;
-	let subject_public_key = subject_account.keypair.to_public_key_string();
+	let subject_public_key = subject_account.keypair.to_public_key_string()?;
 	println!("Public key: {subject_public_key}");
 
 	Ok(())

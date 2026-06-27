@@ -22,10 +22,11 @@
 //! // Create attributes with compile-time helpers
 //! let attribute_name = AttributeBuilder::for_full_name(b"John Doe");
 //! let attribute_email = AttributeBuilder::for_email(b"john@example.com");
-//! let attribute_contact = ContactDetails {
-//!     phone_number: Some(PhoneNumber::from("123-456-7890")),
-//!     ..Default::default()
-//! };
+//! let attribute_contact = ContactDetails::new(
+//!     None, None, None, None, None, None, None, None, None, None,
+//!     Some(PhoneNumber("123-456-7890".to_string())),
+//!     None,
+//! );
 //!
 //! // Create a collection of attributes
 //! let kyc_attributes = KYCAttributesBuilder::new()
@@ -314,10 +315,10 @@ impl KYCAttributesBuilder {
 	///
 	/// #[cfg(feature = "chrono")]
 	/// let birth_info = DateAndPlaceOfBirth::new(
-	///     BirthDate::from(NaiveDate::from_ymd_opt(1990, 1, 1).unwrap()),
-	///     TownName::from("New York"),
-	///     Country::from("US"),
-	///     Some(CountrySubDivision::from("NY"))
+	///     BirthDate(NaiveDate::from_ymd_opt(1990, 1, 1).unwrap().and_hms_opt(0, 0, 0).unwrap().and_utc().fixed_offset()),
+	///     TownName("New York".to_string()),
+	///     Country("US".to_string()),
+	///     Some(CountrySubDivision("NY".to_string())),
 	/// );
 	///
 	/// #[cfg(feature = "chrono")]
