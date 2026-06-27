@@ -28,10 +28,6 @@ check:
 build:
 	cargo build $(release_flag)
 
-# Build for release
-release:
-	$(MAKE) build release=1
-
 # Clean build artifacts
 clean:
 	cargo clean
@@ -53,6 +49,7 @@ do-lint: do-docs-ci
 
 # Lint code for CI (check only, no fixes)
 do-lint-ci:
+	cargo check --all-targets --all-features
 	cargo fmt --all -- --check
 	cargo clippy --all-targets --all-features -- -D warnings
 
@@ -64,8 +61,8 @@ test-feat:
 # Run tests with host system's default target
 test:
 	# Use a shell script to unset CARGO_BUILD_TARGET and run tests
-	sh -c 'unset CARGO_BUILD_TARGET; cargo test --all-features'
-	cargo test --no-default-features
+	sh -c 'unset CARGO_BUILD_TARGET; cargo test --all-features --workspace'
+	cargo test --no-default-features --workspace
 
 test-all: test test-feat
 
@@ -79,9 +76,9 @@ coverage-setup:
 # Generate code coverage report
 coverage: coverage-setup
 	# Clean previous coverage data
-	@cargo llvm-cov clean || true
+	@cargo llvm-cov clean --workspace || true
 	# Generate HTML coverage report
-	cargo llvm-cov --all-features --html --ignore-filename-regex '.*generated.*'
+	cargo llvm-cov --all-features --workspace --html --ignore-filename-regex '.*generated.*'
 	# Generate LCOV coverage report (reusing the same coverage data)
 	cargo llvm-cov report --lcov --output-path coverage.lcov --ignore-filename-regex '.*generated.*'
 	# Open HTML report in browser (macOS) if it exists
@@ -97,7 +94,7 @@ coverage: coverage-setup
 coverage-check: coverage-setup
 	# Generate coverage and check threshold
 	@echo "Generating coverage report..."
-	@cargo llvm-cov --all-features --summary-only --ignore-filename-regex '.*generated.*' > coverage_summary.txt 2>&1
+	@cargo llvm-cov --all-features --workspace --summary-only --ignore-filename-regex '.*generated.*' > coverage_summary.txt 2>&1
 	@COVERAGE=$$(grep "TOTAL" coverage_summary.txt | grep -oE '[0-9]+\.[0-9]+%' | tail -1 | sed 's/%//'); \
 	THRESHOLD=90.0; \
 	if [ -z "$$COVERAGE" ]; then \
@@ -120,7 +117,7 @@ coverage-check: coverage-setup
 # Generate coverage report for CI (LCOV format for SonarCloud)
 coverage-ci: coverage-setup
 	# Generate LCOV coverage report for CI/SonarCloud
-	cargo llvm-cov --all-features --lcov --output-path coverage.lcov --ignore-filename-regex '.*generated.*'
+	cargo llvm-cov --all-features --workspace --lcov --output-path coverage.lcov --ignore-filename-regex '.*generated.*'
 
 # Run security audit
 audit:
@@ -137,13 +134,13 @@ developer:
 		echo "✅ Rust is already installed (version: $$(rustc --version))"; \
 	else \
 		echo "📦 Installing Rust via rustup (automated)..."; \
-		if [ -f rustup-init.sh ]; then \
-			chmod +x rustup-init.sh; \
-			./rustup-init.sh -y --default-toolchain stable; \
+		if [ -f scripts/rustup-init.sh ]; then \
+			chmod +x scripts/rustup-init.sh; \
+			./scripts/rustup-init.sh -y --default-toolchain stable; \
 			echo "🔄 Rust installed! Sourcing environment..."; \
 			. "$$HOME/.cargo/env" 2>/dev/null || true; \
 		else \
-			echo "❌ rustup-init.sh not found in project root."; \
+			echo "❌ scripts/rustup-init.sh not found in project root."; \
 			echo "   Please download it from: https://sh.rustup.rs/"; \
 			exit 1; \
 		fi; \
@@ -168,6 +165,18 @@ developer:
 	fi
 	$(MAKE) help
 
+# Publish packages and create release
+# Optionally restrict to specific crates: make release PKG="keetanetwork-anchor"
+# Bypass the clean-tree check (and cargo publish dirty guard): make release DIRTY=1
+# Skip the test suite (lints still run): make release SKIP_TESTS=1
+release:
+	@echo "Running release script..."
+	@./scripts/release.sh $(filter-out $@,$(MAKECMDGOALS)) $(if $(DIRTY),--allow-dirty) $(if $(SKIP_TESTS),--skip-tests) $(PKG)
+
+# Allow flags to be passed as fake targets
+--%:
+	@:
+
 # Help information
 help:
 	@echo "Makefile"
@@ -177,7 +186,7 @@ help:
 	@echo "  make help           - Show this help message"
 	@echo "  make developer      - Set up development environment (install Rust, tools, etc.)"
 	@echo "  make build          - Build in debug mode"
-	@echo "  make release        - Build in release mode"
+	@echo "  make build release=1 - Build in release mode"
 	@echo "  make clean          - Clean build artifacts"
 	@echo "  make check          - Check compilation without building"
 	@echo "  make do-docs        - Generate and open documentation"
@@ -195,3 +204,10 @@ help:
 	@echo "  make do-lint-ci     - Lint code for CI (check only, no fixes)"
 	@echo "  make do-docs-ci     - Generate documentation without opening it"
 	@echo "  make coverage-ci    - Generate LCOV coverage report for CI/SonarCloud"
+	@echo ""
+	@echo "Release Commands:"
+	@echo "  make release                       - Publish all packages to crates.io and create signed release tag"
+	@echo "  make release PKG=\"crate-a crate-b\" - Publish only the named crates (skips workspace tag)"
+	@echo "  make release DIRTY=1               - Allow publishing with a dirty working tree"
+	@echo "  make release SKIP_TESTS=1          - Skip the test suite (lints still run)"
+	@echo "  make release --dry-run             - Preview the release without publishing"
