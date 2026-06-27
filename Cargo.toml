@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["keetanetwork-anchor", "keetanetwork-anchor-bindings"]
+members = ["keetanetwork-anchor", "keetanetwork-anchor-bindings", "keetanetwork-anchor-client"]
 
 [workspace.package]
 version = "0.1.0"
@@ -76,6 +76,10 @@ features = ["derive"]
 
 [workspace.dependencies.serde_json]
 version = "1.0.150"
+
+[workspace.dependencies.uuid]
+version = "1.11.0"
+features = ["v4"]
 
 [profile.dev]
 opt-level = 0

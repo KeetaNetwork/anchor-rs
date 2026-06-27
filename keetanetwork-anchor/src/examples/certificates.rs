@@ -13,7 +13,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 	// Step 1: Create an issuer account from a seed
 	let issuer_account = create_account_from_seed(TEST_SEED, 0)?;
 	let public_key = issuer_account.keypair.to_public_key_string()?;
-
 	println!("Public key: {public_key}");
 
 	// Step 2: Create a subject account (different index)
@@ -30,7 +29,8 @@ fn create_account_from_seed(
 	index: u32,
 ) -> Result<Account<KeyECDSASECP256K1>, Box<dyn std::error::Error>> {
 	// Use the HexSeed variant directly - much cleaner!
-	let keyable = Keyable::HexSeed((seed_hex.to_string().into_secret(), index));
+	let seed_secret = seed_hex.to_string().into_secret();
+	let keyable = Keyable::HexSeed((seed_secret, index));
 	let accountable = Accountable::KeyAndType(keyable, KeyECDSASECP256K1::KEY_PAIR_TYPE);
 	let account = Account::<KeyECDSASECP256K1>::try_from(accountable)?;
 

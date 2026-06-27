@@ -1,0 +1,21 @@
+{
+	"name": "@keetanetwork/anchor-rs-harness",
+	"private": true,
+	"type": "module",
+	"description": "Test harness wrapping the reference TypeScript anchor implementation for cross-implementation signing parity tests",
+	"license": "SEE LICENSE IN LICENSE",
+	"engines": {
+		"node": ">=20"
+	},
+	"scripts": {
+		"build": "tsc"
+	},
+	"dependencies": {
+		"@keetanetwork/anchor": "0.0.79",
+		"@keetanetwork/keetanet-client": "0.18.1"
+	},
+	"devDependencies": {
+		"@types/node": "20.17.6",
+		"typescript": "5.6.3"
+	}
+}

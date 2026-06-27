@@ -84,7 +84,8 @@ pub fn create_test_sensitive_attribute<T>(account: &Account<T>, data: Option<&[u
 where
 	T: KeyPair,
 {
-	let test_data = data.unwrap_or(TestKycData::default().email.as_bytes());
+	let default_email = TestKycData::default().email.as_bytes();
+	let test_data = data.unwrap_or(default_email);
 	SensitiveAttributeBuilder::new()
 		.with_value(test_data)
 		.build(&account.keypair)

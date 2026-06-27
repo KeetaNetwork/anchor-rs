@@ -665,11 +665,27 @@ dependencies = [
  "serde_json",
  "snafu 0.9.1",
  "strum 0.28.0",
+ "uuid",
 ]
 
 [[package]]
 name = "keetanetwork-anchor-bindings"
 version = "0.1.0"
+
+[[package]]
+name = "keetanetwork-anchor-client"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "hex",
+ "keetanetwork-account",
+ "keetanetwork-anchor",
+ "keetanetwork-crypto",
+ "keetanetwork-utils",
+ "serde",
+ "serde_json",
+ "snafu 0.9.1",
+]
 
 [[package]]
 name = "keetanetwork-asn1"
@@ -1500,6 +1516,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f33196643e165781c20a5ead5582283a7dacbb87855d867fbc2df3f81eddc1be"
 dependencies = [
  "getrandom 0.3.3",
+ "js-sys",
+ "wasm-bindgen",
 ]
 
 [[package]]

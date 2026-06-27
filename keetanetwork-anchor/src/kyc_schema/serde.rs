@@ -36,11 +36,13 @@ impl Serialize for Attribute {
 
 		match &self.value {
 			AttributeValue::plainValue(octets) => {
-				state.serialize_field("value", &base64::prelude::BASE64_STANDARD.encode(octets.as_ref()))?;
+				let encoded_value = base64::prelude::BASE64_STANDARD.encode(octets.as_ref());
+				state.serialize_field("value", &encoded_value)?;
 				state.serialize_field("sensitive", &false)?;
 			}
 			AttributeValue::sensitiveValue(octets) => {
-				state.serialize_field("value", &base64::prelude::BASE64_STANDARD.encode(octets.as_ref()))?;
+				let encoded_value = base64::prelude::BASE64_STANDARD.encode(octets.as_ref());
+				state.serialize_field("value", &encoded_value)?;
 				state.serialize_field("sensitive", &true)?;
 			}
 		}

@@ -71,12 +71,8 @@ where
 		// Create accounts using the provided account as subject
 		let wrong_account = create_account_from_seed::<T>(999);
 		let subject_public_only = create_public_key_only_account::<T>(&account);
-		let accounts = TestAccounts {
-			issuer: create_account_from_seed::<T>(0),
-			subject: account,
-			subject_public_only,
-			wrong_account,
-		};
+		let issuer = create_account_from_seed::<T>(0);
+		let accounts = TestAccounts { issuer, subject: account, subject_public_only, wrong_account };
 
 		let builder = SensitiveAttributeBuilder::new().with_value(expected_bytes.clone());
 		let sensitive_attr = builder.build(&accounts.subject.keypair).unwrap();
@@ -95,16 +91,17 @@ where
 	/// Create an invalid proof with wrong value
 	fn create_invalid_value_proof(&self) -> SensitiveAttributeProof {
 		let base64_value = base64::prelude::BASE64_STANDARD.encode("Wrong Value");
-		SensitiveAttributeProof { value: base64_value.into_secret(), hash: self.valid_proof.hash.clone() }
+		let value = base64_value.into_secret();
+		let hash = self.valid_proof.hash.clone();
+		SensitiveAttributeProof { value, hash }
 	}
 
 	/// Create an invalid proof with wrong salt
 	fn create_invalid_salt_proof(&self) -> SensitiveAttributeProof {
 		let proof = self.generate_proof();
-		SensitiveAttributeProof {
-			value: proof.value,
-			hash: SensitiveAttributeProofHash::from(b"wrong_salt_32_bytes_long_for_test".to_vec()),
-		}
+		let value = proof.value;
+		let hash = SensitiveAttributeProofHash::from(b"wrong_salt_32_bytes_long_for_test".to_vec());
+		SensitiveAttributeProof { value, hash }
 	}
 }
 

@@ -1,0 +1,139 @@
+//! Errors raised while canonicalizing, encoding, signing, or verifying.
+
+use keetanetwork_utils::impl_error_from_with_fields;
+use snafu::Snafu;
+
+/// A failure while building or producing a signature (the sign-time pipeline).
+///
+/// Distinct from [`VerifyError`]: a [`SigningError`] is a fault the caller must
+/// fix (malformed payload, encoding failure), whereas a [`VerifyError`] is the
+/// *reason a signature was rejected*.
+#[derive(Debug, Clone, PartialEq, Eq, Snafu)]
+#[snafu(visibility(pub))]
+pub enum SigningError {
+	/// A number was not finite (RFC 8785 §3.2.2.3).
+	#[snafu(display("non-finite number in canonical JSON"))]
+	NonFiniteNumber,
+
+	/// An integer fell outside the I-JSON safe range (RFC 8785 Appendix D).
+	#[snafu(display("integer outside the safe range in canonical JSON"))]
+	IntegerOutOfRange,
+
+	/// A non-integer number was encountered; only integers participate in the
+	/// signing subset shared with the TypeScript reference.
+	#[snafu(display("non-integer number in canonical JSON"))]
+	NonIntegerNumber,
+
+	/// The canonical output exceeded the size guard.
+	#[snafu(display("canonical output exceeds the size limit"))]
+	OutputTooLarge,
+
+	/// An ASN.1 DER encoding failure.
+	#[snafu(display("ASN.1 encoding error: {reason}"))]
+	Encode {
+		/// The underlying encoder message.
+		reason: String,
+	},
+
+	/// An account crypto failure (signing).
+	#[snafu(display("account error: {reason}"))]
+	Account {
+		/// The underlying account message.
+		reason: String,
+	},
+}
+
+impl_error_from_with_fields!(SigningError, {
+	rasn::error::EncodeError => Encode { reason: |error: &rasn::error::EncodeError| format!("{error}") },
+	keetanetwork_account::AccountError => Account { reason: |error: keetanetwork_account::AccountError| format!("{error}") },
+});
+
+/// The reason a [`Signed`](crate::signing::Signed) envelope was rejected by
+/// [`verify`](crate::signing::verify).
+///
+/// Unlike a boolean result, each variant tells the caller *why* verification
+/// failed so they can react appropriately (retry on skew, reject on mismatch).
+#[derive(Debug, Clone, PartialEq, Eq, Snafu)]
+#[snafu(visibility(pub))]
+pub enum VerifyError {
+	/// The signature did not validate against the account and signed data.
+	#[snafu(display("signature does not match the signed data"))]
+	SignatureMismatch,
+
+	/// The signed timestamp was further from the reference time than allowed.
+	#[snafu(display("timestamp skew {skew_ms}ms exceeds the maximum {max_ms}ms"))]
+	ClockSkew {
+		/// The observed skew, in milliseconds.
+		skew_ms: i64,
+		/// The configured maximum, in milliseconds.
+		max_ms: i64,
+	},
+
+	/// The timestamp was not a strict ISO 8601 instant with millisecond
+	/// precision and a `Z` zone (the only form the reference produces).
+	#[snafu(display("timestamp is not a strict ISO 8601 instant with millisecond precision and a Z zone"))]
+	MalformedTimestamp,
+
+	/// The signature field was not valid base64.
+	#[snafu(display("signature is not valid base64: {reason}"))]
+	MalformedSignature {
+		/// The underlying decoder message.
+		reason: String,
+	},
+
+	/// The verification bytes could not be encoded (an internal fault).
+	#[snafu(display("could not encode verification data: {reason}"))]
+	Encoding {
+		/// The underlying signing-pipeline message.
+		reason: String,
+	},
+}
+
+impl_error_from_with_fields!(VerifyError, {
+	base64::DecodeError => MalformedSignature { reason: |error: base64::DecodeError| format!("{error}") },
+	SigningError => Encoding { reason: |error: SigningError| format!("{error}") },
+});
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use keetanetwork_utils::{test_error_from_conversions, test_error_variants};
+
+	test_error_from_conversions!(
+		test_signing_from_conversions,
+		SigningError,
+		[
+			rasn::error::EncodeError::length_exceeds_platform_size(rasn::Codec::Der),
+			keetanetwork_account::AccountError::InvalidKeyType,
+		]
+	);
+
+	test_error_variants!(
+		test_signing_error_variants,
+		[
+			SigningError::NonFiniteNumber,
+			SigningError::IntegerOutOfRange,
+			SigningError::NonIntegerNumber,
+			SigningError::OutputTooLarge,
+			SigningError::Encode { reason: "boom".to_string() },
+			SigningError::Account { reason: "boom".to_string() },
+		]
+	);
+
+	test_error_from_conversions!(
+		test_verify_from_conversions,
+		VerifyError,
+		[base64::DecodeError::InvalidPadding, SigningError::Encode { reason: "boom".to_string() }]
+	);
+
+	test_error_variants!(
+		test_verify_error_variants,
+		[
+			VerifyError::SignatureMismatch,
+			VerifyError::ClockSkew { skew_ms: 1, max_ms: 0 },
+			VerifyError::MalformedTimestamp,
+			VerifyError::MalformedSignature { reason: "boom".to_string() },
+			VerifyError::Encoding { reason: "boom".to_string() },
+		]
+	);
+}
