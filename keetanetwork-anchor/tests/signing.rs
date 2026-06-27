@@ -6,7 +6,8 @@ use std::error::Error;
 use chrono::{DateTime, Duration, Utc};
 use keetanetwork_account::{Account, Accountable, KeyECDSASECP256K1, KeyPair, Keyable};
 use keetanetwork_anchor::signing::{
-	object_to_signable, sign, sign_with, verify, SignParams, Signable, Signed, ToSignable, VerifyError, VerifyOptions,
+	object_to_signable, sign, sign_with, verify, SignParams, Signable, Signed, SigningError, ToSignable, VerifyError,
+	VerifyOptions,
 };
 use keetanetwork_crypto::prelude::IntoSecret;
 use serde_json::json;
@@ -87,6 +88,18 @@ fn valid_payloads_round_trip() -> TestResult {
 		let outcome = verify(&account, &data, &signed, &options);
 		assert!(outcome.is_ok(), "payload `{name}` must round-trip, got {outcome:?}");
 	}
+
+	Ok(())
+}
+
+#[test]
+fn sign_with_rejects_non_canonical_timestamp() -> TestResult {
+	let account = account_from_seed(0x11);
+	let request = demo(&account);
+	let params = SignParams::new(NONCE, "2024-01-02T03:04:05+00:00");
+
+	let outcome = sign_with(&account, &request, &params);
+	assert!(matches!(outcome, Err(SigningError::NonCanonicalTimestamp)), "got {outcome:?}");
 
 	Ok(())
 }

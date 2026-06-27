@@ -99,6 +99,8 @@ where
 	K: KeyPair,
 	T: ToSignable + ?Sized,
 {
+	ensure_canonical_timestamp(&params.timestamp)?;
+
 	let verification = verification_data(account, data, params)?;
 	let signature = account.sign(&verification, None)?;
 	let encoded = STANDARD.encode(signature);
@@ -159,6 +161,18 @@ where
 /// millisecond precision with a trailing `Z`.
 fn format_iso8601(instant: DateTime<Utc>) -> String {
 	instant.to_rfc3339_opts(SecondsFormat::Millis, true)
+}
+
+/// Reject a timestamp that [`verify`] would later refuse: it must be a strict
+/// ISO 8601 instant with millisecond precision and a `Z` zone, so signing and
+/// verification stay symmetric (no envelope this API would refuse to verify).
+fn ensure_canonical_timestamp(timestamp: &str) -> Result<(), SigningError> {
+	let parsed = DateTime::parse_from_rfc3339(timestamp).map_err(|_| SigningError::NonCanonicalTimestamp)?;
+	if format_iso8601(parsed.with_timezone(&Utc)) != timestamp {
+		return Err(SigningError::NonCanonicalTimestamp);
+	}
+
+	Ok(())
 }
 
 #[cfg(test)]

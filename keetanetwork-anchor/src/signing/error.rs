@@ -24,9 +24,15 @@ pub enum SigningError {
 	#[snafu(display("non-integer number in canonical JSON"))]
 	NonIntegerNumber,
 
-	/// The canonical output exceeded the size guard.
-	#[snafu(display("canonical output exceeds the size limit"))]
+	/// The canonical output exceeded the size or node-count (complexity) guard.
+	#[snafu(display("canonical output exceeds the size or complexity limit"))]
 	OutputTooLarge,
+
+	/// The supplied signing timestamp was not a strict ISO 8601 instant with
+	/// millisecond precision and a `Z` zone, so the resulting signature
+	/// could never verify.
+	#[snafu(display("signing timestamp is not a strict ISO 8601 instant with millisecond precision and a Z zone"))]
+	NonCanonicalTimestamp,
 
 	/// An ASN.1 DER encoding failure.
 	#[snafu(display("ASN.1 encoding error: {reason}"))]
@@ -115,6 +121,7 @@ mod tests {
 			SigningError::IntegerOutOfRange,
 			SigningError::NonIntegerNumber,
 			SigningError::OutputTooLarge,
+			SigningError::NonCanonicalTimestamp,
 			SigningError::Encode { reason: "boom".to_string() },
 			SigningError::Account { reason: "boom".to_string() },
 		]
