@@ -31,7 +31,7 @@ pub struct Signed {
 	pub signature: String,
 }
 
-/// The deterministic inputs to [`sign_data`]: a nonce and a timestamp.
+/// The deterministic inputs to [`sign_with`]: a nonce and a timestamp.
 ///
 /// Exposed so callers (and parity fixtures) can sign with fixed values; use
 /// [`SignParams::generate`] for fresh ones.
@@ -64,7 +64,7 @@ impl Default for SignParams {
 	}
 }
 
-/// Options for [`verify_signed_data`].
+/// Options for [`verify`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VerifyOptions {
 	/// Maximum allowed difference between the signed timestamp and
