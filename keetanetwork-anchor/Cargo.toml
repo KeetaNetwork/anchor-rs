@@ -1,0 +1,45 @@
+[package]
+name = "keetanetwork-anchor"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Rust implementation of KeetaNet anchor: KYC ASN.1 schemas, X.509 certificates, and hybrid encryption"
+
+[lib]
+crate-type = ["staticlib", "rlib"]
+path = "src/lib.rs"
+
+[[example]]
+name = "certificates"
+path = "src/examples/certificates.rs"
+
+[dependencies]
+rasn = { workspace = true }
+rasn-derive = { workspace = true }
+hex = { workspace = true }
+base64 = { workspace = true }
+lazy_static = { workspace = true }
+strum = { workspace = true, features = ["derive"] }
+snafu = { workspace = true, features = ["std"] }
+chrono = { workspace = true, features = ["std"], optional = true }
+serde = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true }
+keetanetwork-crypto = { workspace = true }
+keetanetwork-x509 = { workspace = true }
+keetanetwork-asn1 = { workspace = true, features = ["rasn"] }
+keetanetwork-account = { workspace = true }
+keetanetwork-utils = { workspace = true }
+
+[build-dependencies]
+rasn-compiler = { workspace = true }
+serde_json = { workspace = true }
+keetanetwork-asn1 = { version = "0.2.1" }
+keetanetwork-utils = { workspace = true, features = ["build"] }
+
+[features]
+default = ["serde", "chrono"]
+serde = ["dep:serde", "dep:serde_json", "keetanetwork-asn1/serde"]
+chrono = ["dep:chrono"]

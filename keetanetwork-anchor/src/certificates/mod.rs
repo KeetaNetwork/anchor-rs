@@ -383,7 +383,7 @@ impl Certificate {
 	/// fails, returns an empty KYC attributes collection.
 	fn parse_kyc_attributes(x509_cert: &X509Certificate) -> KYCAttributes {
 		// Try to find the KYC attributes extension
-		if let Some(extension) = x509_cert.get_extension(oids::keeta::KYC_ATTRIBUTES_EXTENSION.to_string()) {
+		if let Some(extension) = x509_cert.extension(oids::keeta::KYC_ATTRIBUTES_EXTENSION.to_string()) {
 			// Try to decode the extension value
 			if let Ok(kyc_attrs) = rasn::der::decode::<KYCAttributes>(extension.extn_value.as_bytes()) {
 				return kyc_attrs;
@@ -484,7 +484,7 @@ mod tests {
 		let x509_cert = cert.to_x509();
 		// Just check that we can access the X509 certificate
 		assert!(x509_cert
-			.get_extension(oids::keeta::KYC_ATTRIBUTES_EXTENSION.to_string())
+			.extension(oids::keeta::KYC_ATTRIBUTES_EXTENSION.to_string())
 			.is_none());
 
 		// Test Certificate.kyc_attributes

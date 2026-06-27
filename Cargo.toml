@@ -1,83 +1,93 @@
-[package]
-name = "keetanetwork-anchor"
+[workspace]
+resolver = "2"
+members = ["keetanetwork-anchor", "keetanetwork-anchor-bindings"]
+
+[workspace.package]
 version = "0.1.0"
 edition = "2021"
+authors = ["Tanveer Wahid <twahid@keeta.com>"]
+license = "MIT"
+repository = "https://github.com/KeetaNetwork/anchor-rs"
+homepage = "https://github.com/KeetaNetwork/anchor-rs"
+description = "Rust implementation of the KeetaNet anchor"
 
-[lib]
-crate-type = ["staticlib", "rlib"]
-path = "src/lib.rs"
+# Shared dependencies. Feature surfaces are set per-crate so each member only
+# pulls what it needs; published node-rs crates are pinned to 0.2.0.
+[workspace.dependencies]
 
-[[example]]
-name = "certificates"
-path = "src/examples/certificates.rs"
+[workspace.dependencies.keetanetwork-crypto]
+version = "0.2.0"
 
-# Dependencies
+[workspace.dependencies.keetanetwork-x509]
+version = "0.2.0"
 
-[dependencies]
-rasn = "0.27.1"
-rasn-derive = "0.27.1"
-hex = "0.4"
-base64 = "0.22.1"
-lazy_static = "1.5.0"
-
-[dependencies.chrono]
-version = "0.4.41"
-features = ["std", "serde"]
-optional = true
-
-[dependencies.snafu]
-version = "0.8.6"
-features = ["std"]
-
-[dependencies.strum]
-version = "0.27.2"
-features = ["derive"]
-
-[dependencies.serde]
-version = "1.0.219"
-features = ["derive"]
-optional = true
-
-[dependencies.serde_json]
-version = "1.0.143"
-optional = true
-
-# From node-rs
-# TODO Publish these crates
-
-[dependencies.keetanetwork-crypto]
-git = "ssh://git@github.com/KeetaNetwork/node-rs.git"
-branch = "main"
-
-[dependencies.keetanetwork-x509]
-git = "ssh://git@github.com/KeetaNetwork/node-rs.git"
-branch = "main"
-
-[dependencies.keetanetwork-asn1]
-git = "ssh://git@github.com/KeetaNetwork/node-rs.git"
-branch = "main"
+[workspace.dependencies.keetanetwork-asn1]
+version = "0.2.1"
 default-features = false
-features = ["rasn"]
 
-[dependencies.keetanetwork-account]
-git = "ssh://git@github.com/KeetaNetwork/node-rs.git"
-branch = "main"
+[workspace.dependencies.keetanetwork-account]
+version = "0.2.0"
 
-[dependencies.keetanetwork-utils]
-git = "ssh://git@github.com/KeetaNetwork/node-rs.git"
-branch = "main"
+[workspace.dependencies.keetanetwork-utils]
+version = "0.2.0"
 
-# Build Dependencies
+[workspace.dependencies.keetanetwork-block]
+version = "0.2.0"
 
-[build-dependencies]
-rasn-compiler = "0.14.2"
-serde_json = "1.0"
-keetanetwork-asn1 = { git = "ssh://git@github.com/KeetaNetwork/node-rs.git", branch = "main" }
-keetanetwork-utils = { git = "ssh://git@github.com/KeetaNetwork/node-rs.git", branch = "main", features = [
-	"build",
-] }
+[workspace.dependencies.keetanetwork-vote]
+version = "0.2.0"
 
-[features]
-default = ["serde", "chrono"]
-serde = ["dep:serde", "dep:serde_json", "keetanetwork-asn1/serde"]
-chrono = ["dep:chrono"]
+[workspace.dependencies.rasn]
+version = "0.27.1"
+
+[workspace.dependencies.rasn-derive]
+version = "0.27.1"
+
+[workspace.dependencies.rasn-compiler]
+version = "0.14.2"
+
+[workspace.dependencies.hex]
+version = "0.4.3"
+
+[workspace.dependencies.base64]
+version = "0.22.1"
+
+[workspace.dependencies.lazy_static]
+version = "1.5.0"
+
+[workspace.dependencies.num-bigint]
+version = "0.4.6"
+default-features = false
+
+[workspace.dependencies.chrono]
+version = "0.4.45"
+features = ["serde"]
+
+[workspace.dependencies.snafu]
+version = "0.9.1"
+default-features = false
+
+[workspace.dependencies.strum]
+version = "0.28.0"
+
+[workspace.dependencies.serde]
+version = "1.0.228"
+features = ["derive"]
+
+[workspace.dependencies.serde_json]
+version = "1.0.150"
+
+[profile.dev]
+opt-level = 0
+debug = true
+
+[profile.release]
+opt-level = 3
+debug = false
+lto = true
+codegen-units = 1
+panic = "abort"
+
+[profile.test]
+opt-level = 1
+debug = true

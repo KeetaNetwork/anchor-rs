@@ -1,0 +1,18 @@
+[package]
+name = "keetanetwork-anchor-bindings"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Shared, target-agnostic error mapping and input parsing for KeetaNet anchor binding crates"
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+default = ["std"]
+std = []
+
+[dependencies]

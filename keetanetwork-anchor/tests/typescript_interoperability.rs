@@ -75,7 +75,7 @@ fn test_typescript_certificate_attribute_decryption() {
 		for attr_name in test_case.expected_attributes {
 			let attr = certificate
 				.get_kyc_attribute(attr_name)
-				.expect(&format!("{}: Attribute '{}' should exist", test_case.name, attr_name));
+				.unwrap_or_else(|| panic!("{}: Attribute '{}' should exist", test_case.name, attr_name));
 
 			if attr.is_sensitive() {
 				let result = certificate.decrypt_kyc_attribute(attr_name, &account.keypair);
