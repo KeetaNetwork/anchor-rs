@@ -91,6 +91,8 @@ test-feat:
 	cargo check -p keetanetwork-anchor-client --target wasm32-unknown-unknown --no-default-features --features wasm,resilience
 	cargo check -p keetanetwork-anchor-client --target wasm32-wasip1 --no-default-features --features resilience
 	cargo check -p keetanetwork-anchor-client --target wasm32-wasip2 --no-default-features --features resilience
+	# WASI P2 networked KYC surface: WasiTransport + service layer + resilience.
+	cargo check -p keetanetwork-anchor-client --target wasm32-wasip2 --no-default-features --features kyc,wasi,resilience
 
 # Build the TypeScript harnesses (installs deps + compiles every entry).
 $(HARNESS_DIR)/node_modules/.package-lock.json: $(HARNESS_DIR)/package-lock.json

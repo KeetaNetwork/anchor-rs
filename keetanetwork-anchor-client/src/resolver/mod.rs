@@ -12,10 +12,7 @@ mod source;
 pub use decode::{decode_base64, parse_metadata};
 pub use metadata::{CountryCode, KycOperations, KycProvider};
 pub use query::ServiceQuery;
-pub use source::{InlineMetadataSource, MetadataSource};
-
-#[cfg(feature = "http")]
-pub use source::HttpsMetadataSource;
+pub use source::{HttpsMetadataSource, InlineMetadataSource, MetadataSource};
 
 use alloc::collections::BTreeSet;
 use alloc::string::{String, ToString};

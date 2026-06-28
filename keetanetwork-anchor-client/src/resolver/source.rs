@@ -63,10 +63,8 @@ impl MetadataSource for InlineMetadataSource {
 	}
 }
 
-#[cfg(feature = "http")]
 pub use https::HttpsMetadataSource;
 
-#[cfg(feature = "http")]
 mod https {
 	use alloc::boxed::Box;
 	use alloc::sync::Arc;
