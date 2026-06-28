@@ -1,7 +1,6 @@
 //! Common test data and utilities for integration tests
 //!
-//! This module provides shared test data and helper functions that mirror
-//! the TypeScript test suite, ensuring consistency across test environments.
+//! This module provides shared test data and helper functions.
 #![allow(dead_code)]
 
 use keetanetwork_account::{Account, AccountError, Accountable, KeyECDSASECP256K1, KeyPair};

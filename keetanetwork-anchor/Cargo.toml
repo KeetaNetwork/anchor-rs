@@ -27,6 +27,7 @@ snafu = { workspace = true, features = ["std"] }
 chrono = { workspace = true, features = ["std"], optional = true }
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
+uuid = { workspace = true, optional = true }
 keetanetwork-crypto = { workspace = true }
 keetanetwork-x509 = { workspace = true }
 keetanetwork-asn1 = { workspace = true, features = ["rasn"] }
@@ -40,6 +41,7 @@ keetanetwork-asn1 = { version = "0.2.1" }
 keetanetwork-utils = { workspace = true, features = ["build"] }
 
 [features]
-default = ["serde", "chrono"]
+default = ["serde", "chrono", "signing"]
 serde = ["dep:serde", "dep:serde_json", "keetanetwork-asn1/serde"]
 chrono = ["dep:chrono"]
+signing = ["dep:chrono", "dep:serde_json", "dep:uuid"]

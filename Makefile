@@ -1,4 +1,8 @@
-.PHONY: build clean do-docs do-docs-ci do-lint do-lint-ci test test-feat test-all all help check release coverage coverage-check coverage-ci coverage-setup audit docs developer
+.PHONY: build clean do-docs do-docs-ci do-lint do-lint-ci test test-feat test-all all help check release coverage coverage-check coverage-ci coverage-setup audit docs developer node-harness
+
+# TypeScript signing-parity harness (wraps the real @keetanetwork/anchor)
+HARNESS_DIR := keetanetwork-anchor-client/node-harness
+HARNESS_SOURCES := $(wildcard $(HARNESS_DIR)/src/*.ts) $(HARNESS_DIR)/tsconfig.json
 
 # Project name
 PROJ_NAME := anchor-rs
@@ -58,8 +62,17 @@ test-feat:
 	cargo test --no-default-features --features serde
 	cargo test --no-default-features --features chrono
 
+# Build the TypeScript signing-parity harness (installs deps + compiles).
+$(HARNESS_DIR)/node_modules/.package-lock.json: $(HARNESS_DIR)/package-lock.json
+	cd $(HARNESS_DIR) && npm ci
+
+$(HARNESS_DIR)/dist/anchor-sign.js: $(HARNESS_DIR)/node_modules/.package-lock.json $(HARNESS_SOURCES)
+	cd $(HARNESS_DIR) && npm run build
+
+node-harness: $(HARNESS_DIR)/dist/anchor-sign.js
+
 # Run tests with host system's default target
-test:
+test: node-harness
 	# Use a shell script to unset CARGO_BUILD_TARGET and run tests
 	sh -c 'unset CARGO_BUILD_TARGET; cargo test --all-features --workspace'
 	cargo test --no-default-features --workspace
@@ -74,7 +87,7 @@ coverage-setup:
 	@rustup component add llvm-tools-preview 2>/dev/null || true
 
 # Generate code coverage report
-coverage: coverage-setup
+coverage: coverage-setup node-harness
 	# Clean previous coverage data
 	@cargo llvm-cov clean --workspace || true
 	# Generate HTML coverage report
@@ -91,7 +104,7 @@ coverage: coverage-setup
 	fi
 
 # Check coverage percentage and fail if below threshold
-coverage-check: coverage-setup
+coverage-check: coverage-setup node-harness
 	# Generate coverage and check threshold
 	@echo "Generating coverage report..."
 	@cargo llvm-cov --all-features --workspace --summary-only --ignore-filename-regex '.*generated.*' > coverage_summary.txt 2>&1
@@ -115,7 +128,7 @@ coverage-check: coverage-setup
 	fi
 
 # Generate coverage report for CI (LCOV format for SonarCloud)
-coverage-ci: coverage-setup
+coverage-ci: coverage-setup node-harness
 	# Generate LCOV coverage report for CI/SonarCloud
 	cargo llvm-cov --all-features --workspace --lcov --output-path coverage.lcov --ignore-filename-regex '.*generated.*'
 
@@ -191,7 +204,8 @@ help:
 	@echo "  make check          - Check compilation without building"
 	@echo "  make do-docs        - Generate and open documentation"
 	@echo "  make do-lint        - Lint code with clippy and format (with fixes)"
-	@echo "  make test           - Run tests (includes all crypto feature combinations)"
+	@echo "  make node-harness   - Install + build the TypeScript signing-parity harness"
+	@echo "  make test           - Run tests (builds node-harness; all crypto feature combinations)"
 	@echo "  make test-feat      - Run crypto crate tests with specific features"
 	@echo "  make test-all       - Run all tests including feature tests"
 	@echo "  make audit          - Run security audit"

@@ -20,31 +20,47 @@ where
 {
 	let test_data = TestData::standard();
 
-	// Test empty KYC attributes
-	let empty_kyc = create_kyc_with_attributes::<String>(&[], &[]);
-	assert!(test_kyc_count(&empty_kyc, 0).is_ok());
+	struct CountCase<'a> {
+		name: &'static str,
+		plain: Vec<(String, &'a [u8])>,
+		sensitive: Vec<(String, &'a [u8])>,
+		expected: usize,
+	}
 
-	// Test single plain attribute
-	let plain_kyc = create_kyc_with_attributes(&[(oids::keeta::FULL_NAME, test_data.full_name.as_bytes())], &[]);
-	assert!(test_kyc_count(&plain_kyc, 1).is_ok());
+	let cases = vec![
+		CountCase { name: "empty", plain: vec![], sensitive: vec![], expected: 0 },
+		CountCase {
+			name: "single plain",
+			plain: vec![(oids::keeta::FULL_NAME.to_string(), test_data.full_name.as_bytes())],
+			sensitive: vec![],
+			expected: 1,
+		},
+		CountCase {
+			name: "multiple sensitive",
+			plain: vec![],
+			sensitive: vec![
+				(oids::keeta::FULL_NAME.to_string(), test_data.full_name.as_bytes()),
+				(oids::keeta::EMAIL.to_string(), test_data.email.as_bytes()),
+			],
+			expected: 2,
+		},
+		CountCase {
+			name: "mixed plain and sensitive",
+			plain: vec![(oids::ADDRESS_POSTAL_CODE.to_string(), test_data.postal_code.as_bytes())],
+			sensitive: vec![
+				(oids::keeta::FULL_NAME.to_string(), test_data.full_name.as_bytes()),
+				(oids::keeta::EMAIL.to_string(), test_data.email.as_bytes()),
+				(oids::keeta::PHONE_NUMBER.to_string(), test_data.phone_number.as_bytes()),
+			],
+			expected: 4,
+		},
+	];
 
-	// Test multiple sensitive attributes
-	let sensitive_kyc = create_kyc_with_attributes(
-		&[],
-		&[(oids::keeta::FULL_NAME, test_data.full_name.as_bytes()), (oids::keeta::EMAIL, test_data.email.as_bytes())],
-	);
-	assert!(test_kyc_count(&sensitive_kyc, 2).is_ok());
-
-	// Test mixed attributes
-	let mixed_kyc = create_kyc_with_attributes(
-		&[(oids::ADDRESS_POSTAL_CODE, test_data.postal_code.as_bytes())],
-		&[
-			(oids::keeta::FULL_NAME, test_data.full_name.as_bytes()),
-			(oids::keeta::EMAIL, test_data.email.as_bytes()),
-			(oids::keeta::PHONE_NUMBER, test_data.phone_number.as_bytes()),
-		],
-	);
-	assert!(test_kyc_count(&mixed_kyc, 4).is_ok());
+	for case in cases {
+		let kyc = create_kyc_with_attributes(&case.plain, &case.sensitive);
+		let count = test_kyc_count(&kyc, case.expected);
+		assert!(count.is_ok(), "case `{}` should produce {} attributes", case.name, case.expected);
+	}
 }
 
 /// Test KYC attributes iteration and access

@@ -1,0 +1,23 @@
+[package]
+name = "keetanetwork-anchor-client"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Transport-agnostic KeetaNet anchor client: request signing byte-compatible with the TypeScript reference"
+
+[lib]
+path = "src/lib.rs"
+
+[dev-dependencies]
+keetanetwork-anchor = { path = "../keetanetwork-anchor", features = ["signing"] }
+hex = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+snafu = { workspace = true, features = ["std"] }
+chrono = { workspace = true, features = ["std"] }
+keetanetwork-account = { workspace = true }
+keetanetwork-crypto = { workspace = true }
+keetanetwork-utils = { workspace = true }

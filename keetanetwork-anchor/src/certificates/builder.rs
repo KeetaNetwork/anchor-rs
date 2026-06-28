@@ -845,10 +845,12 @@ impl CertificateBuilder {
 			kyc_attributes.add_attribute(attribute_builder.build()?)
 		}
 
+		let encoded_attributes = rasn::der::encode(&kyc_attributes)?;
+
 		// Create the extension using ExtensionBuilder
 		ExtensionBuilder::new()
 			.with_oid(oids::keeta::KYC_ATTRIBUTES_EXTENSION.to_string())
-			.with_value(rasn::der::encode(&kyc_attributes)?)
+			.with_value(encoded_attributes)
 			.with_critical(false)
 			.build()
 			.map_err(Into::into)
