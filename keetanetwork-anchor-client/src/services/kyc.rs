@@ -1,0 +1,208 @@
+//! KYC anchor client: discover providers, then create and track verifications.
+//!
+//! [`KycQuery`] selects providers by country; [`KycClient`] runs the three
+//! operations a KYC flow needs over the shared service layer.
+
+use alloc::string::String;
+use alloc::vec::Vec;
+
+use serde::Deserialize;
+use serde_json::Value;
+
+use crate::resolver::{CountryCode, KycProvider, ServiceQuery};
+
+/// Selects KYC providers that serve every requested country.
+pub struct KycQuery;
+
+impl ServiceQuery for KycQuery {
+	const SERVICE: &'static str = "kyc";
+	type Criteria = [CountryCode];
+	type Provider = KycProvider;
+
+	fn parse(id: String, entry: &Value, criteria: &[CountryCode]) -> Option<KycProvider> {
+		let provider = KycProvider::try_from((id, entry)).ok()?;
+		provider.serves(criteria).then_some(provider)
+	}
+}
+
+/// An in-progress verification a provider created.
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+pub struct Verification {
+	/// The provider's verification id, used to poll status and certificates.
+	pub id: String,
+
+	/// The web URL where the user completes the verification flow.
+	#[serde(rename = "webURL")]
+	pub web_url: String,
+}
+
+/// A verification's current status.
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+pub struct VerificationStatus {
+	/// The provider-reported status (e.g. `pending`).
+	pub status: String,
+}
+
+/// A single issued certificate.
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+pub struct Certificate {
+	/// The PEM-encoded certificate.
+	pub certificate: String,
+}
+
+/// The certificates issued for a verification.
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+pub struct Certificates {
+	/// The issued certificates.
+	pub results: Vec<Certificate>,
+}
+
+#[cfg(feature = "http")]
+pub use client::KycClient;
+
+#[cfg(feature = "http")]
+mod client {
+	use alloc::vec::Vec;
+
+	use keetanetwork_account::KeyPair;
+	use serde_json::{Map, Value};
+
+	use super::{Certificates, KycQuery, Verification, VerificationStatus};
+	use crate::error::AnchorClientError;
+	use crate::resolver::{CountryCode, KycProvider};
+	use crate::service::{AnchorContext, AnchorOutcome, Auth, Call, Endpoint, Method};
+
+	/// A KYC anchor client over a shared [`AnchorContext`].
+	///
+	/// Each method discovers no transport or signing details of its own: the
+	/// context's resolver finds providers and its caller signs and sends each
+	/// operation.
+	pub struct KycClient<K>
+	where
+		K: KeyPair,
+	{
+		context: AnchorContext<K>,
+	}
+
+	impl<K> KycClient<K>
+	where
+		K: KeyPair,
+	{
+		/// A client discovering and signing through `context`.
+		pub fn new(context: AnchorContext<K>) -> Self {
+			Self { context }
+		}
+
+		/// Every provider that serves all `countries`.
+		///
+		/// # Errors
+		///
+		/// Returns [`AnchorClientError`] when a metadata root cannot be fetched
+		/// or decoded. Malformed or out-of-scope entries are skipped.
+		pub async fn providers(&self, countries: &[CountryCode]) -> Result<Vec<KycProvider>, AnchorClientError> {
+			let providers = self
+				.context
+				.resolver()
+				.lookup::<KycQuery>(countries)
+				.await?;
+			Ok(providers)
+		}
+
+		/// Begin a verification with `provider` for `countries`, optionally
+		/// directing the user to `redirect_url` when the flow ends.
+		///
+		/// Signs the request body. `countries` are the search countries the
+		/// verification is scoped to (the same set used to discover `provider`).
+		///
+		/// # Errors
+		///
+		/// Returns [`AnchorClientError::UnsupportedOperation`] when the provider
+		/// does not advertise `createVerification`, or any request failure.
+		pub async fn create_verification(
+			&self,
+			provider: &KycProvider,
+			countries: &[CountryCode],
+			redirect_url: Option<&str>,
+		) -> Result<AnchorOutcome<Verification>, AnchorClientError> {
+			let endpoint = endpoint_for(provider.operations.create_verification.as_deref(), "createVerification")?;
+			let body = create_request_fields(countries, redirect_url);
+			let method = Method::Post;
+			let auth = Auth::SignedBody;
+
+			let call = Call { endpoint: &endpoint, params: &[], method, auth, body: Some(body) };
+			let outcome = self.context.caller().invoke(call).await?;
+			Ok(outcome)
+		}
+
+		/// Fetch the certificates issued for verification `id`.
+		///
+		/// A pending verification yields [`AnchorOutcome::Retry`].
+		///
+		/// # Errors
+		///
+		/// Returns [`AnchorClientError::UnsupportedOperation`] when the provider
+		/// does not advertise `getCertificates`, or any request failure.
+		pub async fn get_certificates(
+			&self,
+			provider: &KycProvider,
+			id: &str,
+		) -> Result<AnchorOutcome<Certificates>, AnchorClientError> {
+			let endpoint = endpoint_for(provider.operations.get_certificates.as_deref(), "getCertificates")?;
+			let params = [("id", id)];
+			let method = Method::Get;
+			let auth = Auth::None;
+			let body = None;
+
+			let call = Call { endpoint: &endpoint, params: &params, method, auth, body };
+			let outcome = self.context.caller().invoke(call).await?;
+			Ok(outcome)
+		}
+
+		/// Read the status of verification `id` (signed URL).
+		///
+		/// # Errors
+		///
+		/// Returns [`AnchorClientError::UnsupportedOperation`] when the provider
+		/// does not advertise `getVerificationStatus`, or any request failure.
+		pub async fn get_verification_status(
+			&self,
+			provider: &KycProvider,
+			id: &str,
+		) -> Result<AnchorOutcome<VerificationStatus>, AnchorClientError> {
+			let endpoint =
+				endpoint_for(provider.operations.get_verification_status.as_deref(), "getVerificationStatus")?;
+			let params = [("id", id)];
+			let method = Method::Get;
+			let auth = Auth::SignedUrl;
+			let body = None;
+
+			let call = Call { endpoint: &endpoint, params: &params, method, auth, body };
+			let outcome = self.context.caller().invoke(call).await?;
+			Ok(outcome)
+		}
+	}
+
+	/// The endpoint for an advertised operation, or a typed error naming the
+	/// missing one.
+	fn endpoint_for(template: Option<&str>, operation: &'static str) -> Result<Endpoint, AnchorClientError> {
+		let template = template.ok_or(AnchorClientError::UnsupportedOperation { operation })?;
+		Ok(Endpoint::from(template))
+	}
+
+	/// The `createVerification` request fields the caller wraps and signs.
+	fn create_request_fields(countries: &[CountryCode], redirect_url: Option<&str>) -> Value {
+		let codes = countries
+			.iter()
+			.map(|country| Value::String(country.as_str().into()))
+			.collect();
+
+		let mut fields = Map::new();
+		fields.insert("countryCodes".into(), Value::Array(codes));
+
+		if let Some(url) = redirect_url {
+			fields.insert("redirectURL".into(), Value::String(url.into()));
+		}
+
+		Value::Object(fields)
+	}
+}

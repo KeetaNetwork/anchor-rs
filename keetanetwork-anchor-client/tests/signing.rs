@@ -1,4 +1,5 @@
-//! Live cross-implementation signing parity against the TypeScript anchor.
+//! Live signing interop against a running anchor: signatures cross-verify and
+//! DER bytes agree in both directions.
 
 mod common;
 mod support;
@@ -16,17 +17,17 @@ use keetanetwork_anchor::signing::{
 	verify_body, verify_url, RequestError, SignParams, Signable, Signed, Url, VerifyOptions,
 };
 use serde_json::{json, Value};
-use support::AnchorHarness;
+use support::SigningHarness;
 
 type TestResult = Result<(), Box<dyn Error>>;
 
-/// The accounts, params, and options a parity round-trip needs, plus a live
-/// harness sharing the same fixed nonce/timestamp on both sides.
+/// The accounts, params, and options a round-trip needs, plus a live harness
+/// sharing the same fixed nonce/timestamp on both sides.
 struct Fixture {
-	harness: AnchorHarness,
-	/// The harness-owned signer, so Rust can verify TypeScript-made signatures.
+	harness: SigningHarness,
+	/// The harness-owned signer, so Rust can verify anchor-made signatures.
 	verifier: Account<KeyECDSASECP256K1>,
-	/// A deterministic Rust signer, whose `publicKeyAndType` TypeScript verifies.
+	/// A deterministic Rust signer, whose `publicKeyAndType` the anchor verifies.
 	account: Account<KeyECDSASECP256K1>,
 	account_hex: String,
 	params: SignParams,
@@ -35,7 +36,7 @@ struct Fixture {
 
 impl Fixture {
 	fn start() -> Result<Self, Box<dyn Error>> {
-		let harness = AnchorHarness::start()?;
+		let harness = SigningHarness::start()?;
 		let signer_hex = harness.signer_public_key_and_type()?.to_string();
 		let verifier = Account::<KeyECDSASECP256K1>::from_hex(&signer_hex)?;
 		let account = account_from_seed(0x11);
@@ -51,35 +52,35 @@ impl Fixture {
 		})
 	}
 
-	/// Assert byte-for-byte and bidirectional parity for one payload: the
-	/// TypeScript DER bytes match Rust's, TypeScript's signature verifies in
-	/// Rust, and Rust's signature verifies in TypeScript.
+	/// Assert byte-for-byte, bidirectional agreement for one payload: the
+	/// anchor's DER bytes match Rust's, the anchor's signature verifies in
+	/// Rust, and Rust's signature verifies in the anchor.
 	fn assert_round_trip(&mut self, name: &str, data: &[Signable], transport: Value) -> TestResult {
 		let signed = self.harness.sign(NONCE, TIMESTAMP, transport.clone())?;
 
 		let verification = verification_data(&self.verifier, data, &self.params)?;
 		let rust_bytes = hex::encode(verification);
-		assert_eq!(rust_bytes, signed.verification_data, "DER verification bytes diverge from TypeScript for `{name}`");
+		assert_eq!(rust_bytes, signed.verification_data, "DER verification bytes diverge from the anchor for `{name}`");
 
 		let nonce = NONCE.to_string();
 		let timestamp = TIMESTAMP.to_string();
 		let signature = signed.signature;
 		let envelope = Signed { nonce, timestamp, signature };
-		let rust_accepts_ts = verify(&self.verifier, data, &envelope, &self.options).is_ok();
-		assert!(rust_accepts_ts, "TypeScript signature rejected by Rust for `{name}`");
+		let rust_accepts_anchor = verify(&self.verifier, data, &envelope, &self.options).is_ok();
+		assert!(rust_accepts_anchor, "anchor signature rejected by Rust for `{name}`");
 
 		let rust_signed = sign_with(&self.account, data, &self.params)?;
-		let ts_accepts_rust =
+		let anchor_accepts_rust =
 			self.harness
 				.verify(&self.account_hex, NONCE, TIMESTAMP, &rust_signed.signature, transport)?;
-		assert!(ts_accepts_rust, "Rust signature rejected by TypeScript for `{name}`");
+		assert!(anchor_accepts_rust, "Rust signature rejected by the anchor for `{name}`");
 
 		Ok(())
 	}
 }
 
 #[test]
-fn signable_vectors_round_trip_through_typescript() -> TestResult {
+fn signable_vectors_round_trip_through_the_anchor() -> TestResult {
 	let mut fixture = Fixture::start()?;
 	let secondary = decode_account(fixture.harness.secondary_public_key_and_type()?);
 	for (name, specs) in vectors() {
@@ -94,9 +95,9 @@ fn signable_vectors_round_trip_through_typescript() -> TestResult {
 
 /// Signed-request setup shared by both directions: a live harness, a
 /// deterministic Rust account, and fresh (current-time) params so the
-/// reference's default five-minute skew window accepts.
+/// anchor's default five-minute skew window accepts.
 struct RequestFixture {
-	harness: AnchorHarness,
+	harness: SigningHarness,
 	account: Account<KeyECDSASECP256K1>,
 	/// The Rust account's `keeta_…` string (the URL/body `account` value).
 	account_string: String,
@@ -109,7 +110,7 @@ struct RequestFixture {
 
 impl RequestFixture {
 	fn start() -> Result<Self, Box<dyn Error>> {
-		let harness = AnchorHarness::start()?;
+		let harness = SigningHarness::start()?;
 		let signer_string = harness.signer_public_key_string()?.to_string();
 		let account = account_from_seed(0x11);
 
@@ -130,7 +131,7 @@ impl RequestFixture {
 const EMPTY_SIGNABLE: &[Signable] = &[];
 
 #[test]
-fn rust_signed_requests_verify_in_typescript() -> TestResult {
+fn rust_signed_requests_verify_in_the_anchor() -> TestResult {
 	let mut fixture = RequestFixture::start()?;
 	let transport = json!([]);
 	let account = fixture.account_string.clone();
@@ -138,10 +139,10 @@ fn rust_signed_requests_verify_in_typescript() -> TestResult {
 
 	let signed = sign_with(&fixture.account, EMPTY_SIGNABLE, &fixture.params)?;
 	let rust_url = add_signature_to_url(&base, &account, &signed)?;
-	let ts_url = fixture
+	let anchor_url = fixture
 		.harness
 		.add_signature_to_url(base.as_str(), &account, &signed)?;
-	assert_eq!(rust_url.as_str(), ts_url, "signed URL diverges from addSignatureToURL");
+	assert_eq!(rust_url.as_str(), anchor_url, "signed URL diverges from addSignatureToURL");
 
 	let url_account = fixture
 		.harness
@@ -157,7 +158,7 @@ fn rust_signed_requests_verify_in_typescript() -> TestResult {
 }
 
 #[test]
-fn typescript_signed_requests_verify_in_rust() -> TestResult {
+fn anchor_signed_requests_verify_in_rust() -> TestResult {
 	let mut fixture = RequestFixture::start()?;
 	let transport = json!([]);
 	let nonce = fixture.params.nonce.clone();
@@ -165,8 +166,8 @@ fn typescript_signed_requests_verify_in_rust() -> TestResult {
 	let signer = fixture.signer_string.clone();
 	let base = fixture.base.clone();
 
-	let ts_signed = fixture.harness.sign(&nonce, &timestamp, transport)?;
-	let signature = ts_signed.signature;
+	let anchor_signed = fixture.harness.sign(&nonce, &timestamp, transport)?;
+	let signature = anchor_signed.signature;
 	let envelope = Signed { nonce, timestamp, signature };
 
 	let built_url = fixture
@@ -179,10 +180,10 @@ fn typescript_signed_requests_verify_in_rust() -> TestResult {
 	assert_eq!(parsed_envelope, envelope, "parsed envelope diverges from the signed URL");
 
 	let url_account = verify_url(&signed_url, EMPTY_SIGNABLE, &fixture.options)?;
-	assert_eq!(url_account.to_string(), signer, "verify_url rejected the TypeScript-signed URL");
+	assert_eq!(url_account.to_string(), signer, "verify_url rejected the anchor-signed URL");
 
 	let body_account = verify_body(&signer, &envelope, EMPTY_SIGNABLE, &fixture.options)?;
-	assert_eq!(body_account.to_string(), signer, "verify_body rejected the TypeScript-signed body");
+	assert_eq!(body_account.to_string(), signer, "verify_body rejected the anchor-signed body");
 
 	fixture.harness.shutdown()?;
 
@@ -226,7 +227,7 @@ fn parsing_rejects_partial_signature() -> TestResult {
 }
 
 /// Structured JSON inputs whose JCS canonicalization (RFC 8785) must agree with
-/// the TypeScript `objectToSignable`.
+/// the anchor's `objectToSignable`.
 fn canonical_vectors() -> Vec<(&'static str, Value)> {
 	vec![
 		("flat key sort", json!({ "z": 1, "a": "first", "m": "middle" })),
@@ -252,19 +253,19 @@ fn harness_strings(parts: &[String]) -> Value {
 }
 
 #[test]
-fn object_to_signable_matches_and_round_trips_through_typescript() -> TestResult {
+fn object_to_signable_matches_and_round_trips_through_the_anchor() -> TestResult {
 	let mut fixture = Fixture::start()?;
 	for (name, value) in canonical_vectors() {
-		let ts_parts = fixture.harness.object_to_signable(&value)?;
+		let anchor_parts = fixture.harness.object_to_signable(&value)?;
 		let rust_parts = object_to_signable(&value)?;
 
-		let expected: Vec<Signable> = ts_parts
+		let expected: Vec<Signable> = anchor_parts
 			.iter()
 			.map(|part| Signable::Text(Cow::Owned(part.clone())))
 			.collect();
-		assert_eq!(rust_parts, expected, "canonical signable diverges from TypeScript for `{name}`");
+		assert_eq!(rust_parts, expected, "canonical signable diverges from the anchor for `{name}`");
 
-		fixture.assert_round_trip(name, &rust_parts, harness_strings(&ts_parts))?;
+		fixture.assert_round_trip(name, &rust_parts, harness_strings(&anchor_parts))?;
 	}
 
 	fixture.harness.shutdown()?;

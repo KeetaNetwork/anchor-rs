@@ -48,7 +48,7 @@ pub enum Spec {
 	Account,
 }
 
-/// The shared parity matrix: one entry per element kind plus a mixed payload.
+/// The shared test matrix: one entry per element kind plus a mixed payload.
 pub fn vectors() -> Vec<(&'static str, Vec<Spec>)> {
 	vec![
 		("empty", vec![]),

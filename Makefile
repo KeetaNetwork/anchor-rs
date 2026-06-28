@@ -1,6 +1,6 @@
 .PHONY: build clean do-docs do-docs-ci do-lint do-lint-ci test test-feat test-all wasm all help check release coverage coverage-check coverage-ci coverage-setup audit docs developer node-harness
 
-# TypeScript signing-parity harness (wraps @keetanetwork/anchor)
+# TypeScript anchor interop harnesses (wrap @keetanetwork/anchor)
 HARNESS_DIR := keetanetwork-anchor-client/node-harness
 HARNESS_SOURCES := $(wildcard $(HARNESS_DIR)/src/*.ts) $(HARNESS_DIR)/tsconfig.json
 
@@ -46,13 +46,15 @@ do-docs:
 do-docs-ci:
 	cargo doc --no-deps --document-private-items --all-features
 
-# Lint code
-do-lint: do-docs-ci
+# Lint code (Rust + the TypeScript harnesses, one command)
+do-lint: do-docs-ci node-harness
+	cd $(HARNESS_DIR) && npm run lint
 	cargo clippy --fix --allow-staged --allow-dirty
 	cargo fmt
 
 # Lint code for CI (check only, no fixes)
-do-lint-ci:
+do-lint-ci: node-harness
+	cd $(HARNESS_DIR) && npm run lint
 	cargo check --all-targets --all-features
 	cargo fmt --all -- --check
 	cargo clippy --all-targets --all-features -- -D warnings
@@ -75,15 +77,23 @@ test-feat:
 	cargo check -p keetanetwork-anchor --no-default-features --features chrono
 	cargo check -p keetanetwork-anchor --no-default-features --features x509
 	cargo check -p keetanetwork-anchor --no-default-features --features signing
+	# Client: pure decode/resolver/service path is no_std; transport is http/std.
+	cargo check -p keetanetwork-anchor-client --no-default-features
+	cargo check -p keetanetwork-anchor-client --no-default-features --features codec
+	cargo check -p keetanetwork-anchor-client --no-default-features --features service
+	cargo check -p keetanetwork-anchor-client --no-default-features --features kyc
+	cargo check -p keetanetwork-anchor-client --no-default-features --features http
+	cargo check -p keetanetwork-anchor-client --no-default-features --features kyc,http
 
-# Build the TypeScript signing-parity harness (installs deps + compiles).
+# Build the TypeScript harnesses (installs deps + compiles every entry).
 $(HARNESS_DIR)/node_modules/.package-lock.json: $(HARNESS_DIR)/package-lock.json
 	cd $(HARNESS_DIR) && npm ci
 
-$(HARNESS_DIR)/dist/anchor-sign.js: $(HARNESS_DIR)/node_modules/.package-lock.json $(HARNESS_SOURCES)
+$(HARNESS_DIR)/dist/.built: $(HARNESS_DIR)/node_modules/.package-lock.json $(HARNESS_SOURCES)
 	cd $(HARNESS_DIR) && npm run build
+	touch $@
 
-node-harness: $(HARNESS_DIR)/dist/anchor-sign.js
+node-harness: $(HARNESS_DIR)/dist/.built
 
 # Run tests with host system's default target, then prove the core still
 # compiles with no default features (no_std path).
@@ -98,6 +108,10 @@ wasm:
 	cargo build -p keetanetwork-anchor --no-default-features --target wasm32-unknown-unknown
 	cargo build -p keetanetwork-anchor --no-default-features --features x509 --target wasm32-unknown-unknown
 	cargo build -p keetanetwork-anchor --no-default-features --features signing --target wasm32-unknown-unknown
+	# Client: the pure decode/resolver/service path builds on wasm (no_std)
+	cargo build -p keetanetwork-anchor-client --no-default-features --features codec --target wasm32-unknown-unknown
+	cargo build -p keetanetwork-anchor-client --no-default-features --features service --target wasm32-unknown-unknown
+	cargo build -p keetanetwork-anchor-client --no-default-features --features kyc --target wasm32-unknown-unknown
 
 test-all: test test-feat wasm
 
@@ -226,7 +240,7 @@ help:
 	@echo "  make check          - Check compilation without building"
 	@echo "  make do-docs        - Generate and open documentation"
 	@echo "  make do-lint        - Lint code with clippy and format (with fixes)"
-	@echo "  make node-harness   - Install + build the TypeScript signing-parity harness"
+	@echo "  make node-harness   - Install + build the TypeScript interop harnesses"
 	@echo "  make test           - Run tests (builds node-harness; all crypto feature combinations)"
 	@echo "  make test-feat      - Run crypto crate tests with specific features"
 	@echo "  make test-all       - Run all tests including feature tests"
