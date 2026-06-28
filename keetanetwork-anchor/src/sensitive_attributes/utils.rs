@@ -1,3 +1,6 @@
+use alloc::string::ToString;
+use alloc::vec::Vec;
+
 use keetanetwork_account::KeyPair;
 use keetanetwork_crypto::algorithms::aes_gcm::Aes256Gcm;
 use keetanetwork_crypto::operations::encryption::NonceGeneration;
@@ -7,7 +10,7 @@ use crate::generated::SensitiveAttributeCipher;
 use crate::sensitive_attributes::error::SensitiveAttributeError;
 
 /// Result type for sensitive attribute operations
-type Result<T> = std::result::Result<T, SensitiveAttributeError>;
+type Result<T> = core::result::Result<T, SensitiveAttributeError>;
 
 /// Set up cipher for decryption using keypair and cipher info.
 pub(crate) fn setup_cipher_for_decryption<T>(
@@ -50,7 +53,6 @@ pub(crate) fn assert_valid_version(version: &Integer) -> Result<u64> {
 		.clone()
 		.try_into()
 		.map_err(|_| SensitiveAttributeError::InvalidVersion)?;
-
 	if version != 0 {
 		return Err(SensitiveAttributeError::UnsupportedVersion { version });
 	}
@@ -65,7 +67,6 @@ fn validate_attribute_sensitivity(
 	expected_sensitive: bool,
 ) -> Result<()> {
 	let is_sensitive = attribute.is_sensitive();
-
 	if is_sensitive != expected_sensitive {
 		return if expected_sensitive {
 			Err(SensitiveAttributeError::InvalidAttributeIsPlain { name: name.to_string() })

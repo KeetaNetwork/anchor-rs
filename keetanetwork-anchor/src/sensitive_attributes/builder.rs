@@ -29,6 +29,8 @@
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 
+use alloc::vec::Vec;
+
 use keetanetwork_account::KeyPair;
 use keetanetwork_crypto::algorithms::aes_gcm::Aes256Gcm;
 use keetanetwork_crypto::operations::encryption::{Aead, NonceGeneration};
@@ -42,7 +44,7 @@ use crate::sensitive_attributes::error::SensitiveAttributeError;
 use crate::sensitive_attributes::utils::create_hash_input;
 
 /// Result type for certificate operations
-pub type Result<T> = std::result::Result<T, SensitiveAttributeError>;
+pub type Result<T> = core::result::Result<T, SensitiveAttributeError>;
 
 /// Builder for creating encrypted SensitiveAttribute instances.
 ///
@@ -188,7 +190,7 @@ mod tests {
 	use super::*;
 	use crate::test_all_key_types;
 
-	test_all_key_types!(test_sensitive_attribute_builder_with_real_keypair, |account: Account<_>| {
+	test_all_key_types!(test_sensitive_attribute_builder_with_keypair, |account: Account<_>| {
 		let builder = SensitiveAttributeBuilder::new().with_value(b"test value");
 		let result = builder.build(&account.keypair);
 		assert!(result.is_ok());

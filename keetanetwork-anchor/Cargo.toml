@@ -17,31 +17,86 @@ name = "certificates"
 path = "src/examples/certificates.rs"
 
 [dependencies]
-rasn = { workspace = true }
+rasn = { workspace = true, default-features = false }
 rasn-derive = { workspace = true }
-hex = { workspace = true }
-base64 = { workspace = true }
-lazy_static = { workspace = true }
-strum = { workspace = true, features = ["derive"] }
-snafu = { workspace = true, features = ["std"] }
-chrono = { workspace = true, features = ["std"], optional = true }
-serde = { workspace = true, optional = true }
-serde_json = { workspace = true, optional = true }
-uuid = { workspace = true, optional = true }
-keetanetwork-crypto = { workspace = true }
-keetanetwork-x509 = { workspace = true }
+hex = { workspace = true, default-features = false, features = ["alloc"] }
+base64 = { workspace = true, default-features = false, features = ["alloc"] }
+lazy_static = { workspace = true, optional = true }
+strum = { workspace = true, default-features = false, features = ["derive"] }
+snafu = { workspace = true }
+chrono = { workspace = true, default-features = false, features = [
+	"alloc",
+	"serde",
+], optional = true }
+serde = { workspace = true, default-features = false, optional = true }
+serde_json = { workspace = true, default-features = false, features = [
+	"alloc",
+], optional = true }
+uuid = { workspace = true, default-features = false, optional = true }
+url = { workspace = true, optional = true }
+keetanetwork-crypto = { workspace = true, default-features = false, features = [
+	"rasn",
+	"signature",
+	"encryption",
+] }
+keetanetwork-x509 = { workspace = true, default-features = false, features = [
+	"rasn",
+] }
 keetanetwork-asn1 = { workspace = true, features = ["rasn"] }
-keetanetwork-account = { workspace = true }
-keetanetwork-utils = { workspace = true }
+keetanetwork-account = { workspace = true, default-features = false, features = [
+	"rasn",
+] }
+keetanetwork-utils = { workspace = true, default-features = false }
+
+# On wasm there is no OS RNG or system clock
+[target.'cfg(all(target_family = "wasm", target_os = "unknown"))'.dependencies]
+getrandom = { version = "0.3", features = ["wasm_js"] }
+getrandom_02 = { package = "getrandom", version = "0.2", features = ["js"] }
+chrono = { workspace = true, features = ["wasmbind"], optional = true }
+uuid = { workspace = true, features = ["js"], optional = true }
 
 [build-dependencies]
 rasn-compiler = { workspace = true }
-serde_json = { workspace = true }
+serde_json = { workspace = true, features = ["std"] }
 keetanetwork-asn1 = { version = "0.2.1" }
 keetanetwork-utils = { workspace = true, features = ["build"] }
 
 [features]
-default = ["serde", "chrono", "signing"]
-serde = ["dep:serde", "dep:serde_json", "keetanetwork-asn1/serde"]
-chrono = ["dep:chrono"]
-signing = ["dep:chrono", "dep:serde_json", "dep:uuid"]
+default = ["std", "serde", "chrono", "signing"]
+std = [
+	"alloc",
+	"snafu/std",
+	"hex/std",
+	"base64/std",
+	"strum/std",
+	"rasn/std",
+	"chrono?/std",
+	"chrono?/clock",
+	"serde?/std",
+	"serde_json?/std",
+	"uuid?/std",
+	"keetanetwork-crypto/std",
+	"keetanetwork-x509/std",
+	"keetanetwork-asn1/std",
+	"keetanetwork-account/std",
+	"keetanetwork-utils/std",
+]
+alloc = [
+	"keetanetwork-crypto/alloc",
+	"keetanetwork-x509/alloc",
+	"keetanetwork-asn1/alloc",
+	"keetanetwork-account/alloc",
+	"chrono?/alloc",
+	"serde?/alloc",
+	"serde_json?/alloc",
+]
+serde = [
+	"alloc",
+	"dep:serde",
+	"dep:serde_json",
+	"keetanetwork-asn1/serde",
+	"keetanetwork-x509/serde",
+]
+chrono = ["alloc", "dep:chrono"]
+signing = ["alloc", "dep:chrono", "dep:serde_json", "dep:uuid", "dep:url"]
+x509 = ["alloc", "dep:chrono"]

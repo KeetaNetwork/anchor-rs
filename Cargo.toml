@@ -1,6 +1,10 @@
 [workspace]
 resolver = "2"
-members = ["keetanetwork-anchor", "keetanetwork-anchor-bindings", "keetanetwork-anchor-client"]
+members = [
+    "keetanetwork-anchor",
+    "keetanetwork-anchor-bindings",
+    "keetanetwork-anchor-client",
+]
 
 [workspace.package]
 version = "0.1.0"
@@ -17,9 +21,11 @@ description = "Rust implementation of the KeetaNet anchor"
 
 [workspace.dependencies.keetanetwork-crypto]
 version = "0.2.0"
+default-features = false
 
 [workspace.dependencies.keetanetwork-x509]
 version = "0.2.0"
+default-features = false
 
 [workspace.dependencies.keetanetwork-asn1]
 version = "0.2.1"
@@ -27,9 +33,11 @@ default-features = false
 
 [workspace.dependencies.keetanetwork-account]
 version = "0.2.0"
+default-features = false
 
 [workspace.dependencies.keetanetwork-utils]
 version = "0.2.0"
+default-features = false
 
 [workspace.dependencies.keetanetwork-block]
 version = "0.2.0"
@@ -39,6 +47,7 @@ version = "0.2.0"
 
 [workspace.dependencies.rasn]
 version = "0.27.1"
+default-features = false
 
 [workspace.dependencies.rasn-derive]
 version = "0.27.1"
@@ -48,9 +57,11 @@ version = "0.14.2"
 
 [workspace.dependencies.hex]
 version = "0.4.3"
+default-features = false
 
 [workspace.dependencies.base64]
 version = "0.22.1"
+default-features = false
 
 [workspace.dependencies.lazy_static]
 version = "1.5.0"
@@ -61,25 +72,34 @@ default-features = false
 
 [workspace.dependencies.chrono]
 version = "0.4.45"
+default-features = false
 features = ["serde"]
 
 [workspace.dependencies.snafu]
-version = "0.9.1"
+version = "0.8.7"
 default-features = false
 
 [workspace.dependencies.strum]
 version = "0.28.0"
+default-features = false
 
 [workspace.dependencies.serde]
 version = "1.0.228"
+default-features = false
 features = ["derive"]
 
 [workspace.dependencies.serde_json]
 version = "1.0.150"
+default-features = false
 
 [workspace.dependencies.uuid]
-version = "1.11.0"
+version = "1.23.4"
+default-features = false
 features = ["v4"]
+
+[workspace.dependencies.url]
+version = "2.5"
+default-features = false
 
 [profile.dev]
 opt-level = 0

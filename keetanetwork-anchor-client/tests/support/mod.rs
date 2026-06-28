@@ -9,6 +9,7 @@ use std::io::{BufRead, BufReader, Lines, Write};
 use std::path::PathBuf;
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 
+use keetanetwork_anchor::signing::Signed;
 use serde_json::{json, Map, Value};
 use snafu::Snafu;
 
@@ -69,7 +70,7 @@ impl From<serde_json::Error> for HarnessError {
 	}
 }
 
-/// A signature produced by the REAL TypeScript anchor `FormatData`/sign path.
+/// A signature produced by the harness `FormatData`/sign path.
 pub struct HarnessSignature {
 	/// The DER verification bytes, hex-encoded.
 	pub verification_data: String,
@@ -117,6 +118,12 @@ impl AnchorHarness {
 		self.ready_field("signerPublicKeyAndType")
 	}
 
+	/// The harness-owned signer's `publicKeyString` (the `keeta_…` address used
+	/// as the URL/body `account` parameter).
+	pub fn signer_public_key_string(&self) -> Result<&str, HarnessError> {
+		self.ready_field("signerPublicKeyString")
+	}
+
 	/// The harness-owned secondary account's `publicKeyAndType` hex, used for
 	/// account-typed signable parts.
 	pub fn secondary_public_key_and_type(&self) -> Result<&str, HarnessError> {
@@ -131,11 +138,10 @@ impl AnchorHarness {
 
 		let verification_data = field_str(&response, "verificationData")?.to_string();
 		let signature = field_str(&response, "signature")?.to_string();
-
 		Ok(HarnessSignature { verification_data, signature })
 	}
 
-	/// Verify a Rust-produced signature using the REAL TypeScript verifier.
+	/// Verify a Rust-produced signature using the harness verifier.
 	pub fn verify(
 		&mut self,
 		public_key_and_type: &str,
@@ -151,12 +157,54 @@ impl AnchorHarness {
 			"signature": signature,
 			"data": data,
 		});
-		let response = self.request("verify", request)?;
 
+		let response = self.request("verify", request)?;
 		field_bool(&response, "valid")
 	}
 
-	/// Canonicalize `value` through the REAL TypeScript `objectToSignable`,
+	/// Attach a signature to `base_url` via `addSignatureToURL`, returning the
+	/// resulting URL string.
+	pub fn add_signature_to_url(
+		&mut self,
+		base_url: &str,
+		account: &str,
+		signed: &Signed,
+	) -> Result<String, HarnessError> {
+		let request = json!({
+			"baseUrl": base_url,
+			"account": account,
+			"nonce": signed.nonce,
+			"timestamp": signed.timestamp,
+			"signature": signed.signature,
+		});
+
+		let response = self.request("addSignatureToURL", request)?;
+		Ok(field_str(&response, "url")?.to_string())
+	}
+
+	/// Verify a URL-signed request via `verifyURLAuth`, returning the
+	/// authenticated account string, or `None` when rejected.
+	pub fn verify_url(&mut self, url: &str, data: Value) -> Result<Option<String>, HarnessError> {
+		let response = self.request("verifyURLAuth", json!({ "url": url, "data": data }))?;
+		verified_account(&response)
+	}
+
+	/// Verify a body-signed request via `verifyBodyAuth`, returning the
+	/// authenticated account string, or `None` when rejected.
+	pub fn verify_body(&mut self, account: &str, signed: &Signed, data: Value) -> Result<Option<String>, HarnessError> {
+		let request = json!({
+			"account": account,
+			"nonce": signed.nonce,
+			"timestamp": signed.timestamp,
+			"signature": signed.signature,
+			"data": data,
+		});
+
+		let response = self.request("verifyBodyAuth", request)?;
+		verified_account(&response)
+	}
+
+	/// Canonicalize `value` via `objectToSignable`,
 	/// returning the resulting signable string parts.
 	pub fn object_to_signable(&mut self, value: &Value) -> Result<Vec<String>, HarnessError> {
 		let response = self.request("objectToSignable", json!({ "value": value }))?;
@@ -194,6 +242,7 @@ impl AnchorHarness {
 
 		object.insert("cmd".to_string(), Value::String(command.to_string()));
 		writeln!(self.stdin, "{}", Value::Object(object))?;
+
 		self.stdin.flush()?;
 		self.read_response(command)
 	}
@@ -201,7 +250,6 @@ impl AnchorHarness {
 	fn read_response(&mut self, command: &str) -> Result<Value, HarnessError> {
 		let line = self.lines.next().ok_or(HarnessError::UnexpectedEof)??;
 		let value: Value = serde_json::from_str(&line)?;
-
 		if let Some(message) = value.get("error").and_then(Value::as_str) {
 			return Err(HarnessError::CommandFailed { command: command.to_string(), message: message.to_string() });
 		}
@@ -229,6 +277,17 @@ fn field_bool(value: &Value, field: &'static str) -> Result<bool, HarnessError> 
 		.get(field)
 		.and_then(Value::as_bool)
 		.ok_or(HarnessError::MissingField { field })
+}
+
+/// Map a `{ valid, account }` verification response into the account string on
+/// success, or `None` when the harness reported the signature as invalid.
+fn verified_account(response: &Value) -> Result<Option<String>, HarnessError> {
+	let valid = field_bool(response, "valid")?;
+	if !valid {
+		return Ok(None);
+	}
+
+	Ok(Some(field_str(response, "account")?.to_string()))
 }
 
 /// Resolve the compiled harness entrypoint inside this crate.

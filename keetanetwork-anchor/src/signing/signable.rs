@@ -4,6 +4,8 @@
 //! verification bytes.
 
 use alloc::borrow::Cow;
+use alloc::string::String;
+use alloc::vec::Vec;
 
 use keetanetwork_account::{Account, KeyPair};
 
@@ -12,7 +14,7 @@ use keetanetwork_account::{Account, KeyPair};
 pub enum Signable<'a> {
 	/// A UTF-8 string element.
 	Text(Cow<'a, str>),
-	/// An integer element (the I-JSON safe range, as in the TypeScript reference).
+	/// An integer element (the I-JSON safe range).
 	Integer(i64),
 	/// An account element, carried as its `publicKeyAndType` bytes.
 	Account(Cow<'a, [u8]>),
@@ -57,10 +59,6 @@ impl From<i32> for Signable<'_> {
 }
 
 /// Borrow a domain value as the ordered parts of a signable payload.
-///
-/// This is the extension point for signing higher-level request types: a type
-/// implements `ToSignable` to declare exactly which fields are signed and in
-/// what order, keeping that contract identical to the TypeScript counterpart.
 pub trait ToSignable {
 	/// The ordered parts that make up the payload.
 	fn to_signable(&self) -> Vec<Signable<'_>>;

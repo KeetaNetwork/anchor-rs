@@ -1,3 +1,6 @@
+use alloc::string::String;
+use alloc::vec::Vec;
+
 use base64::Engine;
 
 /// Macro to generate From implementations for error enums
@@ -113,6 +116,9 @@ pub(crate) fn base64_decode(data: impl AsRef<str>) -> Result<Vec<u8>, base64::De
 /// Serde helper functions for JSON serialization/deserialization
 #[cfg(feature = "serde")]
 pub mod serde_helpers {
+	use alloc::string::String;
+	use alloc::vec::Vec;
+
 	use base64::Engine;
 	use rasn::types::ObjectIdentifier;
 	use serde::de::Error as DeError;
@@ -138,7 +144,7 @@ pub mod serde_helpers {
 	pub(crate) fn extract_string<'a, E: DeError>(
 		obj: &'a serde_json::Map<String, Value>,
 		field: &str,
-	) -> std::result::Result<&'a str, E> {
+	) -> core::result::Result<&'a str, E> {
 		obj.get(field)
 			.and_then(|v| v.as_str())
 			.ok_or_else(|| E::custom(format!("Missing or invalid {field}")))
@@ -148,7 +154,7 @@ pub mod serde_helpers {
 	pub(crate) fn extract_base64<E: DeError>(
 		obj: &serde_json::Map<String, Value>,
 		field: &str,
-	) -> std::result::Result<Vec<u8>, E> {
+	) -> core::result::Result<Vec<u8>, E> {
 		let b64_str = extract_string(obj, field)?;
 		base64::prelude::BASE64_STANDARD
 			.decode(b64_str)
@@ -159,14 +165,14 @@ pub mod serde_helpers {
 	pub(crate) fn extract_object<'a, E: DeError>(
 		obj: &'a serde_json::Map<String, Value>,
 		field: &str,
-	) -> std::result::Result<&'a serde_json::Map<String, Value>, E> {
+	) -> core::result::Result<&'a serde_json::Map<String, Value>, E> {
 		obj.get(field)
 			.and_then(|v| v.as_object())
 			.ok_or_else(|| E::custom(format!("Missing or invalid {field}")))
 	}
 
 	/// Convert algorithm name to OID
-	pub(crate) fn algorithm_to_oid<E: DeError>(algorithm: &str) -> std::result::Result<ObjectIdentifier, E> {
+	pub(crate) fn algorithm_to_oid<E: DeError>(algorithm: &str) -> core::result::Result<ObjectIdentifier, E> {
 		match algorithm {
 			"aes-256-gcm" => Ok(oids::AES_256_GCM),
 			"sha2-256" => Ok(oids::SHA2_256),

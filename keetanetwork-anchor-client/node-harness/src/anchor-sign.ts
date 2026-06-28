@@ -19,6 +19,7 @@ interface Part {
 
 interface References {
 	signing: any;
+	common: any;
 	KeetaNetLib: any;
 }
 
@@ -26,9 +27,11 @@ async function loadReferences(): Promise<References> {
 	const dist = process.env.KEETANET_ANCHOR_DIST;
 	if (dist !== undefined && dist !== '') {
 		const signingHref = pathToFileURL(path.join(dist, 'lib/utils/signing.js')).href;
+		const commonHref = pathToFileURL(path.join(dist, 'lib/http-server/common.js')).href;
 		const requireFromDist = createRequire(signingHref);
 		return {
 			signing: await import(signingHref),
+			common: await import(commonHref),
 			KeetaNetLib: requireFromDist('@keetanetwork/keetanet-client').lib
 		};
 	}
@@ -36,11 +39,12 @@ async function loadReferences(): Promise<References> {
 	const requireFromHere = createRequire(import.meta.url);
 	return {
 		signing: await import('@keetanetwork/anchor/lib/utils/signing.js'),
+		common: await import('@keetanetwork/anchor/lib/http-server/common.js'),
 		KeetaNetLib: requireFromHere('@keetanetwork/keetanet-client').lib
 	};
 }
 
-const { signing, KeetaNetLib } = await loadReferences();
+const { signing, common, KeetaNetLib } = await loadReferences();
 const Account = KeetaNetLib.Account;
 const Helper = KeetaNetLib.Utils.Helper;
 
@@ -91,11 +95,47 @@ function handleObjectToSignable(request: any): { [key: string]: unknown } {
 	return { event: 'object-to-signable', signable: signable };
 }
 
+function handleAddSignatureToURL(request: any): { [key: string]: unknown } {
+	const account = Account.fromPublicKeyString(request.account).assertAccount();
+	const signedField = { nonce: request.nonce, timestamp: request.timestamp, signature: request.signature };
+	const url = common.addSignatureToURL(request.baseUrl, { signedField, account });
+
+	return { event: 'signature-added', url: url.href };
+}
+
+async function handleVerifyURLAuth(request: any): Promise<{ [key: string]: unknown }> {
+	const data = buildData(request.data ?? []);
+	try {
+		const account = await common.verifyURLAuth(request.url, function () { return data; });
+		return { event: 'url-verified', valid: true, account: account.publicKeyString.get() };
+	} catch {
+		return { event: 'url-verified', valid: false };
+	}
+}
+
+async function handleVerifyBodyAuth(request: any): Promise<{ [key: string]: unknown }> {
+	const data = buildData(request.data ?? []);
+	const body = {
+		account: request.account,
+		signed: { nonce: request.nonce, timestamp: request.timestamp, signature: request.signature }
+	};
+
+	try {
+		const account = await common.verifyBodyAuth(body, function () { return data; });
+		return { event: 'body-verified', valid: true, account: account.publicKeyString.get() };
+	} catch {
+		return { event: 'body-verified', valid: false };
+	}
+}
+
 async function handleRequest(request: any): Promise<{ [key: string]: unknown }> {
 	switch (request.cmd) {
 		case 'sign': return (handleSign(request));
 		case 'verify': return (handleVerify(request));
 		case 'objectToSignable': return (Promise.resolve(handleObjectToSignable(request)));
+		case 'addSignatureToURL': return (Promise.resolve(handleAddSignatureToURL(request)));
+		case 'verifyURLAuth': return (handleVerifyURLAuth(request));
+		case 'verifyBodyAuth': return (handleVerifyBodyAuth(request));
 		case 'shutdown': return (Promise.resolve({ event: 'shutdown' }));
 		default: throw (new Error(`unknown command: ${JSON.stringify(request)}`));
 	}
@@ -105,6 +145,7 @@ console.log(JSON.stringify({
 	event: 'ready',
 	keyType: 'ECDSA_SECP256K1',
 	signerPublicKeyAndType: signer.publicKeyAndType.toString('hex'),
+	signerPublicKeyString: signer.publicKeyString.get(),
 	secondaryPublicKeyAndType: secondary.publicKeyAndType.toString('hex')
 }));
 

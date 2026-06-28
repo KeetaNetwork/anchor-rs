@@ -168,12 +168,15 @@
 //! }
 //! ```
 
-use std::collections::HashMap;
+use alloc::collections::BTreeMap;
+use alloc::string::{String, ToString};
+use alloc::vec::Vec;
 
 use keetanetwork_account::{Account, AccountError, Accountable, KeyPair};
 use keetanetwork_asn1::SubjectPublicKeyInfo;
 use keetanetwork_crypto::prelude::{CryptoSignerWithOptions, SecretBox, SignatureEncoding};
-use keetanetwork_x509::certificates::{CertificateBuilder as X509CertificateBuilder, Extension, ExtensionBuilder};
+use keetanetwork_x509::builder::{CertificateBuilder as X509CertificateBuilder, ExtensionBuilder};
+use keetanetwork_x509::certificates::Extension;
 use keetanetwork_x509::{DistinguishedName, SerialNumber};
 
 use crate::asn1::oids;
@@ -261,7 +264,7 @@ pub struct CertificateBuilder {
 	/// The underlying X.509 certificate builder
 	inner: X509CertificateBuilder,
 	/// KYC attributes to include in the certificate
-	kyc_attributes: HashMap<String, KycAttributeEntry>,
+	kyc_attributes: BTreeMap<String, KycAttributeEntry>,
 	/// Collected errors from KYC attribute operations
 	errors: Vec<CertificateError>,
 }
@@ -292,7 +295,7 @@ impl CertificateBuilder {
 	pub fn for_end_entity() -> Self {
 		Self {
 			inner: X509CertificateBuilder::for_end_entity().without_common_extensions(),
-			kyc_attributes: HashMap::new(),
+			kyc_attributes: BTreeMap::new(),
 			errors: Vec::new(),
 		}
 	}
@@ -313,7 +316,7 @@ impl CertificateBuilder {
 	pub fn for_ca() -> Self {
 		Self {
 			inner: X509CertificateBuilder::for_ca().without_common_extensions(),
-			kyc_attributes: HashMap::new(),
+			kyc_attributes: BTreeMap::new(),
 			errors: Vec::new(),
 		}
 	}
@@ -848,12 +851,11 @@ impl CertificateBuilder {
 		let encoded_attributes = rasn::der::encode(&kyc_attributes)?;
 
 		// Create the extension using ExtensionBuilder
-		ExtensionBuilder::new()
+		Ok(ExtensionBuilder::new()
 			.with_oid(oids::keeta::KYC_ATTRIBUTES_EXTENSION.to_string())
 			.with_value(encoded_attributes)
 			.with_critical(false)
-			.build()
-			.map_err(Into::into)
+			.build()?)
 	}
 }
 

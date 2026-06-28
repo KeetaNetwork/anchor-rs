@@ -1,6 +1,6 @@
-.PHONY: build clean do-docs do-docs-ci do-lint do-lint-ci test test-feat test-all all help check release coverage coverage-check coverage-ci coverage-setup audit docs developer node-harness
+.PHONY: build clean do-docs do-docs-ci do-lint do-lint-ci test test-feat test-all wasm all help check release coverage coverage-check coverage-ci coverage-setup audit docs developer node-harness
 
-# TypeScript signing-parity harness (wraps the real @keetanetwork/anchor)
+# TypeScript signing-parity harness (wraps @keetanetwork/anchor)
 HARNESS_DIR := keetanetwork-anchor-client/node-harness
 HARNESS_SOURCES := $(wildcard $(HARNESS_DIR)/src/*.ts) $(HARNESS_DIR)/tsconfig.json
 
@@ -57,10 +57,24 @@ do-lint-ci:
 	cargo fmt --all -- --check
 	cargo clippy --all-targets --all-features -- -D warnings
 
-# Test crate packages features
+# Feature matrix
 test-feat:
-	cargo test --no-default-features --features serde
-	cargo test --no-default-features --features chrono
+	# Per-feature unit tests (std present so the harness runs).
+	cargo test -p keetanetwork-anchor --lib --no-default-features --features std
+	cargo test -p keetanetwork-anchor --lib --no-default-features --features std,serde
+	cargo test -p keetanetwork-anchor --lib --no-default-features --features std,chrono
+	cargo test -p keetanetwork-anchor --lib --no-default-features --features std,x509
+	cargo test -p keetanetwork-anchor --lib --no-default-features --features std,signing
+	cargo test -p keetanetwork-anchor --lib --no-default-features --features std,serde,chrono,x509,signing
+	# no_std compile checks (test harness needs std, so check only).
+	cargo check -p keetanetwork-anchor --no-default-features
+	cargo check -p keetanetwork-anchor --no-default-features --features alloc
+	cargo check -p keetanetwork-anchor --no-default-features --features alloc,serde
+	cargo check -p keetanetwork-anchor --no-default-features --features alloc,chrono
+	cargo check -p keetanetwork-anchor --no-default-features --features serde
+	cargo check -p keetanetwork-anchor --no-default-features --features chrono
+	cargo check -p keetanetwork-anchor --no-default-features --features x509
+	cargo check -p keetanetwork-anchor --no-default-features --features signing
 
 # Build the TypeScript signing-parity harness (installs deps + compiles).
 $(HARNESS_DIR)/node_modules/.package-lock.json: $(HARNESS_DIR)/package-lock.json
@@ -71,13 +85,21 @@ $(HARNESS_DIR)/dist/anchor-sign.js: $(HARNESS_DIR)/node_modules/.package-lock.js
 
 node-harness: $(HARNESS_DIR)/dist/anchor-sign.js
 
-# Run tests with host system's default target
+# Run tests with host system's default target, then prove the core still
+# compiles with no default features (no_std path).
 test: node-harness
 	# Use a shell script to unset CARGO_BUILD_TARGET and run tests
 	sh -c 'unset CARGO_BUILD_TARGET; cargo test --all-features --workspace'
-	cargo test --no-default-features --workspace
+	cargo build -p keetanetwork-anchor --no-default-features
 
-test-all: test test-feat
+# Verify the crate compiles for wasm32 (no_std). Requires the target:
+#   rustup target add wasm32-unknown-unknown
+wasm:
+	cargo build -p keetanetwork-anchor --no-default-features --target wasm32-unknown-unknown
+	cargo build -p keetanetwork-anchor --no-default-features --features x509 --target wasm32-unknown-unknown
+	cargo build -p keetanetwork-anchor --no-default-features --features signing --target wasm32-unknown-unknown
+
+test-all: test test-feat wasm
 
 # Set up coverage tools (internal helper target)
 coverage-setup:
@@ -111,7 +133,7 @@ coverage-check: coverage-setup node-harness
 	@COVERAGE=$$(grep "TOTAL" coverage_summary.txt | grep -oE '[0-9]+\.[0-9]+%' | tail -1 | sed 's/%//'); \
 	THRESHOLD=90.0; \
 	if [ -z "$$COVERAGE" ]; then \
-		echo "❌ Could not extract total coverage percentage"; \
+		echo "Could not extract total coverage percentage"; \
 		cat coverage_summary.txt; \
 		rm -f coverage_summary.txt; \
 		exit 1; \
@@ -119,11 +141,11 @@ coverage-check: coverage-setup node-harness
 	echo "Current coverage: $${COVERAGE}%"; \
 	echo "Minimum threshold: $${THRESHOLD}%"; \
 	if [ $$(echo "$${COVERAGE} < $${THRESHOLD}" | bc -l) -eq 1 ]; then \
-		echo "❌ Coverage $${COVERAGE}% is below threshold $${THRESHOLD}%"; \
+		echo "Coverage $${COVERAGE}% is below threshold $${THRESHOLD}%"; \
 		rm -f coverage_summary.txt; \
 		exit 1; \
 	else \
-		echo "✅ Coverage $${COVERAGE}% meets threshold $${THRESHOLD}%"; \
+		echo "Coverage $${COVERAGE}% meets threshold $${THRESHOLD}%"; \
 		rm -f coverage_summary.txt; \
 	fi
 
@@ -142,37 +164,37 @@ docs:
 
 # Developer setup - install Rust and set up development environment
 developer:
-	@echo "🚀 Setting up development environment..."
+	@echo "Setting up development environment..."
 	@if command -v rustc > /dev/null 2>&1; then \
-		echo "✅ Rust is already installed (version: $$(rustc --version))"; \
+		echo "Rust is already installed (version: $$(rustc --version))"; \
 	else \
-		echo "📦 Installing Rust via rustup (automated)..."; \
+		echo "Installing Rust via rustup (automated)..."; \
 		if [ -f scripts/rustup-init.sh ]; then \
 			chmod +x scripts/rustup-init.sh; \
 			./scripts/rustup-init.sh -y --default-toolchain stable; \
-			echo "🔄 Rust installed! Sourcing environment..."; \
+			echo "Rust installed! Sourcing environment..."; \
 			. "$$HOME/.cargo/env" 2>/dev/null || true; \
 		else \
-			echo "❌ scripts/rustup-init.sh not found in project root."; \
+			echo "scripts/rustup-init.sh not found in project root."; \
 			echo "   Please download it from: https://sh.rustup.rs/"; \
 			exit 1; \
 		fi; \
 	fi
-	@echo "🔧 Setting up development tools..."
+	@echo "Setting up development tools..."
 	@if command -v rustc > /dev/null 2>&1; then \
-		echo "📋 Rust version: $$(rustc --version)"; \
-		echo "📋 Cargo version: $$(cargo --version)"; \
-		echo "🧪 Installing development tools..."; \
+		echo "Rust version: $$(rustc --version)"; \
+		echo "Cargo version: $$(cargo --version)"; \
+		echo "Installing development tools..."; \
 		$(MAKE) coverage-setup; \
-		cargo install cargo-audit --quiet || echo "⚠️  cargo-audit installation failed or already installed"; \
-		echo "🏗️  Running initial build and test..."; \
+		cargo install cargo-audit --quiet || echo "cargo-audit installation failed or already installed"; \
+		echo "Running initial build and test..."; \
 		$(MAKE) check; \
 		$(MAKE) test; \
 		echo ""; \
-		echo "✅ Development environment setup complete!"; \
+		echo "Development environment setup complete!"; \
 	else \
-		echo "⚠️  Rust installation completed but not available in current shell."; \
-		echo "🔄 Please restart your shell or run:"; \
+		echo "Rust installation completed but not available in current shell."; \
+		echo "Please restart your shell or run:"; \
 		echo "   source $$HOME/.cargo/env"; \
 		echo "   make developer"; \
 	fi

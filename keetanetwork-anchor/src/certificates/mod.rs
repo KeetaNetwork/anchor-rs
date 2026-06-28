@@ -110,6 +110,9 @@
 pub mod builder;
 pub mod error;
 
+use alloc::string::ToString;
+use alloc::vec::Vec;
+
 use keetanetwork_account::KeyPair;
 use keetanetwork_crypto::prelude::ExposeSecret;
 use keetanetwork_x509::certificates::Certificate as X509Certificate;

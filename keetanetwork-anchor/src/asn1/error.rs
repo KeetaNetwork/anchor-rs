@@ -1,3 +1,5 @@
+use alloc::string::String;
+
 use keetanetwork_utils::impl_error_from_with_fields;
 use snafu::Snafu;
 

@@ -1,5 +1,7 @@
 //! Serde JSON encoding functionality.
 
+use alloc::string::{String, ToString};
+
 use base64::Engine;
 use rasn::types::{OctetString, SequenceOf};
 use serde::ser::SerializeStruct;

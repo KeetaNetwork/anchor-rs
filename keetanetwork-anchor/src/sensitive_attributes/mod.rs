@@ -77,7 +77,10 @@ pub mod utils;
 #[cfg(feature = "serde")]
 pub mod serde;
 
-use std::hash::Hash;
+use core::hash::Hash;
+
+use alloc::string::String;
+use alloc::vec::Vec;
 
 use keetanetwork_account::KeyPair;
 use keetanetwork_crypto::operations::encryption::Aead;
@@ -94,7 +97,7 @@ use crate::sensitive_attributes::utils::{assert_valid_version, create_hash_input
 use crate::utils::{base64_decode, base64_encode};
 
 /// Result type for certificate operations
-pub type Result<T> = std::result::Result<T, SensitiveAttributeError>;
+pub type Result<T> = core::result::Result<T, SensitiveAttributeError>;
 /// Sensitive attribute value type
 pub type SensitiveAttributeValue = SecretBox<Vec<u8>>;
 pub type SensitiveAttributeProofValue = SecretBox<String>;
@@ -497,7 +500,7 @@ impl SensitiveAttribute {
 impl TryFrom<&SensitiveAttribute> for Vec<u8> {
 	type Error = SensitiveAttributeError;
 
-	fn try_from(attr: &SensitiveAttribute) -> std::result::Result<Self, Self::Error> {
+	fn try_from(attr: &SensitiveAttribute) -> core::result::Result<Self, Self::Error> {
 		Ok(rasn::der::encode(attr)?)
 	}
 }
@@ -505,7 +508,7 @@ impl TryFrom<&SensitiveAttribute> for Vec<u8> {
 impl TryFrom<SensitiveAttribute> for Vec<u8> {
 	type Error = SensitiveAttributeError;
 
-	fn try_from(attr: SensitiveAttribute) -> std::result::Result<Self, Self::Error> {
+	fn try_from(attr: SensitiveAttribute) -> core::result::Result<Self, Self::Error> {
 		(&attr).try_into()
 	}
 }
@@ -513,7 +516,7 @@ impl TryFrom<SensitiveAttribute> for Vec<u8> {
 impl TryFrom<&[u8]> for SensitiveAttribute {
 	type Error = SensitiveAttributeError;
 
-	fn try_from(bytes: &[u8]) -> std::result::Result<Self, Self::Error> {
+	fn try_from(bytes: &[u8]) -> core::result::Result<Self, Self::Error> {
 		Ok(rasn::der::decode(bytes)?)
 	}
 }
@@ -521,7 +524,7 @@ impl TryFrom<&[u8]> for SensitiveAttribute {
 impl TryFrom<Vec<u8>> for SensitiveAttribute {
 	type Error = SensitiveAttributeError;
 
-	fn try_from(bytes: Vec<u8>) -> std::result::Result<Self, Self::Error> {
+	fn try_from(bytes: Vec<u8>) -> core::result::Result<Self, Self::Error> {
 		(&bytes[..]).try_into()
 	}
 }

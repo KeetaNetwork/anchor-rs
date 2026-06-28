@@ -1,4 +1,4 @@
-//! Live cross-implementation signing parity against the REAL TypeScript anchor.
+//! Live cross-implementation signing parity against the TypeScript anchor.
 
 mod common;
 mod support;
@@ -12,7 +12,8 @@ use common::{
 use hex::FromHex;
 use keetanetwork_account::{Account, KeyECDSASECP256K1};
 use keetanetwork_anchor::signing::{
-	object_to_signable, sign_with, verification_data, verify, SignParams, Signable, Signed, VerifyOptions,
+	add_signature_to_url, object_to_signable, parse_signature_from_url, sign_with, verification_data, verify,
+	verify_body, verify_url, RequestError, SignParams, Signable, Signed, Url, VerifyOptions,
 };
 use serde_json::{json, Value};
 use support::AnchorHarness;
@@ -53,22 +54,24 @@ impl Fixture {
 	/// Assert byte-for-byte and bidirectional parity for one payload: the
 	/// TypeScript DER bytes match Rust's, TypeScript's signature verifies in
 	/// Rust, and Rust's signature verifies in TypeScript.
-	fn assert_round_trip(&mut self, name: &str, data: &[Signable], wire: Value) -> TestResult {
-		let signed = self.harness.sign(NONCE, TIMESTAMP, wire.clone())?;
+	fn assert_round_trip(&mut self, name: &str, data: &[Signable], transport: Value) -> TestResult {
+		let signed = self.harness.sign(NONCE, TIMESTAMP, transport.clone())?;
 
 		let verification = verification_data(&self.verifier, data, &self.params)?;
 		let rust_bytes = hex::encode(verification);
 		assert_eq!(rust_bytes, signed.verification_data, "DER verification bytes diverge from TypeScript for `{name}`");
 
-		let envelope =
-			Signed { nonce: NONCE.to_string(), timestamp: TIMESTAMP.to_string(), signature: signed.signature };
+		let nonce = NONCE.to_string();
+		let timestamp = TIMESTAMP.to_string();
+		let signature = signed.signature;
+		let envelope = Signed { nonce, timestamp, signature };
 		let rust_accepts_ts = verify(&self.verifier, data, &envelope, &self.options).is_ok();
 		assert!(rust_accepts_ts, "TypeScript signature rejected by Rust for `{name}`");
 
 		let rust_signed = sign_with(&self.account, data, &self.params)?;
-		let ts_accepts_rust = self
-			.harness
-			.verify(&self.account_hex, NONCE, TIMESTAMP, &rust_signed.signature, wire)?;
+		let ts_accepts_rust =
+			self.harness
+				.verify(&self.account_hex, NONCE, TIMESTAMP, &rust_signed.signature, transport)?;
 		assert!(ts_accepts_rust, "Rust signature rejected by TypeScript for `{name}`");
 
 		Ok(())
@@ -89,10 +92,141 @@ fn signable_vectors_round_trip_through_typescript() -> TestResult {
 	Ok(())
 }
 
+/// Signed-request setup shared by both directions: a live harness, a
+/// deterministic Rust account, and fresh (current-time) params so the
+/// reference's default five-minute skew window accepts.
+struct RequestFixture {
+	harness: AnchorHarness,
+	account: Account<KeyECDSASECP256K1>,
+	/// The Rust account's `keeta_…` string (the URL/body `account` value).
+	account_string: String,
+	/// The harness signer's `keeta_…` string.
+	signer_string: String,
+	params: SignParams,
+	options: VerifyOptions,
+	base: Url,
+}
+
+impl RequestFixture {
+	fn start() -> Result<Self, Box<dyn Error>> {
+		let harness = AnchorHarness::start()?;
+		let signer_string = harness.signer_public_key_string()?.to_string();
+		let account = account_from_seed(0x11);
+
+		Ok(Self {
+			account_string: account.to_string(),
+			account,
+			signer_string,
+			harness,
+			params: SignParams::generate(),
+			options: VerifyOptions::default(),
+			base: Url::parse("https://anchor.example/v1/resource")?,
+		})
+	}
+}
+
+/// The empty signable that the KYC auth flows (`createVerification`,
+/// `getVerificationStatus`) sign: the request itself carries no extra payload.
+const EMPTY_SIGNABLE: &[Signable] = &[];
+
+#[test]
+fn rust_signed_requests_verify_in_typescript() -> TestResult {
+	let mut fixture = RequestFixture::start()?;
+	let transport = json!([]);
+	let account = fixture.account_string.clone();
+	let base = fixture.base.clone();
+
+	let signed = sign_with(&fixture.account, EMPTY_SIGNABLE, &fixture.params)?;
+	let rust_url = add_signature_to_url(&base, &account, &signed)?;
+	let ts_url = fixture
+		.harness
+		.add_signature_to_url(base.as_str(), &account, &signed)?;
+	assert_eq!(rust_url.as_str(), ts_url, "signed URL diverges from addSignatureToURL");
+
+	let url_account = fixture
+		.harness
+		.verify_url(rust_url.as_str(), transport.clone())?;
+	assert_eq!(url_account.as_deref(), Some(account.as_str()), "verifyURLAuth rejected the Rust-signed URL");
+
+	let body_account = fixture.harness.verify_body(&account, &signed, transport)?;
+	assert_eq!(body_account.as_deref(), Some(account.as_str()), "verifyBodyAuth rejected the Rust-signed body");
+
+	fixture.harness.shutdown()?;
+
+	Ok(())
+}
+
+#[test]
+fn typescript_signed_requests_verify_in_rust() -> TestResult {
+	let mut fixture = RequestFixture::start()?;
+	let transport = json!([]);
+	let nonce = fixture.params.nonce.clone();
+	let timestamp = fixture.params.timestamp.clone();
+	let signer = fixture.signer_string.clone();
+	let base = fixture.base.clone();
+
+	let ts_signed = fixture.harness.sign(&nonce, &timestamp, transport)?;
+	let signature = ts_signed.signature;
+	let envelope = Signed { nonce, timestamp, signature };
+
+	let built_url = fixture
+		.harness
+		.add_signature_to_url(base.as_str(), signer.as_str(), &envelope)?;
+	let signed_url = Url::parse(&built_url)?;
+
+	let (parsed_account, parsed_envelope) = parse_signature_from_url(&signed_url)?;
+	assert_eq!(parsed_account, signer, "parsed account diverges from the signed URL");
+	assert_eq!(parsed_envelope, envelope, "parsed envelope diverges from the signed URL");
+
+	let url_account = verify_url(&signed_url, EMPTY_SIGNABLE, &fixture.options)?;
+	assert_eq!(url_account.to_string(), signer, "verify_url rejected the TypeScript-signed URL");
+
+	let body_account = verify_body(&signer, &envelope, EMPTY_SIGNABLE, &fixture.options)?;
+	assert_eq!(body_account.to_string(), signer, "verify_body rejected the TypeScript-signed body");
+
+	fixture.harness.shutdown()?;
+
+	Ok(())
+}
+
+#[test]
+fn signed_url_rejects_double_signing() -> TestResult {
+	let envelope = Signed { nonce: "n".to_string(), timestamp: "t".to_string(), signature: "s".to_string() };
+	let base = Url::parse("https://anchor.example/v1/resource")?;
+
+	let signed_url = add_signature_to_url(&base, "keeta_account", &envelope)?;
+	let duplicate = add_signature_to_url(&signed_url, "keeta_account", &envelope);
+	assert!(
+		matches!(duplicate, Err(RequestError::DuplicateParameter { .. })),
+		"re-signing an already-signed URL must be rejected"
+	);
+
+	Ok(())
+}
+
+#[test]
+fn parsing_rejects_unsigned_url() -> TestResult {
+	let bare = Url::parse("https://anchor.example/v1/resource")?;
+	let parsed = parse_signature_from_url(&bare);
+	assert!(matches!(parsed, Err(RequestError::MissingAuthentication)), "URL carrying no credentials must be rejected");
+
+	Ok(())
+}
+
+#[test]
+fn parsing_rejects_partial_signature() -> TestResult {
+	let partial = Url::parse("https://anchor.example/v1/resource?signed.nonce=n")?;
+	let parsed = parse_signature_from_url(&partial);
+	assert!(
+		matches!(parsed, Err(RequestError::IncompleteSignature)),
+		"URL with only some signed.* fields must be rejected"
+	);
+
+	Ok(())
+}
+
 /// Structured JSON inputs whose JCS canonicalization (RFC 8785) must agree with
-/// the TypeScript `objectToSignable`. Mirrors the valid cases in the reference
-/// `signing.test.ts` (omitting forms `serde_json::Value` cannot represent, e.g.
-/// `undefined`, `Date`, sparse arrays).
+/// the TypeScript `objectToSignable`.
 fn canonical_vectors() -> Vec<(&'static str, Value)> {
 	vec![
 		("flat key sort", json!({ "z": 1, "a": "first", "m": "middle" })),
@@ -107,14 +241,14 @@ fn canonical_vectors() -> Vec<(&'static str, Value)> {
 	]
 }
 
-/// Project canonical string parts into the harness string-part wire format.
+/// Project canonical string parts into the harness string-part transport format.
 fn harness_strings(parts: &[String]) -> Value {
-	let wire: Vec<Value> = parts
+	let transport: Vec<Value> = parts
 		.iter()
 		.map(|part| json!({ "t": "s", "v": part }))
 		.collect();
 
-	Value::Array(wire)
+	Value::Array(transport)
 }
 
 #[test]

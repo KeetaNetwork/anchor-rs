@@ -1,5 +1,8 @@
 //! ASN.1 DER encoding of the verification payload.
 
+use alloc::borrow::ToOwned;
+use alloc::vec::Vec;
+
 use rasn::types::{Integer, OctetString, Utf8String};
 
 use crate::signing::error::SigningError;
