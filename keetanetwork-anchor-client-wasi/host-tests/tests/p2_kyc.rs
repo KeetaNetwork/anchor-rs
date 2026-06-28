@@ -1,17 +1,13 @@
 //! wasmtime P2 KYC component end-to-end test.
 //!
-//! Boots the `KeetaNetKYCAnchorHTTPServer` via the TypeScript KYC harness,
-//! serves the published service-metadata blob over a local HTTP endpoint, then
-//! drives the exported `client` resource over `wasi:http`.
+//! Boots the `KeetaNetKYCAnchorHTTPServer` via the TypeScript KYC harness, which
+//! initializes a chain and publishes the service metadata on-chain, then drives
+//! the exported `client` resource over `wasi:http`.
 
 use std::io::{BufRead, BufReader, Lines, Write};
 use std::path::PathBuf;
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
-use std::sync::Arc;
-use std::thread::JoinHandle;
 
-use base64::engine::general_purpose::STANDARD;
-use base64::Engine as _;
 use serde_json::{json, Map, Value};
 use wasmtime::component::{Component, Linker, ResourceTable};
 use wasmtime::{Engine, Store};
@@ -181,48 +177,6 @@ impl Drop for KycHarness {
 	}
 }
 
-/// A local HTTP endpoint that serves one fixed metadata document for every GET,
-/// standing in for the on-chain root the component resolves over `wasi:http`.
-struct MetadataServer {
-	url: String,
-	server: Arc<tiny_http::Server>,
-	worker: Option<JoinHandle<()>>,
-}
-
-impl MetadataServer {
-	/// Serve `body` (the raw, post-base64 metadata bytes) on an ephemeral
-	/// localhost port.
-	fn serve(body: Vec<u8>) -> wasmtime::Result<Self> {
-		let server = tiny_http::Server::http("127.0.0.1:0").map_err(|error| wasmtime::Error::msg(error.to_string()))?;
-		let port = server
-			.server_addr()
-			.to_ip()
-			.ok_or_else(|| wasmtime::Error::msg("metadata server bound a non-IP address"))?
-			.port();
-		let url = format!("http://127.0.0.1:{port}/");
-
-		let server = Arc::new(server);
-		let worker_server = server.clone();
-		let worker = std::thread::spawn(move || {
-			for request in worker_server.incoming_requests() {
-				let response = tiny_http::Response::from_data(body.clone());
-				let _ = request.respond(response);
-			}
-		});
-
-		Ok(Self { url, server, worker: Some(worker) })
-	}
-}
-
-impl Drop for MetadataServer {
-	fn drop(&mut self) {
-		self.server.unblock();
-		if let Some(worker) = self.worker.take() {
-			let _ = worker.join();
-		}
-	}
-}
-
 /// Instantiate the P2 component with WASI + outbound `wasi:http` granted.
 async fn instantiate() -> wasmtime::Result<(Store<Host>, KeetaAnchorKyc)> {
 	let engine = Engine::default();
@@ -242,27 +196,22 @@ async fn instantiate() -> wasmtime::Result<(Store<Host>, KeetaAnchorKyc)> {
 async fn p2_kyc_signs_against_live_anchor() -> wasmtime::Result<()> {
 	let mut harness = KycHarness::start()?;
 
-	// Boot the real KYC anchor advertising a signed, US-bound provider.
+	// Boot the real KYC anchor advertising a signed, US-bound provider, with its
+	// metadata published on-chain to a root account.
 	let started = harness.request("startKycAnchor", json!({ "sign": true, "countryCodes": ["US"] }))?;
 	let provider_id = field_str(&started, "providerId")?;
-	let blob = field_str(&started, "blob")?;
-
-	// The component fetches metadata over wasi:http; serve the decoded blob
-	// (parse_metadata inflates it) from a local endpoint.
-	let raw = STANDARD
-		.decode(blob.trim())
-		.map_err(|error| wasmtime::Error::msg(error.to_string()))?;
-	let metadata = MetadataServer::serve(raw)?;
+	let node_url = field_str(&started, "api")?;
+	let root = field_str(&started, "root")?;
 
 	let (mut store, bindings) = instantiate().await?;
 	let kyc = bindings.keeta_anchor_kyc();
 
 	// Bind a signing client to a deterministic secp256k1 account derived from a
-	// 32-byte seed.
+	// 32-byte seed. The component resolves the root account over wasi:http.
 	let spec = SignerSpec { seed: "11".repeat(32), index: 0, algorithm: "ecdsa_secp256k1".to_string() };
 	let client = kyc
 		.client()
-		.call_with_signer(&mut store, &metadata.url, &spec)
+		.call_with_signer(&mut store, &node_url, &root, &spec)
 		.await?
 		.map_err(coded)?;
 
@@ -322,7 +271,6 @@ async fn p2_kyc_signs_against_live_anchor() -> wasmtime::Result<()> {
 		"the certificate read must yield a ready or retry outcome"
 	);
 
-	drop(metadata);
 	harness.shutdown()?;
 	Ok(())
 }

@@ -2,8 +2,10 @@
  * KYC interop harness.
  *
  * Runs a live KYC anchor server (the production `KeetaNetKYCAnchorHTTPServer`)
- * backed by an in-memory reference node, plus the metadata blob a root account
- * would publish, so the Rust client exercises the real endpoints.
+ * backed by an in-memory reference node with an initialized chain. Service
+ * metadata is published on-chain to a root account, so the Rust resolver reads
+ * it through the real node API (`keetanet://<root>/metadata`) the same way the
+ * reference client does.
  */
 
 import type * as ResolverModule from '@keetanetwork/anchor/lib/resolver.js';
@@ -28,17 +30,37 @@ const nodeTesting = refs.node<typeof NodeTestingModule>('@keetanetwork/keetanet-
 
 const KeetaNetLib = KeetaNet.lib;
 const Account = KeetaNetLib.Account;
+const Permissions = KeetaNetLib.Permissions;
 const Metadata = resolver.default.Metadata;
 
 const metadataSigner = Account.fromSeed(Account.generateRandomSeed(), 0);
 
 type CertificateAuthority = Awaited<ReturnType<InstanceType<typeof KeetaNetLib.Utils.Certificate.CertificateBuilder>['build']>>;
 type ReferenceNode = Awaited<ReturnType<typeof nodeTesting.createTestNode>>;
+type UserClient = InstanceType<typeof KeetaNet.UserClient>;
+type GenericAccount = InstanceType<typeof KeetaNetLib.Account>;
 type KycServerConfig = ConstructorParameters<typeof kycServer.KeetaNetKYCAnchorHTTPServer>[0];
 type KycServerInstance = InstanceType<typeof kycServer.KeetaNetKYCAnchorHTTPServer>;
+type ServiceMetadata = Parameters<typeof Metadata.formatMetadata>[0];
 
-/* A booted reference node plus the live KYC anchor server it backs. */
-let kycAnchor: { server: KycServerInstance; node: ReferenceNode } | undefined;
+/**
+ * A reference node with an initialized chain, plus the helpers needed to fund
+ * accounts and publish service metadata on-chain.
+ */
+interface ChainNode {
+	node: ReferenceNode;
+	/* The node API base URL, e.g. `http://127.0.0.1:<port>`. */
+	api: string;
+	/* A UserClient for the funded representative account. */
+	repClient: UserClient;
+	/* Send `amount` of the base token to `account`. */
+	give(account: GenericAccount, amount: bigint): Promise<void>;
+	/* Publish `metadata` on-chain to a fresh funded account; return its key. */
+	publish(metadata: ServiceMetadata): Promise<string>;
+}
+
+/* A booted chain node plus the live KYC anchor server it backs. */
+let kycAnchor: { server: KycServerInstance; chain: ChainNode } | undefined;
 
 interface StartKycAnchorRequest {
 	cmd: 'startKycAnchor';
@@ -53,7 +75,12 @@ interface StopKycAnchorRequest {
 
 interface BuildMetadataRequest {
 	cmd: 'buildMetadata';
-	metadata: Parameters<typeof Metadata.formatMetadata>[0];
+	metadata: ServiceMetadata;
+}
+
+interface PublishMetadataRequest {
+	cmd: 'publishMetadata';
+	metadata: ServiceMetadata;
 }
 
 interface ShutdownRequest {
@@ -64,9 +91,12 @@ type KycRequest =
 	StartKycAnchorRequest |
 	StopKycAnchorRequest |
 	BuildMetadataRequest |
+	PublishMetadataRequest |
 	ShutdownRequest;
 
-/* Mint a self-signed CA the anchor issues KYC certificates under. */
+/**
+ * Mint a self-signed CA the anchor issues KYC certificates under.
+ */
 async function buildCertificateAuthority(): Promise<CertificateAuthority> {
 	const caAccount = Account.fromSeed(Account.generateRandomSeed(), 0);
 	const builder = new KeetaNetLib.Utils.Certificate.CertificateBuilder({
@@ -80,16 +110,38 @@ async function buildCertificateAuthority(): Promise<CertificateAuthority> {
 	return(await builder.build());
 }
 
-/* Boot an in-memory reference node and a client bound to its API. The KYC
- * endpoints never touch the ledger, so the chain is left uninitialized. */
-async function bootReferenceNode(): Promise<{ node: ReferenceNode; client: KeetaNetModule.UserClient }> {
+/**
+ * Boot an in-memory reference node and initialize its chain (base token, supply,
+ * delegation) so accounts can publish on-chain metadata. The resolver reads that
+ * metadata back through the node API, exactly as the reference client does.
+ *
+ */
+async function bootChainNode(): Promise<ChainNode> {
 	const seed = Account.generateRandomSeed({ asString: true });
 	const repNodeAccount = NodeClient.lib.Account.fromSeed(seed, 0);
 	const repClientAccount = Account.fromSeed(seed, 0);
 
+	/* Fees start disabled so the network can be initialized for free. */
+	const feeFreeAccounts = new Set<string>();
+	let feesEnabled = false;
+
 	const node = await nodeTesting.createTestNode(repNodeAccount, {
 		createInitialVoteStaple: false,
-		nodeConfig: { nodeAlias: 'TEST' }
+		nodeConfig: { nodeAlias: 'TEST' },
+		ledger: {
+			computeFeeFromBlocks: function(_ignore_ledger, blocks, _ignore_effects) {
+				if (!feesEnabled) {
+					return(null);
+				}
+				for (const block of blocks) {
+					if (feeFreeAccounts.has(block.account.publicKeyString.get())) {
+						return(null);
+					}
+				}
+
+				return({ amount: 1n });
+			}
+		}
 	});
 
 	const endpoints = node.config.endpoints;
@@ -98,7 +150,7 @@ async function bootReferenceNode(): Promise<{ node: ReferenceNode; client: Keeta
 	}
 
 	const client = new KeetaNet.Client([{ endpoints: { api: endpoints.api, p2p: endpoints.p2p }, key: repClientAccount }]);
-	const userClient = new KeetaNet.UserClient({
+	const repClient = new KeetaNet.UserClient({
 		client,
 		network: node.config.network,
 		networkAlias: node.config.networkAlias,
@@ -106,7 +158,47 @@ async function bootReferenceNode(): Promise<{ node: ReferenceNode; client: Keeta
 		usePublishAid: false
 	});
 
-	return({ node, client: userClient });
+	/*
+	 * Manually initialize the chain: mint the base token, add supply, and
+	 * delegate voting weight to the representative.
+	 */
+	const { networkAddress } = Account.generateBaseAddresses(node.config.network);
+	await repClient.initializeNetwork({
+		addSupplyAmount: 10_000_000_000_000n,
+		delegateTo: repClientAccount,
+		voteSerial: BigInt('999999999999999999'),
+		baseTokenInfo: { name: 'KeetaNet Test Token', currencyCode: 'KTA', decimalPlaces: 9 }
+	}, { account: repClientAccount, usePublishAid: false });
+	await repClient.setInfo({
+		name: 'KEETANET',
+		description: 'Network Address For KeetaNet',
+		metadata: '',
+		defaultPermission: new Permissions(['TOKEN_ADMIN_CREATE', 'STORAGE_CREATE', 'ACCESS'])
+	}, { account: networkAddress });
+
+	feesEnabled = true;
+
+	const give = async function(account: GenericAccount, amount: bigint): Promise<void> {
+		await repClient.send(account, amount, repClient.baseToken, undefined, { account: repClientAccount });
+	};
+
+	const publish = async function(metadata: ServiceMetadata): Promise<string> {
+		const rootAccount = Account.fromSeed(Account.generateRandomSeed(), 0);
+		await give(rootAccount, 1_000n);
+
+		const rootClient = new KeetaNet.UserClient({
+			client,
+			network: node.config.network,
+			networkAlias: node.config.networkAlias,
+			signer: rootAccount,
+			usePublishAid: false
+		});
+		await rootClient.setInfo({ name: '', description: '', metadata: Metadata.formatMetadata(metadata) });
+
+		return(rootAccount.publicKeyString.get());
+	};
+
+	return({ node, api: endpoints.api, repClient, give, publish });
 }
 
 function kycCallbacks(ca: CertificateAuthority, countryCodes: string[] | undefined): KycServerConfig['kyc'] {
@@ -141,7 +233,7 @@ async function stopKycAnchor(): Promise<void> {
 
 	kycAnchor = undefined;
 	await current.server.stop();
-	await current.node.stop();
+	await current.chain.node.stop();
 }
 
 async function handleStartKycAnchor(request: StartKycAnchorRequest): Promise<HarnessResponse> {
@@ -151,14 +243,14 @@ async function handleStartKycAnchor(request: StartKycAnchorRequest): Promise<Har
 	const countryCodes = request.countryCodes;
 	const sign = request.sign !== false;
 
-	const reference = await bootReferenceNode();
+	const chain = await bootChainNode();
 	const ca = await buildCertificateAuthority();
 	const certificateSigner = Account.fromSeed(Account.generateRandomSeed(), 0);
 
 	const server: KycServerInstance = new kycServer.KeetaNetKYCAnchorHTTPServer({
 		signer: certificateSigner,
 		ca,
-		client: reference.client,
+		client: chain.repClient,
 		metadataSigner: sign ? metadataSigner : undefined,
 		kycProviderURL: function(verificationID: string): string {
 			return(`${server.url}verify/${encodeURIComponent(verificationID)}`);
@@ -167,15 +259,18 @@ async function handleStartKycAnchor(request: StartKycAnchorRequest): Promise<Har
 	});
 
 	await server.start();
-	kycAnchor = { server, node: reference.node };
+	kycAnchor = { server, chain };
 
 	const entry = await server.serviceMetadata();
 	const metadata = { version: 1, currencyMap: {}, services: { kyc: { [providerId]: entry }}};
 	const blob = Metadata.formatMetadata(metadata);
+	const root = await chain.publish(metadata);
 
 	return({
 		event: 'kyc-anchor-started',
 		url: server.url,
+		api: chain.api,
+		root,
 		ca: ca.toPEM(),
 		providerId,
 		countryCodes: countryCodes ?? null,
@@ -194,11 +289,27 @@ function handleBuildMetadata(request: BuildMetadataRequest): HarnessResponse {
 	return({ event: 'metadata-built', blob });
 }
 
+/**
+ * Publish arbitrary metadata on-chain to a fresh root account on the running
+ * node, so resolver tests can exercise documents the anchor would not produce
+ * (tampered, worldwide, unsigned). Requires a running anchor for the node.
+ */
+async function handlePublishMetadata(request: PublishMetadataRequest): Promise<HarnessResponse> {
+	const current = kycAnchor;
+	if (current === undefined) {
+		throw(new Error('no running anchor: start the KYC anchor before publishing metadata'));
+	}
+
+	const root = await current.chain.publish(request.metadata);
+	return({ event: 'metadata-published', api: current.chain.api, root });
+}
+
 async function handle(request: KycRequest): Promise<HarnessResponse> {
 	switch (request.cmd) {
 		case 'startKycAnchor': return(await handleStartKycAnchor(request));
 		case 'stopKycAnchor': return(await handleStopKycAnchor());
 		case 'buildMetadata': return(handleBuildMetadata(request));
+		case 'publishMetadata': return(await handlePublishMetadata(request));
 		case 'shutdown': return({ event: 'shutdown' });
 	}
 }

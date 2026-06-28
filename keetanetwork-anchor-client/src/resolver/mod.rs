@@ -1,57 +1,84 @@
 //! On-chain service-metadata resolution.
 //!
-//! [`Resolver`] fetches a root account's metadata via a [`MetadataSource`],
-//! follows any top-level `ExternalURL` indirection, and projects each verified
-//! entry through a [`ServiceQuery`].
+//! [`Resolver`] reads each root account's service metadata via the node API
+//! (`keetanet://<account>/metadata`), follows any `ExternalURL` indirection at
+//! any depth, and projects each verified entry through a [`ServiceQuery`].
 
 mod decode;
 mod metadata;
 mod query;
-mod source;
+mod read;
 
 pub use decode::{decode_base64, parse_metadata};
 pub use metadata::{CountryCode, KycOperations, KycProvider};
 pub use query::ServiceQuery;
-pub use source::{HttpsMetadataSource, InlineMetadataSource, MetadataSource};
 
 use alloc::collections::BTreeSet;
 use alloc::string::{String, ToString};
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
+use core::str::FromStr;
+
 use keetanetwork_anchor::signing::{object_to_signable, verify_body, Signed, VerifyOptions};
 use serde_json::{Map, Value};
 
 use crate::error::ResolverError;
+use crate::transport::AnchorHttpTransport;
 use decode::as_external_url;
 use metadata::{signed_fields, SignedJson};
+use read::{read_document, MetadataLocation};
 
 /// Namespace tag bound into every service-metadata signature.
 pub(crate) const METADATA_SIGNATURE_NAMESPACE: &str = "keetanet/anchor/service-metadata/v1";
 
-/// Resolves anchor services from one or more root metadata locations.
+/// The metadata schema version this resolver understands.
+const SUPPORTED_VERSION: u64 = 1;
+
+/// One step in a path to a node within a metadata document.
+enum Segment {
+	/// An object key.
+	Key(String),
+
+	/// An array index.
+	Index(usize),
+}
+
+/// Resolves anchor services from one or more on-chain root accounts.
 #[derive(Clone)]
 pub struct Resolver {
-	source: Arc<dyn MetadataSource>,
+	transport: Arc<dyn AnchorHttpTransport>,
+	node_api: String,
 	roots: Vec<String>,
 }
 
 impl Resolver {
-	/// A resolver reading `roots` (in priority order) through `source`.
-	pub fn new(source: Arc<dyn MetadataSource>, roots: impl IntoIterator<Item = String>) -> Self {
-		Self { source, roots: roots.into_iter().collect() }
+	/// A resolver reading `roots` (in priority order) from the node API at
+	/// `node_api`, signing nothing (metadata reads are unauthenticated).
+	///
+	/// Each root is a `keeta_…` account string whose `info.metadata` holds the
+	/// service-metadata document. A trailing `/` on `node_api` is ignored.
+	pub fn new(
+		transport: Arc<dyn AnchorHttpTransport>,
+		node_api: impl Into<String>,
+		roots: impl IntoIterator<Item = String>,
+	) -> Self {
+		let node_api = node_api.into().trim_end_matches('/').to_string();
+		Self { transport, node_api, roots: roots.into_iter().collect() }
 	}
 
 	/// Collect every provider matching `criteria`, across all roots.
 	///
-	/// Roots are consulted in order; within a root, entries are taken in
-	/// id order. Entries whose optional signature does not verify, or that the
-	/// query rejects, are skipped.
+	/// Roots are consulted in priority order; an entry id seen in a
+	/// higher-priority root shadows the same id in a lower-priority one. Within
+	/// a root, entries are taken in id order. Entries whose optional signature
+	/// does not verify, or that the query rejects, are skipped.
 	///
 	/// # Errors
 	///
-	/// Returns a [`ResolverError`] when a root cannot be fetched or decoded.
-	/// Malformed or unverifiable individual entries are skipped, not errored.
+	/// Returns [`ResolverError::NoRootMetadata`] when no root yields a valid
+	/// (version 1) document. Unreadable roots and malformed or unverifiable
+	/// individual entries are skipped, not errored.
 	///
 	/// # Examples
 	///
@@ -74,52 +101,197 @@ impl Resolver {
 	where
 		Q: ServiceQuery,
 	{
+		let documents = self.root_documents().await;
+		if documents.is_empty() {
+			return Err(ResolverError::NoRootMetadata);
+		}
+
+		let mut seen = BTreeSet::new();
 		let mut providers = Vec::new();
-		for root in &self.roots {
-			let document = self.resolve_root(root).await?;
-			collect_providers::<Q>(&document, criteria, &mut providers);
+		for document in &documents {
+			let Some(entries) = service_entries(document, Q::SERVICE) else {
+				continue;
+			};
+
+			for (id, entry) in entries {
+				if !seen.insert(id.clone()) {
+					continue;
+				}
+
+				if !entry_signature_ok(entry) {
+					continue;
+				}
+
+				if let Some(provider) = Q::parse(id.clone(), entry, criteria) {
+					providers.push(provider);
+				}
+			}
 		}
 
 		Ok(providers)
 	}
 
-	/// Fetch and decode a root, following a top-level `ExternalURL` chain.
-	async fn resolve_root(&self, location: &str) -> Result<Value, ResolverError> {
-		let mut current = location.to_string();
-		let mut seen = BTreeSet::new();
+	/// The fully-resolved, version-1 document for each readable root, in
+	/// priority order. Unreadable or unsupported roots are skipped.
+	async fn root_documents(&self) -> Vec<Value> {
+		let mut documents = Vec::new();
+		for account in &self.roots {
+			let location = MetadataLocation::KeetaNet { account: account.clone() };
+			let Ok(mut document) = read_document(self.transport.as_ref(), &self.node_api, &location).await else {
+				continue;
+			};
 
-		loop {
-			if !seen.insert(current.clone()) {
-				return Err(ResolverError::ReferenceCycle);
+			self.resolve_external_urls(&mut document).await;
+			if document.get("version").and_then(Value::as_u64) != Some(SUPPORTED_VERSION) {
+				continue;
 			}
 
-			let raw = self.source.fetch(&current).await?;
-			let value = parse_metadata(&raw)?;
-			match as_external_url(&value) {
-				Some(url) => current = url.to_string(),
-				None => return Ok(value),
+			documents.push(document);
+		}
+
+		documents
+	}
+
+	/// Replace every `ExternalURL` node in `document` with the document it
+	/// points to, at any depth.
+	///
+	/// Walks the tree iteratively, tracking the chain of URLs that led to each
+	/// node so a reference back into its own chain resolves to `null` rather
+	/// than looping. A reference that cannot be read also resolves to `null`.
+	async fn resolve_external_urls(&self, document: &mut Value) {
+		let mut pending: Vec<(Vec<Segment>, BTreeSet<String>)> = Vec::new();
+		pending.push((Vec::new(), BTreeSet::new()));
+
+		while let Some((path, ancestors)) = pending.pop() {
+			let external = node_at(document, &path)
+				.and_then(as_external_url)
+				.map(str::to_string);
+			match external {
+				Some(url) => {
+					self.expand_external(document, path, ancestors, url, &mut pending)
+						.await
+				}
+				None => push_children(document, &path, &ancestors, &mut pending),
 			}
+		}
+	}
+
+	/// Resolve one `ExternalURL` at `path`, replacing it in place and queuing
+	/// the replacement for further resolution.
+	async fn expand_external(
+		&self,
+		document: &mut Value,
+		path: Vec<Segment>,
+		ancestors: BTreeSet<String>,
+		url: String,
+		pending: &mut Vec<(Vec<Segment>, BTreeSet<String>)>,
+	) {
+		if ancestors.contains(&url) {
+			set_at(document, &path, Value::Null);
+			return;
+		}
+
+		let fetched = match MetadataLocation::from_str(&url) {
+			Ok(location) => read_document(self.transport.as_ref(), &self.node_api, &location)
+				.await
+				.ok(),
+			Err(_) => None,
+		};
+
+		match fetched {
+			Some(value) => {
+				set_at(document, &path, value);
+				let mut chain = ancestors;
+				chain.insert(url);
+				pending.push((path, chain));
+			}
+			None => set_at(document, &path, Value::Null),
 		}
 	}
 }
 
-/// Project every verified entry under `services.<Q::SERVICE>` through the query.
-fn collect_providers<Q>(document: &Value, criteria: &Q::Criteria, out: &mut Vec<Q::Provider>)
-where
-	Q: ServiceQuery,
-{
-	let Some(entries) = service_entries(document, Q::SERVICE) else {
+/// Queue every child of the container at `path` for resolution.
+fn push_children(
+	document: &Value,
+	path: &[Segment],
+	ancestors: &BTreeSet<String>,
+	pending: &mut Vec<(Vec<Segment>, BTreeSet<String>)>,
+) {
+	match node_at(document, path) {
+		Some(Value::Object(map)) => {
+			for key in map.keys() {
+				pending.push((extend(path, Segment::Key(key.clone())), ancestors.clone()));
+			}
+		}
+		Some(Value::Array(items)) => {
+			for index in 0..items.len() {
+				pending.push((extend(path, Segment::Index(index)), ancestors.clone()));
+			}
+		}
+		_ => {}
+	}
+}
+
+/// A copy of `path` with one more [`Segment`] appended.
+fn extend(path: &[Segment], segment: Segment) -> Vec<Segment> {
+	let mut child = Vec::with_capacity(path.len() + 1);
+	for step in path {
+		child.push(step.clone());
+	}
+
+	child.push(segment);
+	child
+}
+
+impl Clone for Segment {
+	fn clone(&self) -> Self {
+		match self {
+			Self::Key(key) => Self::Key(key.clone()),
+			Self::Index(index) => Self::Index(*index),
+		}
+	}
+}
+
+/// The node reached by following `path` from `root`, when it exists.
+fn node_at<'doc>(root: &'doc Value, path: &[Segment]) -> Option<&'doc Value> {
+	let mut current = root;
+	for segment in path {
+		current = match segment {
+			Segment::Key(key) => current.get(key)?,
+			Segment::Index(index) => current.get(index)?,
+		};
+	}
+
+	Some(current)
+}
+
+/// Replace the node at `path` with `value`, if the path still resolves.
+fn set_at(root: &mut Value, path: &[Segment], value: Value) {
+	let Some((last, parents)) = path.split_last() else {
+		*root = value;
 		return;
 	};
 
-	for (id, entry) in entries {
-		if !entry_signature_ok(entry) {
-			continue;
-		}
+	let mut current = root;
+	for segment in parents {
+		let next = match segment {
+			Segment::Key(key) => current.get_mut(key),
+			Segment::Index(index) => current.get_mut(index),
+		};
 
-		if let Some(provider) = Q::parse(id.clone(), entry, criteria) {
-			out.push(provider);
+		match next {
+			Some(node) => current = node,
+			None => return,
 		}
+	}
+
+	let slot = match last {
+		Segment::Key(key) => current.get_mut(key),
+		Segment::Index(index) => current.get_mut(index),
+	};
+
+	if let Some(node) = slot {
+		*node = value;
 	}
 }
 

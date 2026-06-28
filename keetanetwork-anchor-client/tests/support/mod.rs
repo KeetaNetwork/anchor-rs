@@ -12,5 +12,5 @@ mod kyc;
 mod signing;
 
 pub use driver::HarnessError;
-pub use kyc::{signed_request_body, KycAnchor, KycHarness};
+pub use kyc::{signed_request_body, KycAnchor, KycHarness, PublishedRoot};
 pub use signing::{HarnessSignature, SigningHarness};

@@ -39,13 +39,7 @@ pub use resilience::{
 pub use resilience::TokioRuntime;
 
 #[cfg(feature = "codec")]
-pub use resolver::{
-	decode_base64, parse_metadata, CountryCode, InlineMetadataSource, KycOperations, KycProvider, MetadataSource,
-	Resolver, ServiceQuery,
-};
-
-#[cfg(feature = "codec")]
-pub use resolver::HttpsMetadataSource;
+pub use resolver::{decode_base64, parse_metadata, CountryCode, KycOperations, KycProvider, Resolver, ServiceQuery};
 
 #[cfg(feature = "service")]
 pub use service::{AnchorCaller, AnchorContext, AnchorOutcome, Auth, Call, Endpoint, Method};

@@ -14,8 +14,7 @@ use keetanetwork_anchor_bindings::account::{account_from_seed, invalid_algorithm
 use keetanetwork_anchor_client::resilience::{ResilientTransport, WasiRuntime};
 use keetanetwork_anchor_client::{
 	AnchorClientError, AnchorContext, AnchorHttpTransport, AnchorOutcome, Certificate, Certificates, CountryCode,
-	HttpsMetadataSource, KycClient, KycOperations, KycProvider, Resolver, Verification, VerificationStatus,
-	WasiTransport,
+	KycClient, KycOperations, KycProvider, Resolver, Verification, VerificationStatus, WasiTransport,
 };
 use wstd::runtime::block_on;
 
@@ -49,17 +48,16 @@ fn country_codes(values: &[String]) -> Result<Vec<CountryCode>, CodedError> {
 }
 
 /// Build a networked KYC client for a concrete key type: a `wasi:http`
-/// transport wrapped in the resilience policy, a metadata resolver over it, and
-/// a signer derived from the spec.
-fn build_client<K>(metadata_url: String, seed: &str, index: u32) -> Result<KycClient<K>, CodedError>
+/// transport wrapped in the resilience policy, a metadata resolver reading the
+/// `root` account via the node API at `node_url`, and a signer from the spec.
+fn build_client<K>(node_url: String, root: String, seed: &str, index: u32) -> Result<KycClient<K>, CodedError>
 where
 	K: KeyPair,
 {
 	let signer = account_from_seed::<K>(seed, index)?;
 	let base: Arc<dyn AnchorHttpTransport> = Arc::new(WasiTransport::default());
 	let transport: Arc<dyn AnchorHttpTransport> = Arc::new(ResilientTransport::new(base, WasiRuntime));
-	let source = Arc::new(HttpsMetadataSource::new(transport.clone()));
-	let resolver = Resolver::new(source, [metadata_url]);
+	let resolver = Resolver::new(transport.clone(), node_url, [root]);
 	let context = AnchorContext::new(resolver, transport, signer);
 	Ok(KycClient::new(context))
 }
@@ -96,15 +94,15 @@ impl Guest for Component {
 }
 
 impl GuestClient for KycSession {
-	fn with_signer(metadata_url: String, spec: SignerSpec) -> Result<Client, CodedError> {
+	fn with_signer(node_url: String, root: String, spec: SignerSpec) -> Result<Client, CodedError> {
 		let seed = spec.seed.as_str();
 		let inner = match spec.algorithm.as_str() {
-			"ed25519" => AnyKyc::Ed25519(Box::new(build_client::<KeyED25519>(metadata_url, seed, spec.index)?)),
+			"ed25519" => AnyKyc::Ed25519(Box::new(build_client::<KeyED25519>(node_url, root, seed, spec.index)?)),
 			"ecdsa_secp256k1" => {
-				AnyKyc::Secp256k1(Box::new(build_client::<KeyECDSASECP256K1>(metadata_url, seed, spec.index)?))
+				AnyKyc::Secp256k1(Box::new(build_client::<KeyECDSASECP256K1>(node_url, root, seed, spec.index)?))
 			}
 			"ecdsa_secp256r1" => {
-				AnyKyc::Secp256r1(Box::new(build_client::<KeyECDSASECP256R1>(metadata_url, seed, spec.index)?))
+				AnyKyc::Secp256r1(Box::new(build_client::<KeyECDSASECP256R1>(node_url, root, seed, spec.index)?))
 			}
 			_ => return Err(invalid_algorithm().into()),
 		};

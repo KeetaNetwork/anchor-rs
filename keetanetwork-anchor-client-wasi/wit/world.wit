@@ -92,9 +92,9 @@ interface kyc {
 
 	/// A KYC client bound to a signer and a metadata root.
 	resource client {
-		/// Build a client that resolves providers from `metadata-url` and signs
-		/// requests with the account described by `spec`.
-		with-signer: static func(metadata-url: string, spec: signer-spec) -> result<client, coded-error>;
+		/// Build a client that resolves providers from the `root` account's
+		/// on-chain service metadata, read via the node API at `node-url`.
+		with-signer: static func(node-url: string, root: string, spec: signer-spec) -> result<client, coded-error>;
 		/// Every provider that serves all `countries` (ISO codes).
 		providers: func(countries: list<string>) -> result<list<kyc-provider>, coded-error>;
 		/// Begin a verification with `provider` for `countries`, optionally
