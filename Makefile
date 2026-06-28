@@ -87,6 +87,10 @@ test-feat:
 	# Resilience: pure cores are no_std; backends/decorator ride the runtimes.
 	cargo check -p keetanetwork-anchor-client --no-default-features --features resilience
 	cargo check -p keetanetwork-anchor-client --features resilience
+	# Cross-target: browser (WasmRuntime + fetch HTTP) and WASI (WasiRuntime).
+	cargo check -p keetanetwork-anchor-client --target wasm32-unknown-unknown --no-default-features --features wasm,resilience
+	cargo check -p keetanetwork-anchor-client --target wasm32-wasip1 --no-default-features --features resilience
+	cargo check -p keetanetwork-anchor-client --target wasm32-wasip2 --no-default-features --features resilience
 
 # Build the TypeScript harnesses (installs deps + compiles every entry).
 $(HARNESS_DIR)/node_modules/.package-lock.json: $(HARNESS_DIR)/package-lock.json
