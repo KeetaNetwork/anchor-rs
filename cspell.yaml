@@ -59,6 +59,7 @@ words:
   - pubkey
   - keypair
   - rng
+  - rsplit
   - sha3
   - Sha3_256
   - Sha256

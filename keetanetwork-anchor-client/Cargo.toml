@@ -90,6 +90,8 @@ keetanetwork-crypto = { workspace = true, features = [
 	"rasn",
 ] }
 keetanetwork-utils = { workspace = true, features = ["std"] }
+async-trait = { workspace = true }
+base64 = { workspace = true, features = ["std"] }
 hex = { workspace = true, features = ["std"] }
 serde = { workspace = true, features = ["std", "derive"] }
 serde_json = { workspace = true, features = ["std"] }

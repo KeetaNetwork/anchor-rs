@@ -69,10 +69,13 @@ impl Resolver {
 
 	/// Collect every provider matching `criteria`, across all roots.
 	///
-	/// Roots are consulted in priority order; an entry id seen in a
-	/// higher-priority root shadows the same id in a lower-priority one. Within
-	/// a root, entries are taken in id order. Entries whose optional signature
-	/// does not verify, or that the query rejects, are skipped.
+	/// Roots are consulted in priority order. ID precedence is resolved before
+	/// signature verification, matching the reference's merge-then-filter: an id
+	/// present in a higher-priority root takes that root's entry and shadows the
+	/// same id in every lower-priority root, even when that winning entry is
+	/// then dropped for a failed signature. Within a root, entries are taken in
+	/// id order. Entries whose optional signature does not verify, or that the
+	/// query rejects, are skipped.
 	///
 	/// # Errors
 	///

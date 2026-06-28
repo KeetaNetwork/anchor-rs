@@ -1,6 +1,6 @@
-//! The async seam the resilience layer needs: sleeping (for backoff and rate
-//! pacing) and a monotonic clock (for budgets and bucket refills), behind
-//! [`ResilienceRuntime`] so the policies never name a concrete executor.
+//! The async interface the resilience layer needs: sleeping and a
+//! monotonic clock, behind [`ResilienceRuntime`] so the policies
+//! never name a concrete executor.
 
 use alloc::boxed::Box;
 
