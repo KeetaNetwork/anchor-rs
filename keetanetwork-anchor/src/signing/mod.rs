@@ -12,6 +12,9 @@ pub use request::{add_signature_to_url, parse_signature_from_url, verify_body, v
 pub use signable::{Signable, ToSignable};
 pub use url::Url;
 
+use alloc::string::{String, ToString};
+use alloc::vec::Vec;
+
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
 use chrono::{DateTime, SecondsFormat, Utc};

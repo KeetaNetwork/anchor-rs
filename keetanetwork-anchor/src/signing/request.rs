@@ -1,6 +1,7 @@
 //! Signed HTTP requests: project a [`Signed`] envelope onto a URL's query
 //! string (or a request body's `account` + `signed` fields) and verify it.
 
+use alloc::string::String;
 use core::str::FromStr;
 
 use keetanetwork_account::GenericAccount;

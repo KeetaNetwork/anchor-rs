@@ -1,5 +1,7 @@
 //! Errors raised while canonicalizing, encoding, signing, or verifying.
 
+use alloc::string::String;
+
 use crate::impl_variant_error_from;
 use keetanetwork_utils::impl_error_from_with_fields;
 use snafu::Snafu;
@@ -8,7 +10,7 @@ use snafu::Snafu;
 ///
 /// Distinct from [`VerifyError`]: a [`SigningError`] is a fault the caller must
 /// fix (malformed payload, encoding failure), whereas a [`VerifyError`] is the
-/// *reason a signature was rejected*.
+/// reason a signature was rejected.
 #[derive(Debug, Clone, PartialEq, Eq, Snafu)]
 #[snafu(visibility(pub))]
 pub enum SigningError {

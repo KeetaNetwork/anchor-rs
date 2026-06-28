@@ -53,6 +53,7 @@ keetanetwork-utils = { workspace = true, default-features = false }
 getrandom = { version = "0.3", features = ["wasm_js"] }
 getrandom_02 = { package = "getrandom", version = "0.2", features = ["js"] }
 chrono = { workspace = true, features = ["wasmbind"], optional = true }
+uuid = { workspace = true, features = ["js"], optional = true }
 
 [build-dependencies]
 rasn-compiler = { workspace = true }
@@ -97,5 +98,5 @@ serde = [
 	"keetanetwork-x509/serde",
 ]
 chrono = ["alloc", "dep:chrono"]
-signing = ["std", "dep:chrono", "dep:serde_json", "dep:uuid", "dep:url"]
+signing = ["alloc", "dep:chrono", "dep:serde_json", "dep:uuid", "dep:url"]
 x509 = ["alloc", "dep:chrono"]

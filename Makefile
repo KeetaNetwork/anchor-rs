@@ -74,6 +74,7 @@ test-feat:
 	cargo check -p keetanetwork-anchor --no-default-features --features serde
 	cargo check -p keetanetwork-anchor --no-default-features --features chrono
 	cargo check -p keetanetwork-anchor --no-default-features --features x509
+	cargo check -p keetanetwork-anchor --no-default-features --features signing
 
 # Build the TypeScript signing-parity harness (installs deps + compiles).
 $(HARNESS_DIR)/node_modules/.package-lock.json: $(HARNESS_DIR)/package-lock.json
@@ -96,6 +97,7 @@ test: node-harness
 wasm:
 	cargo build -p keetanetwork-anchor --no-default-features --target wasm32-unknown-unknown
 	cargo build -p keetanetwork-anchor --no-default-features --features x509 --target wasm32-unknown-unknown
+	cargo build -p keetanetwork-anchor --no-default-features --features signing --target wasm32-unknown-unknown
 
 test-all: test test-feat wasm
 

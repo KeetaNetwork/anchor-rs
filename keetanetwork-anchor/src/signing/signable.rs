@@ -4,6 +4,8 @@
 //! verification bytes.
 
 use alloc::borrow::Cow;
+use alloc::string::String;
+use alloc::vec::Vec;
 
 use keetanetwork_account::{Account, KeyPair};
 
