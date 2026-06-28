@@ -86,6 +86,16 @@ impl Default for VerifyOptions {
 	}
 }
 
+impl VerifyOptions {
+	/// Verify the signature only, accepting any timestamp.
+	///
+	/// Service-metadata entries are signed once and served continuously, so the
+	/// reference (`maxSkewMs: Infinity`) places no bound on their age.
+	pub fn unbounded() -> Self {
+		Self { max_skew_ms: i64::MAX, reference_time: DateTime::<Utc>::UNIX_EPOCH }
+	}
+}
+
 /// Sign `data` with `account`, generating a fresh nonce and timestamp.
 ///
 /// This is the common path. Use [`sign_with`] to supply deterministic

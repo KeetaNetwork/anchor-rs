@@ -11,13 +11,91 @@ description = "Transport-agnostic KeetaNet anchor client: request signing byte-c
 [lib]
 path = "src/lib.rs"
 
+[features]
+default = ["std"]
+codec = ["dep:serde", "dep:serde_json"]
+service = ["codec", "dep:percent-encoding"]
+kyc = ["service"]
+fx = ["service"]
+storage = ["service"]
+asset = ["service"]
+http = ["service", "dep:reqwest", "reqwest/json"]
+resilience = ["dep:spin"]
+std = [
+	"http",
+	"kyc",
+	"dep:tokio",
+	"reqwest/rustls",
+	"snafu/std",
+	"base64/std",
+	"serde?/std",
+	"serde_json?/std",
+	"url/std",
+	"percent-encoding?/std",
+	"keetanetwork-anchor/std",
+	"keetanetwork-account/std",
+]
+wasm = ["http"]
+wasi = ["service"]
+
+[dependencies]
+keetanetwork-anchor = { path = "../keetanetwork-anchor", default-features = false, features = [
+	"signing",
+] }
+keetanetwork-account = { workspace = true, default-features = false, features = [
+	"rasn",
+] }
+
+async-trait = { workspace = true }
+base64 = { workspace = true, features = ["alloc"] }
+miniz_oxide = { workspace = true }
+url = { workspace = true }
+snafu = { workspace = true }
+
+serde = { workspace = true, features = ["derive"], optional = true }
+serde_json = { workspace = true, features = ["alloc"], optional = true }
+percent-encoding = { workspace = true, optional = true }
+spin = { workspace = true, features = ["mutex", "spin_mutex"], optional = true }
+
+[dependencies.reqwest]
+workspace = true
+optional = true
+
+[dependencies.tokio]
+workspace = true
+features = ["rt", "time"]
+optional = true
+
+# Browser runtime backend for the resilience layer.
+[target.'cfg(all(target_family = "wasm", target_os = "unknown"))'.dependencies]
+gloo-timers = { workspace = true, features = ["futures"] }
+wasm-bindgen-futures = { workspace = true }
+js-sys = { workspace = true }
+web-sys = { workspace = true, features = ["Window", "Performance"] }
+
+# WASI Preview 2 runtime backend for the resilience layer.
+[target.'cfg(target_os = "wasi")'.dependencies]
+wstd = { workspace = true }
+
 [dev-dependencies]
-keetanetwork-anchor = { path = "../keetanetwork-anchor", features = ["signing"] }
+keetanetwork-anchor = { path = "../keetanetwork-anchor", features = [
+	"std",
+	"signing",
+] }
+keetanetwork-account = { workspace = true, features = ["std", "rasn"] }
+keetanetwork-crypto = { workspace = true, features = [
+	"std",
+	"signature",
+	"encryption",
+	"rasn",
+] }
+keetanetwork-utils = { workspace = true, features = ["std"] }
 hex = { workspace = true, features = ["std"] }
-serde = { workspace = true, features = ["std"] }
+serde = { workspace = true, features = ["std", "derive"] }
 serde_json = { workspace = true, features = ["std"] }
 snafu = { workspace = true, features = ["std"] }
 chrono = { workspace = true, features = ["std", "clock"] }
-keetanetwork-account = { workspace = true, features = ["std", "rasn"] }
-keetanetwork-crypto = { workspace = true, features = ["std", "signature", "encryption", "rasn"] }
-keetanetwork-utils = { workspace = true, features = ["std"] }
+
+[dev-dependencies.tokio]
+workspace = true
+features = ["rt", "rt-multi-thread", "macros", "time", "net"]

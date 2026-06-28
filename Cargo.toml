@@ -101,6 +101,45 @@ features = ["v4"]
 version = "2.5"
 default-features = false
 
+[workspace.dependencies.percent-encoding]
+version = "2.3"
+default-features = false
+features = ["alloc"]
+
+[workspace.dependencies.miniz_oxide]
+version = "0.9.1"
+default-features = false
+features = ["with-alloc"]
+
+[workspace.dependencies.async-trait]
+version = "0.1.89"
+
+[workspace.dependencies.tokio]
+version = "1.52.3"
+
+[workspace.dependencies.reqwest]
+version = "0.13.4"
+default-features = false
+
+[workspace.dependencies.spin]
+version = "0.12.1"
+default-features = false
+
+[workspace.dependencies.gloo-timers]
+version = "0.4.0"
+
+[workspace.dependencies.wasm-bindgen-futures]
+version = "0.4.75"
+
+[workspace.dependencies.js-sys]
+version = "0.3.102"
+
+[workspace.dependencies.web-sys]
+version = "0.3.102"
+
+[workspace.dependencies.wstd]
+version = "0.6.7"
+
 [profile.dev]
 opt-level = 0
 debug = true
