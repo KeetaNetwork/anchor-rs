@@ -10,12 +10,8 @@ mod envelope;
 pub use endpoint::Endpoint;
 pub use envelope::AnchorOutcome;
 
-#[cfg(feature = "http")]
 mod caller;
-#[cfg(feature = "http")]
 mod context;
 
-#[cfg(feature = "http")]
 pub use caller::{AnchorCaller, Auth, Call, Method};
-#[cfg(feature = "http")]
 pub use context::AnchorContext;

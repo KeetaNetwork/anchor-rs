@@ -10,24 +10,17 @@ use std::sync::Arc;
 
 use common::account_from_seed;
 use keetanetwork_account::KeyECDSASECP256K1;
-use keetanetwork_anchor_client::{
-	AnchorContext, AnchorOutcome, CountryCode, InlineMetadataSource, KycClient, ReqwestTransport, Resolver,
-};
+use keetanetwork_anchor_client::{AnchorContext, AnchorOutcome, CountryCode, KycClient, ReqwestTransport, Resolver};
 use support::{HarnessError, KycHarness};
 
 type TestResult = Result<(), Box<dyn Error>>;
 
-/// The location key the inline source serves the root metadata under.
-const ROOT: &str = "root";
-
-/// A KYC client whose resolver reads `blob` inline and whose caller signs with a
-/// deterministic account over the live reqwest transport.
-fn client_for(blob: &str) -> Result<KycClient<KeyECDSASECP256K1>, Box<dyn Error>> {
-	let mut source = InlineMetadataSource::default();
-	source.insert_base64(ROOT, blob)?;
-
-	let resolver = Resolver::new(Arc::new(source), [ROOT.to_string()]);
+/// A KYC client whose resolver reads the `root` account's on-chain metadata
+/// through the node API at `api`, and whose caller signs with a deterministic
+/// account over the live reqwest transport.
+fn client_for(api: &str, root: &str) -> Result<KycClient<KeyECDSASECP256K1>, Box<dyn Error>> {
 	let transport = Arc::new(ReqwestTransport::try_default()?);
+	let resolver = Resolver::new(transport.clone(), api, [root.to_string()]);
 	let signer = account_from_seed(0x11);
 	let context = AnchorContext::new(resolver, transport, signer);
 
@@ -38,7 +31,7 @@ fn client_for(blob: &str) -> Result<KycClient<KeyECDSASECP256K1>, Box<dyn Error>
 async fn kyc_client_runs_the_full_verification_path() -> TestResult {
 	let mut harness = KycHarness::start()?;
 	let anchor = harness.start_kyc_anchor(Some(&["US"]), true)?;
-	let client = client_for(&anchor.blob)?;
+	let client = client_for(&anchor.api, &anchor.root)?;
 
 	let countries = [CountryCode::try_from("US")?];
 	let providers = client.providers(&countries).await?;
@@ -81,7 +74,7 @@ async fn kyc_client_runs_the_full_verification_path() -> TestResult {
 async fn kyc_client_rejects_a_provider_missing_an_operation() -> TestResult {
 	let mut harness = KycHarness::start()?;
 	let anchor = harness.start_kyc_anchor(Some(&["US"]), true)?;
-	let client = client_for(&anchor.blob)?;
+	let client = client_for(&anchor.api, &anchor.root)?;
 
 	let countries = [CountryCode::try_from("US")?];
 	let providers = client.providers(&countries).await?;

@@ -26,6 +26,9 @@ pub use transport::{AnchorHttpTransport, AnchorHttpTransportFactory, EmptyRetryA
 #[cfg(feature = "http")]
 pub use transport::{ReqwestTransport, ReqwestTransportFactory};
 
+#[cfg(all(feature = "wasi", target_os = "wasi"))]
+pub use transport::{WasiTransport, WasiTransportFactory};
+
 #[cfg(feature = "resilience")]
 pub use resilience::{
 	lease_work_budget_ms, Backoff, Jitter, ResilienceError, ResilienceRuntime, ResilientTransport,
@@ -36,22 +39,10 @@ pub use resilience::{
 pub use resilience::TokioRuntime;
 
 #[cfg(feature = "codec")]
-pub use resolver::{
-	decode_base64, parse_metadata, CountryCode, InlineMetadataSource, KycOperations, KycProvider, MetadataSource,
-	Resolver, ServiceQuery,
-};
-
-#[cfg(all(feature = "codec", feature = "http"))]
-pub use resolver::HttpsMetadataSource;
+pub use resolver::{decode_base64, parse_metadata, CountryCode, KycOperations, KycProvider, Resolver, ServiceQuery};
 
 #[cfg(feature = "service")]
-pub use service::{AnchorOutcome, Endpoint};
-
-#[cfg(all(feature = "service", feature = "http"))]
-pub use service::{AnchorCaller, AnchorContext, Auth, Call, Method};
+pub use service::{AnchorCaller, AnchorContext, AnchorOutcome, Auth, Call, Endpoint, Method};
 
 #[cfg(feature = "kyc")]
-pub use services::kyc::{Certificate, Certificates, KycQuery, Verification, VerificationStatus};
-
-#[cfg(all(feature = "kyc", feature = "http"))]
-pub use services::kyc::KycClient;
+pub use services::kyc::{Certificate, Certificates, KycClient, KycQuery, Verification, VerificationStatus};

@@ -55,9 +55,11 @@ words:
   - hexseed
   - unpad
   - millitokens
+  - monomorphized
   - pubkey
   - keypair
   - rng
+  - rsplit
   - sha3
   - Sha3_256
   - Sha256
@@ -78,4 +80,5 @@ words:
   - WASI
   - wasip1
   - wasip2
+  - wasmtime
   - wstd

@@ -6,11 +6,15 @@ use serde_json::{json, Map, Value};
 
 use super::driver::{field_str, optional_string_array, HarnessDriver, HarnessError};
 
-/// A live KYC anchor HTTP server started by the harness, plus the signed
-/// service-metadata blob advertising it.
+/// A live KYC anchor HTTP server started by the harness, with its service
+/// metadata published on-chain to a root account.
 pub struct KycAnchor {
 	/// The server base URL (`http://127.0.0.1:<port>`).
 	pub url: String,
+	/// The node API base URL the resolver reads the root account through.
+	pub api: String,
+	/// The root account whose on-chain `info.metadata` advertises the provider.
+	pub root: String,
 	/// The provider's CA certificate (PEM).
 	pub ca: String,
 	/// The metadata signer's `keeta_…` string, when the entry is signed.
@@ -19,8 +23,17 @@ pub struct KycAnchor {
 	pub provider_id: String,
 	/// The provider's advertised country codes, when bounded.
 	pub country_codes: Option<Vec<String>>,
-	/// The base64 `formatMetadata` blob a root account would publish.
+	/// The base64 `formatMetadata` blob, used to read operation URLs directly.
 	pub blob: String,
+}
+
+/// A metadata document published on-chain to a fresh root account, addressed by
+/// the node API it was published through.
+pub struct PublishedRoot {
+	/// The node API base URL the resolver reads the root account through.
+	pub api: String,
+	/// The root account whose on-chain `info.metadata` holds the document.
+	pub root: String,
 }
 
 impl KycAnchor {
@@ -108,6 +121,8 @@ impl KycHarness {
 			.driver
 			.request("startKycAnchor", Value::Object(request))?;
 		let url = field_str(&response, "url")?.to_string();
+		let api = field_str(&response, "api")?.to_string();
+		let root = field_str(&response, "root")?.to_string();
 		let ca = field_str(&response, "ca")?.to_string();
 		let provider_id = field_str(&response, "providerId")?.to_string();
 		let blob = field_str(&response, "blob")?.to_string();
@@ -117,7 +132,22 @@ impl KycHarness {
 			.and_then(Value::as_str)
 			.map(str::to_string);
 
-		Ok(KycAnchor { url, ca, signer, provider_id, country_codes, blob })
+		Ok(KycAnchor { url, api, root, ca, signer, provider_id, country_codes, blob })
+	}
+
+	/// Publish `metadata` on-chain to a fresh root account on the running node,
+	/// returning the node API and root account to resolve it through.
+	///
+	/// Requires a running anchor (started via [`start_kyc_anchor`]) so the
+	/// document is published to the same node the anchor's metadata lives on.
+	pub fn publish_metadata(&mut self, metadata: &Value) -> Result<PublishedRoot, HarnessError> {
+		let response = self
+			.driver
+			.request("publishMetadata", json!({ "metadata": metadata }))?;
+		let api = field_str(&response, "api")?.to_string();
+		let root = field_str(&response, "root")?.to_string();
+
+		Ok(PublishedRoot { api, root })
 	}
 
 	/// Stop the running KYC anchor server.

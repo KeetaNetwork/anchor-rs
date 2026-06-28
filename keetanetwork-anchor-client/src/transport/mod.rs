@@ -78,6 +78,12 @@ pub trait AnchorHttpTransportFactory: core::fmt::Debug + MaybeSend + MaybeSync {
 #[cfg(feature = "http")]
 pub use backend::{ReqwestTransport, ReqwestTransportFactory};
 
+#[cfg(all(feature = "wasi", target_os = "wasi"))]
+mod wasi;
+
+#[cfg(all(feature = "wasi", target_os = "wasi"))]
+pub use wasi::{WasiTransport, WasiTransportFactory};
+
 #[cfg(feature = "http")]
 mod backend {
 	use alloc::boxed::Box;
@@ -155,6 +161,7 @@ mod backend {
 				.header(CONTENT_TYPE_JSON.0, CONTENT_TYPE_JSON.1)
 				.header(ACCEPT_JSON.0, ACCEPT_JSON.1)
 				.body(payload);
+
 			let response = request.send().await?;
 			into_response(response).await
 		}

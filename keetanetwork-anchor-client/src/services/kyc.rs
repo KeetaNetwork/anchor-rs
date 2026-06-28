@@ -57,10 +57,8 @@ pub struct Certificates {
 	pub results: Vec<Certificate>,
 }
 
-#[cfg(feature = "http")]
 pub use client::KycClient;
 
-#[cfg(feature = "http")]
 mod client {
 	use alloc::vec::Vec;
 

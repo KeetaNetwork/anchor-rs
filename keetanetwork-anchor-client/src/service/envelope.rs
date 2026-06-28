@@ -23,10 +23,8 @@ impl<T> AnchorOutcome<T> {
 	}
 }
 
-#[cfg(feature = "http")]
 pub(crate) use decode::classify;
 
-#[cfg(feature = "http")]
 mod decode {
 	use serde::de::DeserializeOwned;
 	use serde::Deserialize;

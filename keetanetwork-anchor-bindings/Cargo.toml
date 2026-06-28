@@ -16,3 +16,6 @@ default = ["std"]
 std = []
 
 [dependencies]
+keetanetwork-account = { workspace = true, default-features = false, features = [
+	"rasn",
+] }

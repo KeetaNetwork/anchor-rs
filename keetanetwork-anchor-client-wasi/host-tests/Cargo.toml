@@ -1,0 +1,15 @@
+[workspace]
+
+[package]
+name = "keetanetwork-anchor-client-wasi-host-tests"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "wasmtime host e2e tests for the KYC P2 component against the live TypeScript anchor"
+
+[dev-dependencies]
+wasmtime = "46"
+wasmtime-wasi = "46"
+wasmtime-wasi-http = "46"
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros"] }
+serde_json = "1"

@@ -1,28 +1,22 @@
-//! Service-metadata decode and KYC provider lookup, driven against a live
-//! anchor that serves a signed KYC entry.
+//! Service-metadata resolution and KYC provider lookup, driven against a live
+//! anchor whose signed KYC entry is published on-chain and read back.
 
 mod support;
 
 use std::error::Error;
 use std::sync::Arc;
 
-use keetanetwork_anchor_client::{
-	decode_base64, parse_metadata, CountryCode, InlineMetadataSource, KycQuery, Resolver,
-};
+use keetanetwork_anchor_client::{decode_base64, parse_metadata, CountryCode, KycQuery, ReqwestTransport, Resolver};
 use serde_json::{json, Value};
 use support::{HarnessError, KycHarness};
 
 type TestResult = Result<(), Box<dyn Error>>;
 
-/// The location key the inline source serves the root metadata under.
-const ROOT: &str = "root";
-
-/// A resolver reading a single root blob from an in-memory source.
-fn resolver_for(blob: &str) -> Result<Resolver, Box<dyn Error>> {
-	let mut source = InlineMetadataSource::default();
-	source.insert_base64(ROOT, blob)?;
-
-	let resolver = Resolver::new(Arc::new(source), [ROOT.to_string()]);
+/// A resolver reading the on-chain metadata of `root` through the node API at
+/// `api`, over a live reqwest transport.
+fn resolver_for(api: &str, root: &str) -> Result<Resolver, Box<dyn Error>> {
+	let transport = Arc::new(ReqwestTransport::try_default()?);
+	let resolver = Resolver::new(transport, api, [root.to_string()]);
 	Ok(resolver)
 }
 
@@ -60,7 +54,7 @@ fn metadata_blobs_decode_to_their_source_json() -> TestResult {
 async fn lookup_returns_the_signed_kyc_provider() -> TestResult {
 	let mut harness = KycHarness::start()?;
 	let anchor = harness.start_kyc_anchor(Some(&["US", "CA"]), true)?;
-	let resolver = resolver_for(&anchor.blob)?;
+	let resolver = resolver_for(&anchor.api, &anchor.root)?;
 
 	let providers = resolver.lookup::<KycQuery>(&requested(&["US"])?).await?;
 	let provider = providers
@@ -98,8 +92,8 @@ async fn lookup_drops_an_entry_with_a_tampered_signature() -> TestResult {
 	document["services"]["kyc"][provider]["operations"]["createVerification"] =
 		Value::String("https://evil.example/api/createVerification".to_string());
 
-	let tampered_blob = harness.build_metadata(&document)?;
-	let resolver = resolver_for(&tampered_blob)?;
+	let published = harness.publish_metadata(&document)?;
+	let resolver = resolver_for(&published.api, &published.root)?;
 
 	let providers = resolver.lookup::<KycQuery>(&requested(&["US"])?).await?;
 	assert!(providers.is_empty(), "an entry whose signature no longer covers its operations must be dropped");
@@ -112,7 +106,7 @@ async fn lookup_drops_an_entry_with_a_tampered_signature() -> TestResult {
 async fn country_filter_matches_only_covered_requests() -> TestResult {
 	let mut harness = KycHarness::start()?;
 	let anchor = harness.start_kyc_anchor(Some(&["US", "CA"]), true)?;
-	let resolver = resolver_for(&anchor.blob)?;
+	let resolver = resolver_for(&anchor.api, &anchor.root)?;
 
 	let cases = [
 		("subset", vec!["US"], true),
@@ -147,8 +141,8 @@ async fn worldwide_provider_matches_any_country() -> TestResult {
 		.ok_or(HarnessError::MissingField { field: "kyc provider entry" })?
 		.remove("countryCodes");
 
-	let worldwide_blob = harness.build_metadata(&document)?;
-	let resolver = resolver_for(&worldwide_blob)?;
+	let published = harness.publish_metadata(&document)?;
+	let resolver = resolver_for(&published.api, &published.root)?;
 
 	let providers = resolver.lookup::<KycQuery>(&requested(&["GB"])?).await?;
 	assert!(!providers.is_empty(), "a provider with no country list must validate worldwide");
@@ -161,7 +155,7 @@ async fn worldwide_provider_matches_any_country() -> TestResult {
 async fn unsigned_entry_is_accepted() -> TestResult {
 	let mut harness = KycHarness::start()?;
 	let anchor = harness.start_kyc_anchor(Some(&["US"]), false)?;
-	let resolver = resolver_for(&anchor.blob)?;
+	let resolver = resolver_for(&anchor.api, &anchor.root)?;
 
 	let providers = resolver.lookup::<KycQuery>(&requested(&["US"])?).await?;
 	assert!(!providers.is_empty(), "an entry with neither account nor signed must be accepted");

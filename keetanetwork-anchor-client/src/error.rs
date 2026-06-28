@@ -83,16 +83,16 @@ pub enum ResolverError {
 		scheme: String,
 	},
 
-	/// The requested metadata location was not available from the source.
+	/// A metadata location could not be read.
 	#[snafu(display("metadata location not found: {location}"))]
 	NotFound {
 		/// The location that was requested.
 		location: String,
 	},
 
-	/// External references formed a cycle.
-	#[snafu(display("metadata reference cycle detected"))]
-	ReferenceCycle,
+	/// No root account yielded a valid (version 1) metadata document.
+	#[snafu(display("no valid root metadata found"))]
+	NoRootMetadata,
 
 	/// Fetching metadata from the source failed at the transport layer.
 	#[snafu(display("metadata fetch failed: {source}"), context(false))]

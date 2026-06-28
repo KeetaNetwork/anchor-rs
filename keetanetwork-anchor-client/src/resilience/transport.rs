@@ -1,6 +1,6 @@
 //! The resilience decorator: a transport wrapping another, adding rate-limit
 //! pacing and retry/backoff while implementing the same [`AnchorHttpTransport`]
-//! seam, so callers compose it transparently.
+//! interface, so callers compose it transparently.
 
 use alloc::boxed::Box;
 use alloc::sync::Arc;
