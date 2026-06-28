@@ -55,6 +55,7 @@ words:
   - hexseed
   - unpad
   - millitokens
+  - monomorphized
   - pubkey
   - keypair
   - rng
@@ -78,4 +79,5 @@ words:
   - WASI
   - wasip1
   - wasip2
+  - wasmtime
   - wstd

@@ -4,7 +4,9 @@ members = [
     "keetanetwork-anchor",
     "keetanetwork-anchor-bindings",
     "keetanetwork-anchor-client",
+    "keetanetwork-anchor-client-wasi",
 ]
+exclude = ["keetanetwork-anchor-client-wasi/host-tests"]
 
 [workspace.package]
 version = "0.1.0"
@@ -139,6 +141,9 @@ version = "0.3.102"
 
 [workspace.dependencies.wstd]
 version = "0.6.7"
+
+[workspace.dependencies.wit-bindgen]
+version = "0.58"
 
 [profile.dev]
 opt-level = 0

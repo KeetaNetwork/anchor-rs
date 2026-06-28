@@ -1,0 +1,38 @@
+[package]
+name = "keetanetwork-anchor-client-wasi"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "WASI bindings for the KeetaNet anchor client: a P2 component (networked over wasi:http) and a P1 core module (offline), selected by feature"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+# Exactly one of `p1`/`p2` MUST be enabled for a wasi build.
+p1 = []
+# `p2`: wasm32-wasip2 component (wit-bindgen) networked over wasi:http.
+p2 = ["dep:wstd", "dep:wit-bindgen"]
+
+[dependencies]
+keetanetwork-anchor-client = { path = "../keetanetwork-anchor-client", default-features = false, features = [
+	"kyc",
+] }
+keetanetwork-anchor-bindings = { path = "../keetanetwork-anchor-bindings" }
+keetanetwork-account = { workspace = true, default-features = false, features = [
+	"rasn",
+] }
+hex = { workspace = true, features = ["alloc"] }
+
+# On a wasi target the P2 component adds the networked transport and resilience.
+[target.'cfg(target_os = "wasi")'.dependencies]
+keetanetwork-anchor-client = { path = "../keetanetwork-anchor-client", default-features = false, features = [
+	"kyc",
+	"wasi",
+	"resilience",
+] }
+wstd = { workspace = true, optional = true }
+wit-bindgen = { workspace = true, optional = true }

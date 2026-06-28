@@ -1,8 +1,12 @@
-.PHONY: build clean do-docs do-docs-ci do-lint do-lint-ci test test-feat test-all wasm all help check release coverage coverage-check coverage-ci coverage-setup audit docs developer node-harness
+.PHONY: build clean do-docs do-docs-ci do-lint do-lint-ci test test-feat test-all all help check release coverage coverage-check coverage-ci coverage-setup audit docs developer node-harness build-wasi test-wasi
 
 # TypeScript anchor interop harnesses (wrap @keetanetwork/anchor)
 HARNESS_DIR := keetanetwork-anchor-client/node-harness
 HARNESS_SOURCES := $(wildcard $(HARNESS_DIR)/src/*.ts) $(HARNESS_DIR)/tsconfig.json
+
+# WASI bindings crate and its built P2 component (wasmtime host e2e tests)
+WASI_CRATE := keetanetwork-anchor-client-wasi
+WASI_P2_WASM := target/wasm32-wasip2/debug/keetanetwork_anchor_client_wasi.wasm
 
 # Project name
 PROJ_NAME := anchor-rs
@@ -93,6 +97,12 @@ test-feat:
 	cargo check -p keetanetwork-anchor-client --target wasm32-wasip2 --no-default-features --features resilience
 	# WASI P2 networked KYC surface: WasiTransport + service layer + resilience.
 	cargo check -p keetanetwork-anchor-client --target wasm32-wasip2 --no-default-features --features kyc,wasi,resilience
+	# Shared binding core (algorithm mapping + account construction).
+	cargo test -p keetanetwork-anchor-bindings
+	# WASI bindings crate: host compile, then each feature-gated ABI.
+	cargo check -p keetanetwork-anchor-client-wasi
+	cargo check -p keetanetwork-anchor-client-wasi --target wasm32-wasip2 --no-default-features --features p2
+	cargo check -p keetanetwork-anchor-client-wasi --target wasm32-wasip1 --no-default-features --features p1
 
 # Build the TypeScript harnesses (installs deps + compiles every entry).
 $(HARNESS_DIR)/node_modules/.package-lock.json: $(HARNESS_DIR)/package-lock.json
@@ -111,18 +121,17 @@ test: node-harness
 	sh -c 'unset CARGO_BUILD_TARGET; cargo test --all-features --workspace'
 	cargo build -p keetanetwork-anchor --no-default-features
 
-# Verify the crate compiles for wasm32 (no_std). Requires the target:
-#   rustup target add wasm32-unknown-unknown
-wasm:
-	cargo build -p keetanetwork-anchor --no-default-features --target wasm32-unknown-unknown
-	cargo build -p keetanetwork-anchor --no-default-features --features x509 --target wasm32-unknown-unknown
-	cargo build -p keetanetwork-anchor --no-default-features --features signing --target wasm32-unknown-unknown
-	# Client: the pure decode/resolver/service path builds on wasm (no_std)
-	cargo build -p keetanetwork-anchor-client --no-default-features --features codec --target wasm32-unknown-unknown
-	cargo build -p keetanetwork-anchor-client --no-default-features --features service --target wasm32-unknown-unknown
-	cargo build -p keetanetwork-anchor-client --no-default-features --features kyc --target wasm32-unknown-unknown
+# Build the WASI Preview 2 KYC component the host-tests instantiate.
+build-wasi:
+	cargo build -p $(WASI_CRATE) --target wasm32-wasip2 --features p2
 
-test-all: test test-feat wasm
+# Instantiate the P2 component under wasmtime (wasi:http) against the live TS
+# KYC anchor, proving signing parity. Standalone crate, never joins `make test`.
+test-wasi: build-wasi node-harness
+	WASI_P2_COMPONENT=$(CURDIR)/$(WASI_P2_WASM) \
+		cargo test --manifest-path $(WASI_CRATE)/host-tests/Cargo.toml -- --include-ignored
+
+test-all: test test-feat
 
 # Set up coverage tools (internal helper target)
 coverage-setup:
@@ -253,6 +262,8 @@ help:
 	@echo "  make test           - Run tests (builds node-harness; all crypto feature combinations)"
 	@echo "  make test-feat      - Run crypto crate tests with specific features"
 	@echo "  make test-all       - Run all tests including feature tests"
+	@echo "  make build-wasi     - Build the WASI P2 KYC component"
+	@echo "  make test-wasi      - Build the P2 component and run the wasmtime host e2e tests against the live TS KYC anchor"
 	@echo "  make audit          - Run security audit"
 	@echo "  make docs           - Generate and open documentation"
 	@echo "  make coverage       - Generate code coverage report (HTML + LCOV)"

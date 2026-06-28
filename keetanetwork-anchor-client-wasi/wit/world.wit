@@ -1,0 +1,114 @@
+package keeta:anchor@0.1.0;
+
+/// Shared value types crossing the component boundary.
+interface types {
+	/// A stable, machine-readable error: a programmatic `code` plus a
+	/// human-readable `message`.
+	record coded-error {
+		code: string,
+		message: string,
+	}
+
+	/// A signing account: a 32-byte hex `seed` derived at `index` under
+	/// `algorithm` (`ed25519`, `ecdsa_secp256k1`, or `ecdsa_secp256r1`).
+	record signer-spec {
+		seed: string,
+		index: u32,
+		algorithm: string,
+	}
+
+	/// The KYC operation endpoint templates a provider advertises. An absent
+	/// field means the provider does not offer that operation.
+	record kyc-operations {
+		create-verification: option<string>,
+		get-certificates: option<string>,
+		get-verification-status: option<string>,
+		check-locality: option<string>,
+		get-estimate: option<string>,
+	}
+
+	/// A KYC provider discovered from on-chain service metadata. `country-codes`
+	/// is absent for a worldwide provider.
+	record kyc-provider {
+		id: string,
+		ca: string,
+		operations: kyc-operations,
+		country-codes: option<list<string>>,
+	}
+
+	/// An in-progress verification: its provider `id` and the `web-url` where
+	/// the user completes the flow.
+	record verification {
+		id: string,
+		web-url: string,
+	}
+
+	/// The provider-reported status of a verification (e.g. `pending`).
+	record verification-status {
+		status: string,
+	}
+
+	/// One issued, PEM-encoded certificate.
+	record certificate {
+		certificate: string,
+	}
+
+	/// The certificates issued for a verification.
+	record certificates {
+		results: list<certificate>,
+	}
+
+	/// A verification result that the provider may report as pending: either
+	/// `ready` with the value, or `retry` after the given milliseconds.
+	variant verification-outcome {
+		ready(verification),
+		retry(u32),
+	}
+
+	/// A status result, ready or retry-after-millis.
+	variant status-outcome {
+		ready(verification-status),
+		retry(u32),
+	}
+
+	/// A certificates result, ready or retry-after-millis.
+	variant certificates-outcome {
+		ready(certificates),
+		retry(u32),
+	}
+}
+
+/// The KYC anchor client: discover providers, then create and track
+/// verifications, signing each request with the bound account over `wasi:http`.
+interface kyc {
+	use types.{
+		coded-error,
+		signer-spec,
+		kyc-provider,
+		verification-outcome,
+		status-outcome,
+		certificates-outcome,
+	};
+
+	/// A KYC client bound to a signer and a metadata root.
+	resource client {
+		/// Build a client that resolves providers from `metadata-url` and signs
+		/// requests with the account described by `spec`.
+		with-signer: static func(metadata-url: string, spec: signer-spec) -> result<client, coded-error>;
+		/// Every provider that serves all `countries` (ISO codes).
+		providers: func(countries: list<string>) -> result<list<kyc-provider>, coded-error>;
+		/// Begin a verification with `provider` for `countries`, optionally
+		/// redirecting the user to `redirect-url` when the flow ends.
+		create-verification: func(provider: kyc-provider, countries: list<string>, redirect-url: option<string>) -> result<verification-outcome, coded-error>;
+		/// Fetch the certificates issued for verification `id`.
+		get-certificates: func(provider: kyc-provider, id: string) -> result<certificates-outcome, coded-error>;
+		/// Read the status of verification `id`.
+		get-verification-status: func(provider: kyc-provider, id: string) -> result<status-outcome, coded-error>;
+	}
+}
+
+/// The KYC anchor client as a WASI Preview 2 component, networked over
+/// `wasi:http`.
+world keeta-anchor-kyc {
+	export kyc;
+}
