@@ -23,6 +23,21 @@ pub enum TransportError {
 		/// The underlying URL-parsing message.
 		reason: String,
 	},
+
+	/// A resilience policy shed the request or spent its retry budget.
+	#[cfg(feature = "resilience")]
+	#[snafu(display("{source}"))]
+	Resilience {
+		/// The underlying resilience failure.
+		source: alloc::boxed::Box<crate::resilience::ResilienceError>,
+	},
+}
+
+#[cfg(feature = "resilience")]
+impl From<crate::resilience::ResilienceError> for TransportError {
+	fn from(error: crate::resilience::ResilienceError) -> Self {
+		Self::Resilience { source: alloc::boxed::Box::new(error) }
+	}
 }
 
 #[cfg(feature = "http")]

@@ -67,7 +67,7 @@ mod decode {
 		T: DeserializeOwned,
 	{
 		let envelope = serde_json::from_slice::<Envelope>(&response.body).unwrap_or_default();
-		if let Some(after_ms) = retry_delay(response.status, &envelope) {
+		if let Some(after_ms) = retry_delay(&response, &envelope) {
 			return Ok(AnchorOutcome::Retry { after_ms });
 		}
 		if !response.is_success() || envelope.ok == Some(false) {
@@ -78,17 +78,68 @@ mod decode {
 		Ok(AnchorOutcome::Ready(value))
 	}
 
-	/// The retry delay for a pending resource: an explicit `retryAfter`,
-	/// otherwise a default for a `404`.
-	fn retry_delay(status: u16, envelope: &Envelope) -> Option<u32> {
+	/// The retry delay for a pending resource: an explicit body `retryAfter`,
+	/// otherwise the response's `Retry-After` header, otherwise a default for a
+	/// `404`.
+	fn retry_delay(response: &HttpResponse, envelope: &Envelope) -> Option<u32> {
 		if let Some(after_ms) = envelope.retry_after {
 			return Some(after_ms);
 		}
 
-		if status == NOT_FOUND {
+		if let Some(after_ms) = response.retry_after.as_ref().and_then(header_delay_ms) {
+			return Some(after_ms);
+		}
+
+		if response.status == NOT_FOUND {
 			return Some(DEFAULT_RETRY_MS);
 		}
 
 		None
+	}
+
+	/// A `Retry-After` header delay in milliseconds, when it resolves without a
+	/// wall clock and fits the outcome's `u32` field.
+	fn header_delay_ms(retry_after: &crate::transport::RetryAfter) -> Option<u32> {
+		retry_after
+			.to_millis()
+			.and_then(|millis| u32::try_from(millis).ok())
+	}
+
+	#[cfg(test)]
+	mod tests {
+		use serde_json::Value;
+
+		use super::*;
+		use crate::transport::RetryAfter;
+
+		#[test]
+		fn a_retry_after_header_becomes_a_retry_outcome() {
+			let response = HttpResponse::new(503, b"{}".to_vec()).with_retry_after(Some(RetryAfter::Seconds(2)));
+			let outcome = classify::<Value>(response);
+			assert!(matches!(outcome, Ok(AnchorOutcome::Retry { after_ms: 2_000 })));
+		}
+
+		#[test]
+		fn a_body_hint_outranks_the_header() {
+			let response = HttpResponse::new(503, br#"{"retryAfter":750}"#.to_vec())
+				.with_retry_after(Some(RetryAfter::Seconds(2)));
+			let outcome = classify::<Value>(response);
+			assert!(matches!(outcome, Ok(AnchorOutcome::Retry { after_ms: 750 })));
+		}
+
+		#[test]
+		fn a_not_found_without_a_hint_uses_the_default_delay() {
+			let response = HttpResponse::new(NOT_FOUND, b"{}".to_vec());
+			let outcome = classify::<Value>(response);
+			assert!(matches!(outcome, Ok(AnchorOutcome::Retry { after_ms: DEFAULT_RETRY_MS })));
+		}
+
+		#[test]
+		fn a_date_header_falls_back_to_the_body_or_default() {
+			let response = HttpResponse::new(200, br#"{"ok":true}"#.to_vec())
+				.with_retry_after(Some(RetryAfter::HttpDate("Wed, 21 Oct 2025 07:28:00 GMT".into())));
+			let outcome = classify::<Value>(response);
+			assert!(matches!(outcome, Ok(AnchorOutcome::Ready(_))));
+		}
 	}
 }

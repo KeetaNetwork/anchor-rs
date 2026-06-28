@@ -84,6 +84,9 @@ test-feat:
 	cargo check -p keetanetwork-anchor-client --no-default-features --features kyc
 	cargo check -p keetanetwork-anchor-client --no-default-features --features http
 	cargo check -p keetanetwork-anchor-client --no-default-features --features kyc,http
+	# Resilience: pure cores are no_std; backends/decorator ride the runtimes.
+	cargo check -p keetanetwork-anchor-client --no-default-features --features resilience
+	cargo check -p keetanetwork-anchor-client --features resilience
 
 # Build the TypeScript harnesses (installs deps + compiles every entry).
 $(HARNESS_DIR)/node_modules/.package-lock.json: $(HARNESS_DIR)/package-lock.json

@@ -12,16 +12,35 @@ use async_trait::async_trait;
 use crate::error::TransportError;
 use crate::marker::{MaybeSend, MaybeSync};
 
-/// A completed HTTP response: the status code and raw body bytes.
+mod retry_after;
+
+pub use retry_after::{EmptyRetryAfter, RetryAfter};
+
+/// A completed HTTP response: the status code, raw body bytes, and the parsed
+/// `Retry-After` hint when the anchor sent one.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HttpResponse {
 	/// The HTTP status code.
 	pub status: u16,
 	/// The raw response body.
 	pub body: Vec<u8>,
+	/// The parsed `Retry-After` header, when present.
+	pub retry_after: Option<RetryAfter>,
 }
 
 impl HttpResponse {
+	/// A response carrying `status` and `body` with no `Retry-After` hint.
+	pub fn new(status: u16, body: Vec<u8>) -> Self {
+		Self { status, body, retry_after: None }
+	}
+
+	/// Set the `Retry-After` hint.
+	#[must_use]
+	pub fn with_retry_after(mut self, retry_after: Option<RetryAfter>) -> Self {
+		self.retry_after = retry_after;
+		self
+	}
+
 	/// Whether the status is in the 2xx success range.
 	pub fn is_success(&self) -> bool {
 		(200..300).contains(&self.status)
@@ -65,10 +84,13 @@ mod backend {
 	use alloc::sync::Arc;
 	use alloc::vec::Vec;
 
+	use core::str::FromStr;
+
 	use async_trait::async_trait;
+	use reqwest::header::RETRY_AFTER;
 	use reqwest::Client;
 
-	use super::{AnchorHttpTransport, AnchorHttpTransportFactory, HttpResponse};
+	use super::{AnchorHttpTransport, AnchorHttpTransportFactory, HttpResponse, RetryAfter};
 	use crate::error::TransportError;
 
 	const ACCEPT_JSON: (&str, &str) = ("accept", "application/json");
@@ -103,9 +125,17 @@ mod backend {
 
 	async fn into_response(response: reqwest::Response) -> Result<HttpResponse, TransportError> {
 		let status = response.status().as_u16();
+		let retry_after = parse_retry_after(&response);
 		let bytes = response.bytes().await?;
 		let body: Vec<u8> = bytes.to_vec();
-		Ok(HttpResponse { status, body })
+		Ok(HttpResponse::new(status, body).with_retry_after(retry_after))
+	}
+
+	/// The response's `Retry-After` header, parsed, when present and readable.
+	fn parse_retry_after(response: &reqwest::Response) -> Option<RetryAfter> {
+		let header = response.headers().get(RETRY_AFTER)?;
+		let value = header.to_str().ok()?;
+		RetryAfter::from_str(value).ok()
 	}
 
 	#[cfg_attr(not(target_family = "wasm"), async_trait)]

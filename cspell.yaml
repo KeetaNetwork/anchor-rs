@@ -54,6 +54,7 @@ words:
   - passphrase
   - hexseed
   - unpad
+  - millitokens
   - pubkey
   - keypair
   - rng
@@ -74,3 +75,7 @@ words:
   - doct
   - miks
   - faxx
+  - WASI
+  - wasip1
+  - wasip2
+  - wstd

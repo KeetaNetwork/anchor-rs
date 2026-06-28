@@ -8,6 +8,9 @@ pub mod error;
 pub mod marker;
 pub mod transport;
 
+#[cfg(feature = "resilience")]
+pub mod resilience;
+
 #[cfg(feature = "codec")]
 pub mod resolver;
 
@@ -18,10 +21,19 @@ pub mod service;
 pub mod services;
 
 pub use error::{AnchorClientError, ResolverError, TransportError};
-pub use transport::{AnchorHttpTransport, AnchorHttpTransportFactory, HttpResponse};
+pub use transport::{AnchorHttpTransport, AnchorHttpTransportFactory, EmptyRetryAfter, HttpResponse, RetryAfter};
 
 #[cfg(feature = "http")]
 pub use transport::{ReqwestTransport, ReqwestTransportFactory};
+
+#[cfg(feature = "resilience")]
+pub use resilience::{
+	lease_work_budget_ms, Backoff, Jitter, ResilienceError, ResilienceRuntime, ResilientTransport,
+	ResilientTransportFactory, RetryPolicy, TokenBucket, DEFAULT_LEASE_MS,
+};
+
+#[cfg(all(feature = "resilience", feature = "std"))]
+pub use resilience::TokioRuntime;
 
 #[cfg(feature = "codec")]
 pub use resolver::{
