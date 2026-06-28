@@ -29,14 +29,13 @@ pub struct Output {
 }
 
 /// Allocate a `len`-byte buffer in guest memory for the host to write into.
+///
+/// The buffer is an exact-`len` boxed slice so [`keeta_anchor_free`] can release
+/// it under the same layout, without relying on a `Vec`'s unspecified capacity.
 #[no_mangle]
 pub extern "C" fn keeta_anchor_alloc(len: usize) -> *mut u8 {
-	let mut buffer = Vec::<u8>::with_capacity(len);
-	let ptr = buffer.as_mut_ptr();
-
-	core::mem::forget(buffer);
-
-	ptr
+	let buffer: Box<[u8]> = vec![0u8; len].into_boxed_slice();
+	Box::into_raw(buffer).cast::<u8>()
 }
 
 /// Free a buffer of `len` bytes previously returned by [`keeta_anchor_alloc`].
@@ -51,7 +50,8 @@ pub unsafe extern "C" fn keeta_anchor_free(ptr: *mut u8, len: usize) {
 		return;
 	}
 
-	drop(unsafe { Vec::from_raw_parts(ptr, 0, len) });
+	let slice = core::ptr::slice_from_raw_parts_mut(ptr, len);
+	drop(unsafe { Box::from_raw(slice) });
 }
 
 /// Free an [`Output`] and its result bytes.
@@ -69,8 +69,9 @@ pub unsafe extern "C" fn keeta_anchor_output_free(output: *mut Output) {
 	if boxed.ptr != 0 && boxed.len != 0 {
 		let bytes = boxed.ptr as *mut u8;
 		let len = boxed.len as usize;
+		let slice = core::ptr::slice_from_raw_parts_mut(bytes, len);
 
-		drop(unsafe { Vec::from_raw_parts(bytes, len, len) });
+		drop(unsafe { Box::from_raw(slice) });
 	}
 }
 
@@ -187,12 +188,13 @@ fn into_output(result: Result<Vec<u8>, CodedError>) -> *mut Output {
 }
 
 /// Leak `bytes` and box an [`Output`] pointing at them.
-fn output(code: u32, mut bytes: Vec<u8>) -> *mut Output {
-	bytes.shrink_to_fit();
-	let len = bytes.len();
-	let ptr = bytes.as_mut_ptr();
-
-	core::mem::forget(bytes);
+///
+/// `bytes` is leaked as an exact-`len` boxed slice so [`keeta_anchor_output_free`]
+/// can release it under the same layout.
+fn output(code: u32, bytes: Vec<u8>) -> *mut Output {
+	let boxed: Box<[u8]> = bytes.into_boxed_slice();
+	let len = boxed.len();
+	let ptr = Box::into_raw(boxed).cast::<u8>();
 
 	Box::into_raw(Box::new(Output { code, ptr: ptr as u32, len: len as u32 }))
 }
