@@ -1,3 +1,5 @@
+use alloc::string::String;
+
 use snafu::Snafu;
 
 use crate::sensitive_attributes::AnchorAsn1Error;
@@ -50,7 +52,7 @@ pub enum SensitiveAttributeError {
 }
 
 crate::impl_variant_error_from!(SensitiveAttributeError, {
-	std::string::FromUtf8Error => InvalidUtf8,
+	alloc::string::FromUtf8Error => InvalidUtf8,
 });
 
 crate::impl_source_error_from!(SensitiveAttributeError, {

@@ -8,24 +8,22 @@ use serde_json::Value;
 use crate::signing::error::SigningError;
 use crate::signing::signable::Signable;
 
-/// Upper bound on the canonical byte length, matching the TypeScript guard.
+/// Upper bound on the canonical byte length.
 const MAX_OUTPUT_BYTES: usize = 65536;
-/// Upper bound on visited nodes, matching the TypeScript DoS guard.
+/// Upper bound on visited nodes.
 const MAX_NODES: usize = 1000;
 /// I-JSON safe integer magnitude (`2^53 - 1`).
 const MAX_SAFE_INTEGER: u64 = 9_007_199_254_740_991;
 
 /// A pending unit of work for the iterative canonicalizing handler.
 enum Frame<'a> {
-	/// A literal fragment to append to the output verbatim.
+	/// A literal fragment to append to the output.
 	Emit(String),
 	/// A value still to be expanded.
 	Visit(&'a Value),
 }
 
-/// Canonicalize a structured `value` into a single-element signable payload (one
-/// `UTF8String`), enforcing the same node and output-size guards as the
-/// TypeScript `objectToSignable`.
+/// Canonicalize a structured `value` into a single-element signable payload.
 pub fn object_to_signable(value: &Value) -> Result<Vec<Signable<'static>>, SigningError> {
 	let canonical = canonicalize_into(value, Some(MAX_NODES))?;
 	if canonical.len() > MAX_OUTPUT_BYTES {

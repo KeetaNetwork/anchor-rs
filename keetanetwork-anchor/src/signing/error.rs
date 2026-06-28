@@ -1,5 +1,6 @@
 //! Errors raised while canonicalizing, encoding, signing, or verifying.
 
+use crate::impl_variant_error_from;
 use keetanetwork_utils::impl_error_from_with_fields;
 use snafu::Snafu;
 
@@ -54,6 +55,10 @@ impl_error_from_with_fields!(SigningError, {
 	keetanetwork_account::AccountError => Account { reason: |error: keetanetwork_account::AccountError| format!("{error}") },
 });
 
+impl_variant_error_from!(SigningError, {
+	chrono::ParseError => NonCanonicalTimestamp,
+});
+
 /// The reason a [`Signed`](crate::signing::Signed) envelope was rejected by
 /// [`verify`](crate::signing::verify).
 ///
@@ -100,6 +105,51 @@ impl_error_from_with_fields!(VerifyError, {
 	SigningError => Encoding { reason: |error: SigningError| format!("{error}") },
 });
 
+impl_variant_error_from!(VerifyError, {
+	chrono::ParseError => MalformedTimestamp,
+});
+
+/// The reason a signed HTTP request (URL- or body-bound) was rejected.
+#[derive(Debug, Clone, PartialEq, Eq, Snafu)]
+#[snafu(visibility(pub))]
+pub enum RequestError {
+	/// The base URL already carried one of the `signed.*` parameters, so
+	/// signing it again would overwrite an existing signature.
+	#[snafu(display("URL already has signed field parameter: {name}"))]
+	DuplicateParameter {
+		/// The offending parameter name.
+		name: &'static str,
+	},
+
+	/// Some but not all of `signed.nonce`, `signed.timestamp`, and
+	/// `signed.signature` were present.
+	#[snafu(display("incomplete signature fields in request"))]
+	IncompleteSignature,
+
+	/// The request carried neither an `account` nor any signature fields, so
+	/// there was nothing to authenticate.
+	#[snafu(display("authentication required: missing account and signature"))]
+	MissingAuthentication,
+
+	/// The `account` parameter was not a valid public-key string.
+	#[snafu(display("account is malformed: {reason}"))]
+	MalformedAccount {
+		/// The underlying account-decoding message.
+		reason: String,
+	},
+
+	/// The signature did not pass [`verify`](crate::signing::verify).
+	#[snafu(display("request signature rejected: {source}"), context(false))]
+	Verify {
+		/// The underlying verification failure.
+		source: VerifyError,
+	},
+}
+
+impl_error_from_with_fields!(RequestError, {
+	keetanetwork_account::AccountError => MalformedAccount { reason: |error: keetanetwork_account::AccountError| format!("{error}") },
+});
+
 #[cfg(test)]
 mod tests {
 	use super::*;
@@ -111,6 +161,7 @@ mod tests {
 		[
 			rasn::error::EncodeError::length_exceeds_platform_size(rasn::Codec::Der),
 			keetanetwork_account::AccountError::InvalidKeyType,
+			chrono::DateTime::parse_from_rfc3339("not-a-timestamp").unwrap_err(),
 		]
 	);
 
@@ -130,7 +181,11 @@ mod tests {
 	test_error_from_conversions!(
 		test_verify_from_conversions,
 		VerifyError,
-		[base64::DecodeError::InvalidPadding, SigningError::Encode { reason: "boom".to_string() }]
+		[
+			base64::DecodeError::InvalidPadding,
+			SigningError::Encode { reason: "boom".to_string() },
+			chrono::DateTime::parse_from_rfc3339("not-a-timestamp").unwrap_err(),
+		]
 	);
 
 	test_error_variants!(
@@ -141,6 +196,23 @@ mod tests {
 			VerifyError::MalformedTimestamp,
 			VerifyError::MalformedSignature { reason: "boom".to_string() },
 			VerifyError::Encoding { reason: "boom".to_string() },
+		]
+	);
+
+	test_error_from_conversions!(
+		test_request_from_conversions,
+		RequestError,
+		[keetanetwork_account::AccountError::InvalidKeyType, VerifyError::SignatureMismatch]
+	);
+
+	test_error_variants!(
+		test_request_error_variants,
+		[
+			RequestError::DuplicateParameter { name: "signed.nonce" },
+			RequestError::IncompleteSignature,
+			RequestError::MissingAuthentication,
+			RequestError::MalformedAccount { reason: "boom".to_string() },
+			RequestError::Verify { source: VerifyError::SignatureMismatch },
 		]
 	);
 }

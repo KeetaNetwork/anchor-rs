@@ -1,3 +1,5 @@
+use alloc::string::String;
+
 use snafu::Snafu;
 
 use crate::asn1::error::AnchorAsn1Error;

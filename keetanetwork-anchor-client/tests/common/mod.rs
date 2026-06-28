@@ -71,7 +71,7 @@ pub fn rust_data(specs: &[Spec], account_public_key_and_type: &[u8]) -> Vec<Sign
 		.collect()
 }
 
-/// Project a spec into the harness wire format consumed by the TypeScript side.
+/// Project a spec into the harness transport format.
 pub fn harness_data(specs: &[Spec]) -> Value {
 	let parts: Vec<Value> = specs
 		.iter()

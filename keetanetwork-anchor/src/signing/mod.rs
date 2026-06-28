@@ -3,24 +3,27 @@
 mod canonical;
 mod error;
 mod format;
+mod request;
 mod signable;
 
 pub use canonical::object_to_signable;
-pub use error::{SigningError, VerifyError};
+pub use error::{RequestError, SigningError, VerifyError};
+pub use request::{add_signature_to_url, parse_signature_from_url, verify_body, verify_url};
 pub use signable::{Signable, ToSignable};
+pub use url::Url;
 
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
 use chrono::{DateTime, SecondsFormat, Utc};
 use format::format_data;
-use keetanetwork_account::{Account, KeyPair};
+use keetanetwork_account::{Account, GenericAccount, KeyPair};
 use uuid::Uuid;
 
-/// Default allowed clock skew, matching the TypeScript default of five minutes.
+/// Default allowed clock skew.
 pub const DEFAULT_MAX_SKEW_MS: i64 = 5 * 60 * 1000;
 
-/// A signed payload envelope, equivalent to the TypeScript
-/// `{ nonce, timestamp, signature }` where `signature` is base64.
+/// A signed payload envelope. `{ nonce, timestamp, signature }` where
+/// `signature` is base64.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Signed {
 	/// Per-request nonce.
@@ -134,11 +137,56 @@ where
 	K: KeyPair,
 	T: ToSignable + ?Sized,
 {
-	let timestamp = match DateTime::parse_from_rfc3339(&signed.timestamp) {
-		Ok(parsed) => parsed.with_timezone(&Utc),
-		Err(_) => return Err(VerifyError::MalformedTimestamp),
-	};
+	verify_envelope(account, data, signed, options)
+}
 
+/// An account that can verify a signature and expose its `publicKeyAndType`
+/// transport bytes. Implemented for both the statically typed [`Account`]
+/// and the runtime-typed [`GenericAccount`].
+pub(crate) trait VerifyingAccount {
+	fn public_key_with_type(&self) -> Vec<u8>;
+	fn verify_signature(&self, message: &[u8], signature: &[u8]) -> Result<(), VerifyError>;
+}
+
+impl<K> VerifyingAccount for Account<K>
+where
+	K: KeyPair,
+{
+	fn public_key_with_type(&self) -> Vec<u8> {
+		self.to_public_key_with_type()
+	}
+
+	fn verify_signature(&self, message: &[u8], signature: &[u8]) -> Result<(), VerifyError> {
+		self.verify(message, signature, None)
+			.map_err(|_| VerifyError::SignatureMismatch)
+	}
+}
+
+impl VerifyingAccount for GenericAccount {
+	fn public_key_with_type(&self) -> Vec<u8> {
+		self.to_public_key_with_type()
+	}
+
+	fn verify_signature(&self, message: &[u8], signature: &[u8]) -> Result<(), VerifyError> {
+		self.verify(message, signature, None)
+			.map_err(|_| VerifyError::SignatureMismatch)
+	}
+}
+
+/// Verify a [`Signed`] envelope against any [`VerifyingAccount`]: enforce the
+/// canonical timestamp, the clock-skew window, then the signature itself.
+pub(crate) fn verify_envelope<A, T>(
+	account: &A,
+	data: &T,
+	signed: &Signed,
+	options: &VerifyOptions,
+) -> Result<(), VerifyError>
+where
+	A: VerifyingAccount + ?Sized,
+	T: ToSignable + ?Sized,
+{
+	let parsed_timestamp = DateTime::parse_from_rfc3339(&signed.timestamp)?;
+	let timestamp = parsed_timestamp.with_timezone(&Utc);
 	if format_iso8601(timestamp) != signed.timestamp {
 		return Err(VerifyError::MalformedTimestamp);
 	}
@@ -150,11 +198,10 @@ where
 
 	let signature = STANDARD.decode(&signed.signature)?;
 	let parts = data.to_signable();
-	let signer = account.to_public_key_with_type();
+	let signer = account.public_key_with_type();
 	let verification = format_data(&signer, &signed.nonce, &signed.timestamp, &parts)?;
 
-	let result = account.verify(&verification, &signature, None);
-	result.map_err(|_| VerifyError::SignatureMismatch)
+	account.verify_signature(&verification, &signature)
 }
 
 /// Format `instant` exactly as JavaScript's `Date.prototype.toISOString`:
@@ -167,7 +214,7 @@ fn format_iso8601(instant: DateTime<Utc>) -> String {
 /// ISO 8601 instant with millisecond precision and a `Z` zone, so signing and
 /// verification stay symmetric (no envelope this API would refuse to verify).
 fn ensure_canonical_timestamp(timestamp: &str) -> Result<(), SigningError> {
-	let parsed = DateTime::parse_from_rfc3339(timestamp).map_err(|_| SigningError::NonCanonicalTimestamp)?;
+	let parsed = DateTime::parse_from_rfc3339(timestamp)?;
 	if format_iso8601(parsed.with_timezone(&Utc)) != timestamp {
 		return Err(SigningError::NonCanonicalTimestamp);
 	}

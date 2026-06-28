@@ -41,6 +41,9 @@
 // Re-export generated extension
 pub use crate::generated::builder_ext::AttributeBuilderExtensions;
 
+use alloc::string::{String, ToString};
+use alloc::vec::Vec;
+
 use rasn::types::OctetString;
 
 use super::error::KycSchemaError;

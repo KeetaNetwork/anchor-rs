@@ -1,3 +1,5 @@
+use alloc::vec::Vec;
+
 use rasn::types::ObjectIdentifier;
 
 use crate::asn1::error::AnchorAsn1Error;

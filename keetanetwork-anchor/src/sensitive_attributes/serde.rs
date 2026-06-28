@@ -1,10 +1,12 @@
 //! Serde JSON encoding functionality.
 
+use alloc::string::{String, ToString};
+
 pub(crate) use serde::{Deserialize, Deserializer, Serialize, Serializer};
 pub(crate) use serde_json::Value;
 
 use keetanetwork_crypto::prelude::{ExposeSecret, IntoSecret};
-use rasn::types::Integer;
+use rasn::types::{Integer, ObjectIdentifier};
 use serde::ser::SerializeStruct;
 
 use crate::asn1::utils::get_algorithm_by_oid;
@@ -15,7 +17,7 @@ use crate::sensitive_attributes::{
 use crate::utils::{base64_encode, serde_helpers};
 
 impl Serialize for SensitiveAttributeProof {
-	fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+	fn serialize<S>(&self, serializer: S) -> core::result::Result<S::Ok, S::Error>
 	where
 		S: serde::Serializer,
 	{
@@ -28,7 +30,7 @@ impl Serialize for SensitiveAttributeProof {
 }
 
 impl<'de> Deserialize<'de> for SensitiveAttributeProof {
-	fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+	fn deserialize<D>(deserializer: D) -> core::result::Result<Self, D::Error>
 	where
 		D: serde::Deserializer<'de>,
 	{
@@ -46,47 +48,44 @@ impl<'de> Deserialize<'de> for SensitiveAttributeProof {
 	}
 }
 
+/// Canonical algorithm name for `oid`, falling back to its dotted-decimal form
+/// when the OID is not recognized.
+fn algorithm_name(oid: &ObjectIdentifier) -> String {
+	get_algorithm_by_oid(oid)
+		.map(ToString::to_string)
+		.unwrap_or_else(|_| oid.to_string())
+}
+
 impl Serialize for SensitiveAttribute {
-	fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+	fn serialize<S>(&self, serializer: S) -> core::result::Result<S::Ok, S::Error>
 	where
 		S: Serializer,
 	{
 		use serde::ser::Error;
 
-		// Convert version from Integer to u64
 		let version: u64 = self
 			.version
 			.clone()
 			.try_into()
 			.map_err(|_| S::Error::custom("Invalid version"))?;
 
-		// Lookup algorithm names from OIDs
-		let cipher_algorithm = get_algorithm_by_oid(&self.cipher.algorithm)
-			.map(|s| s.to_string())
-			.unwrap_or_else(|_| self.cipher.algorithm.to_string());
-		let hash_algorithm = get_algorithm_by_oid(&self.hashed_value.algorithm)
-			.map(|s| s.to_string())
-			.unwrap_or_else(|_| self.hashed_value.algorithm.to_string());
-
 		let mut state = serializer.serialize_struct("SensitiveAttribute", 4)?;
 		state.serialize_field("version", &version)?;
 
-		// Serialize cipher using helper macro
-		let cipher_obj = serde_helpers::json_object! {
-			"algorithm" => cipher_algorithm,
+		let cipher = serde_helpers::json_object! {
+			"algorithm" => algorithm_name(&self.cipher.algorithm),
 			"iv" => base64_encode(&self.cipher.iv_or_nonce),
 			"key" => base64_encode(&self.cipher.key)
 		};
-		state.serialize_field("cipher", &cipher_obj)?;
+		state.serialize_field("cipher", &cipher)?;
 
-		// Serialize hashedValue using helper macro
-		let hashed_value_obj = serde_helpers::json_object! {
+		let hashed_value = serde_helpers::json_object! {
 			"encryptedSalt" => base64_encode(&self.hashed_value.encrypted_salt),
-			"algorithm" => hash_algorithm,
+			"algorithm" => algorithm_name(&self.hashed_value.algorithm),
 			"value" => base64_encode(&self.hashed_value.value)
 		};
 
-		state.serialize_field("hashedValue", &hashed_value_obj)?;
+		state.serialize_field("hashedValue", &hashed_value)?;
 		state.serialize_field("encryptedValue", &base64_encode(&self.encrypted_value))?;
 
 		state.end()
@@ -94,7 +93,7 @@ impl Serialize for SensitiveAttribute {
 }
 
 impl<'de> Deserialize<'de> for SensitiveAttribute {
-	fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+	fn deserialize<D>(deserializer: D) -> core::result::Result<Self, D::Error>
 	where
 		D: Deserializer<'de>,
 	{

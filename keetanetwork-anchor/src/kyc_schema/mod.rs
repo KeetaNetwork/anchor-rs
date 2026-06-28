@@ -105,6 +105,9 @@ pub mod error;
 #[cfg(feature = "serde")]
 pub mod serde;
 
+use alloc::string::ToString;
+use alloc::vec::Vec;
+
 // Re-exports
 pub use crate::generated::{Attribute, AttributeValue, KYCAttributes};
 pub use builder::{AttributeBuilder, AttributeBuilderLike, KYCAttributesBuilder};
@@ -350,7 +353,7 @@ impl Default for KYCAttributes {
 
 impl IntoIterator for KYCAttributes {
 	type Item = Attribute;
-	type IntoIter = std::vec::IntoIter<Attribute>;
+	type IntoIter = alloc::vec::IntoIter<Attribute>;
 
 	fn into_iter(self) -> Self::IntoIter {
 		self.0.into_iter()
@@ -359,7 +362,7 @@ impl IntoIterator for KYCAttributes {
 
 impl<'a> IntoIterator for &'a KYCAttributes {
 	type Item = &'a Attribute;
-	type IntoIter = std::slice::Iter<'a, Attribute>;
+	type IntoIter = core::slice::Iter<'a, Attribute>;
 
 	fn into_iter(self) -> Self::IntoIter {
 		self.0.iter()
@@ -375,7 +378,7 @@ impl FromIterator<Attribute> for KYCAttributes {
 impl TryFrom<&KYCAttributes> for Vec<u8> {
 	type Error = KycSchemaError;
 
-	fn try_from(attr: &KYCAttributes) -> std::result::Result<Self, Self::Error> {
+	fn try_from(attr: &KYCAttributes) -> core::result::Result<Self, Self::Error> {
 		Ok(rasn::der::encode(attr)?)
 	}
 }
@@ -383,7 +386,7 @@ impl TryFrom<&KYCAttributes> for Vec<u8> {
 impl TryFrom<KYCAttributes> for Vec<u8> {
 	type Error = KycSchemaError;
 
-	fn try_from(attr: KYCAttributes) -> std::result::Result<Self, Self::Error> {
+	fn try_from(attr: KYCAttributes) -> core::result::Result<Self, Self::Error> {
 		(&attr).try_into()
 	}
 }
@@ -391,7 +394,7 @@ impl TryFrom<KYCAttributes> for Vec<u8> {
 impl TryFrom<&[u8]> for KYCAttributes {
 	type Error = KycSchemaError;
 
-	fn try_from(bytes: &[u8]) -> std::result::Result<Self, Self::Error> {
+	fn try_from(bytes: &[u8]) -> core::result::Result<Self, Self::Error> {
 		Ok(rasn::der::decode(bytes)?)
 	}
 }
@@ -399,7 +402,7 @@ impl TryFrom<&[u8]> for KYCAttributes {
 impl TryFrom<Vec<u8>> for KYCAttributes {
 	type Error = KycSchemaError;
 
-	fn try_from(bytes: Vec<u8>) -> std::result::Result<Self, Self::Error> {
+	fn try_from(bytes: Vec<u8>) -> core::result::Result<Self, Self::Error> {
 		(&bytes[..]).try_into()
 	}
 }
