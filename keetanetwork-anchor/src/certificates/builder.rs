@@ -790,7 +790,11 @@ impl KycCertificateBuilder {
 	/// assert!(certificate.is_ok());
 	/// # Ok::<(), Box<dyn std::error::Error>>(())
 	/// ```
-	pub fn build<T, S>(mut self, subject_keypair: &T, signing_keypair: &T) -> Result<KycCertificate, KycCertificateError>
+	pub fn build<T, S>(
+		mut self,
+		subject_keypair: &T,
+		signing_keypair: &T,
+	) -> Result<KycCertificate, KycCertificateError>
 	where
 		Account<T>: TryFrom<Accountable<T>, Error = AccountError>,
 		T: KeyPair + CryptoSignerWithOptions<S> + 'static,
@@ -842,7 +846,9 @@ impl KycCertificateBuilder {
 				}
 				KycAttributeEntry::Sensitive(secret) => {
 					let encoded = encode_value(&oid_string, secret.expose_secret())?;
-					let sensitive_value = SensitiveAttributeBuilder::new().with_value(encoded).build(subject_keypair)?;
+					let sensitive_value = SensitiveAttributeBuilder::new()
+						.with_value(encoded)
+						.build(subject_keypair)?;
 
 					attribute_builder
 						.with_value(sensitive_value.to_der()?)

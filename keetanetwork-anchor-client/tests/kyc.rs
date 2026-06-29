@@ -48,10 +48,7 @@ async fn kyc_client_runs_the_full_verification_path() -> TestResult {
 		.ok_or(HarnessError::MissingField { field: "verification" })?;
 	assert!(!verification.id.is_empty(), "the anchor must assign a verification id");
 	assert!(!verification.web_url.is_empty(), "verification must carry a web URL");
-	assert!(
-		!verification.expected_cost.token.is_empty(),
-		"verification must carry an expected-cost token"
-	);
+	assert!(!verification.expected_cost.token.is_empty(), "verification must carry an expected-cost token");
 
 	let status = client
 		.get_verification_status(&provider, &verification.id)

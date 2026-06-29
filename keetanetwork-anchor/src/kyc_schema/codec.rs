@@ -49,8 +49,8 @@ fn as_utf8(bytes: &[u8]) -> Result<&str, AnchorAsn1Error> {
 #[cfg(feature = "chrono")]
 fn encode_time(semantic: &[u8]) -> Result<Vec<u8>, AnchorAsn1Error> {
 	let text = as_utf8(semantic)?;
-	let datetime =
-		parse_datetime(text).ok_or_else(|| AnchorAsn1Error::Asn1EncodeError { reason: format!("invalid date/time: {text}") })?;
+	let datetime = parse_datetime(text)
+		.ok_or_else(|| AnchorAsn1Error::Asn1EncodeError { reason: format!("invalid date/time: {text}") })?;
 
 	let body = datetime.format("%Y%m%d%H%M%SZ").to_string();
 
@@ -121,7 +121,11 @@ fn parse_utc_time(body: &str) -> Option<chrono::NaiveDateTime> {
 	use chrono::NaiveDateTime;
 
 	let two_digit_year: i32 = body.get(0..2)?.parse().ok()?;
-	let century = if two_digit_year < 50 { 2000 } else { 1900 };
+	let century = if two_digit_year < 50 {
+		2000
+	} else {
+		1900
+	};
 	let full = format!("{}{}", century + two_digit_year, body.get(2..)?);
 	NaiveDateTime::parse_from_str(&full, "%Y%m%d%H%M%S").ok()
 }
@@ -217,5 +221,17 @@ mod tests {
 		der.extend_from_slice(body);
 		let decoded = decode_value(&oid, &der).unwrap();
 		assert_eq!(decoded, b"1980-01-01T00:00:00.000Z");
+	}
+
+	#[cfg(feature = "chrono")]
+	#[test]
+	fn read_tlv_rejects_indefinite_length() {
+		assert!(matches!(read_tlv(&[0x18, 0x80]), Err(AnchorAsn1Error::Asn1DecodeError { .. })));
+	}
+
+	#[cfg(feature = "chrono")]
+	#[test]
+	fn read_tlv_rejects_oversized_length_width() {
+		assert!(matches!(read_tlv(&[0x18, 0x8f]), Err(AnchorAsn1Error::Asn1DecodeError { .. })));
 	}
 }

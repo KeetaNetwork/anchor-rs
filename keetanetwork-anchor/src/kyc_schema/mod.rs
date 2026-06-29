@@ -104,9 +104,9 @@ pub mod codec;
 pub mod error;
 
 #[cfg(feature = "serde")]
-pub mod structured;
-#[cfg(feature = "serde")]
 pub mod serde;
+#[cfg(feature = "serde")]
+pub mod structured;
 
 use alloc::string::ToString;
 use alloc::vec::Vec;

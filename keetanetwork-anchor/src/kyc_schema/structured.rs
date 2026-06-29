@@ -225,7 +225,10 @@ fn identification_json(sequence: &Tlv<'_>) -> Result<Value, AnchorAsn1Error> {
 	map.insert("id".to_string(), context_utf8(id)?);
 	cursor += 1;
 
-	if let Some(issuer) = parts.get(cursor).filter(|tlv| context_number(tlv.tag) == Some(1)) {
+	if let Some(issuer) = parts
+		.get(cursor)
+		.filter(|tlv| context_number(tlv.tag) == Some(1))
+	{
 		map.insert("issuer".to_string(), context_utf8(issuer)?);
 		cursor += 1;
 	}
@@ -278,5 +281,15 @@ mod tests {
 	fn unmapped_token_errors_for_raw_fallback() {
 		let result = decode_structured("Document", &[0x30, 0x00]);
 		assert!(result.is_err());
+	}
+
+	#[test]
+	fn read_tlv_rejects_indefinite_length() {
+		assert!(matches!(read_tlv(&[0x30, 0x80]), Err(AnchorAsn1Error::Asn1DecodeError { .. })));
+	}
+
+	#[test]
+	fn read_tlv_rejects_oversized_length_width() {
+		assert!(matches!(read_tlv(&[0x30, 0x8f]), Err(AnchorAsn1Error::Asn1DecodeError { .. })));
 	}
 }

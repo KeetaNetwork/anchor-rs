@@ -13,9 +13,7 @@ use std::collections::BTreeMap;
 use keetanetwork_anchor::certificates::KycCertificate;
 use keetanetwork_anchor_bindings::certificate as cert_ops;
 use keetanetwork_anchor_bindings::error::CodedError;
-use keetanetwork_client_wasi::{
-	account, bytes_in, bytes_result, certificate, fail, store_certificate, string_in,
-};
+use keetanetwork_client_wasi::{account, bytes_in, bytes_result, certificate, fail, store_certificate, string_in};
 use keetanetwork_x509::certificates::Certificate as X509Certificate;
 use serde::Serialize;
 

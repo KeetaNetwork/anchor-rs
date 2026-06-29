@@ -94,10 +94,8 @@ pub fn verify(
 ) -> Result<bool, CodedError> {
 	let moment = DateTime::<Utc>::from_timestamp_millis(unix_millis)
 		.ok_or_else(|| CodedError::new(INVALID_DATE, "unix milliseconds out of range"))?;
-	let record = CertificateRecord {
-		certificate: certificate.to_x509().clone(),
-		intermediates: intermediates.to_vec(),
-	};
+	let record =
+		CertificateRecord { certificate: certificate.to_x509().clone(), intermediates: intermediates.to_vec() };
 
 	let status = evaluate_certificate_chain(&[record], trusted_roots, moment);
 	Ok(matches!(status, CertificateChainStatus::Trusted))
@@ -109,7 +107,9 @@ where
 	K: KeyPair,
 	N: AsRef<str>,
 {
-	certificate.decrypt_kyc_attribute(name, keypair).map_err(coded)
+	certificate
+		.decrypt_kyc_attribute(name, keypair)
+		.map_err(coded)
 }
 
 /// Decrypt a sensitive attribute for an erased account, dispatching on the

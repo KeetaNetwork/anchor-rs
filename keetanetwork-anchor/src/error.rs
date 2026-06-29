@@ -45,7 +45,9 @@ mod tests {
 		[
 			AnchorError::Asn1Error { source: AnchorAsn1Error::InvalidOid { reason: "test.oid".to_string() } },
 			AnchorError::KycCertificateError {
-				source: KycCertificateError::SensitiveAttributeError { source: SensitiveAttributeError::InvalidVersion }
+				source: KycCertificateError::SensitiveAttributeError {
+					source: SensitiveAttributeError::InvalidVersion
+				}
 			},
 			AnchorError::SensitiveAttributeError { source: SensitiveAttributeError::MissingValue },
 		]

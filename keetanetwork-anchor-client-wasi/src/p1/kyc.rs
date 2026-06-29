@@ -182,7 +182,11 @@ fn create_verification(
 	let redirect = (!redirect.is_empty()).then_some(redirect);
 
 	let outcome = with_session(handle, |client| {
-		block_on(async { client.create_verification(&provider, &countries, redirect).await })
+		block_on(async {
+			client
+				.create_verification(&provider, &countries, redirect)
+				.await
+		})
 	})?;
 
 	encode(&VerificationOutcomeDto::from(outcome))
@@ -228,7 +232,10 @@ fn insert(client: KycClient) -> i32 {
 
 /// Resolve `handle` and run `call` against the stored client, recording an
 /// error for a missing handle or a client failure.
-fn with_session<T>(handle: i32, call: impl FnOnce(&KycClient) -> Result<T, AnchorClientError>) -> Result<T, CodedError> {
+fn with_session<T>(
+	handle: i32,
+	call: impl FnOnce(&KycClient) -> Result<T, AnchorClientError>,
+) -> Result<T, CodedError> {
 	SESSIONS.with_borrow(|sessions| {
 		let client = sessions.clients.get(&handle).ok_or_else(unknown_handle)?;
 		call(client).map_err(coded)
@@ -427,11 +434,7 @@ fn operations_from_dto(dto: OperationsDto) -> KycOperations {
 
 impl From<Verification> for VerificationDto {
 	fn from(verification: Verification) -> Self {
-		Self {
-			id: verification.id,
-			web_url: verification.web_url,
-			expected_cost: verification.expected_cost.into(),
-		}
+		Self { id: verification.id, web_url: verification.web_url, expected_cost: verification.expected_cost.into() }
 	}
 }
 

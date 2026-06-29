@@ -7,13 +7,13 @@ use std::sync::Arc;
 
 use keetanetwork_account::GenericAccount;
 use keetanetwork_anchor::certificates::KycCertificate as CoreKycCertificate;
+use keetanetwork_anchor_bindings::certificate as kyc_cert_ops;
+use keetanetwork_anchor_bindings::error::CodedError as CoreCodedError;
 use keetanetwork_anchor_client::resilience::{ResilientTransport, WasiRuntime};
 use keetanetwork_anchor_client::{
 	AnchorClientError, AnchorContext, AnchorHttpTransport, AnchorOutcome, Certificates, CountryCode, ExpectedCost,
 	KycClient, KycOperations, KycProvider, Resolver, Verification, VerificationStatus, WasiTransport,
 };
-use keetanetwork_anchor_bindings::certificate as kyc_cert_ops;
-use keetanetwork_anchor_bindings::error::CodedError as CoreCodedError;
 use keetanetwork_bindings::account as account_ops;
 use keetanetwork_bindings::x509 as x509_ops;
 use keetanetwork_x509::certificates::Certificate as X509Certificate;
@@ -261,7 +261,11 @@ impl GuestClient for KycSession {
 		let provider = KycProvider::try_from(provider)?;
 		let codes = country_codes(&countries)?;
 		let redirect = redirect_url.as_deref();
-		let outcome = run(async { self.inner.create_verification(&provider, &codes, redirect).await })?;
+		let outcome = run(async {
+			self.inner
+				.create_verification(&provider, &codes, redirect)
+				.await
+		})?;
 		Ok(outcome.into())
 	}
 
