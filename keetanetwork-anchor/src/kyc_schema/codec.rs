@@ -94,12 +94,23 @@ fn read_tlv(der: &[u8]) -> Result<(u8, &[u8]), AnchorAsn1Error> {
 	let (length, header) = if first_len < 0x80 {
 		(first_len, 2)
 	} else {
+		// Reject the indefinite-length form (invalid for DER) and any width that
+		// cannot fit a usize, then accumulate with checked arithmetic so untrusted
+		// input cannot overflow into a wrapped, attacker-chosen length.
 		let count = first_len & 0x7f;
+		if count == 0 || count > core::mem::size_of::<usize>() {
+			return Err(decode_error());
+		}
 		let bytes = der.get(2..2 + count).ok_or_else(decode_error)?;
-		(bytes.iter().fold(0usize, |acc, byte| (acc << 8) | usize::from(*byte)), 2 + count)
+		let length = bytes
+			.iter()
+			.try_fold(0usize, |acc, byte| acc.checked_mul(256)?.checked_add(usize::from(*byte)))
+			.ok_or_else(decode_error)?;
+		(length, 2 + count)
 	};
 
-	let value = der.get(header..header + length).ok_or_else(decode_error)?;
+	let end = header.checked_add(length).ok_or_else(decode_error)?;
+	let value = der.get(header..end).ok_or_else(decode_error)?;
 	Ok((tag, value))
 }
 

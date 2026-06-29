@@ -5,8 +5,7 @@
 //! (the field's position), a `SEQUENCE OF` becomes a tagged list, and a `CHOICE`
 //! field is carried *bare* so the alternative's own tag survives. That bare
 //! CHOICE reuses tags that collide with sibling fields, which a tag-driven
-//! decoder cannot model, so the DER is walked positionally here - mirroring the
-//! reference `decodeWithSchema` - and mapped straight to the oracle JSON shape.
+//! decoder cannot model, so the DER is walked positionally here.
 
 use alloc::borrow::ToOwned;
 use alloc::string::{String, ToString};
@@ -19,7 +18,7 @@ use crate::asn1::error::AnchorAsn1Error;
 /// Decode a structured attribute DER value into the oracle JSON wire form.
 ///
 /// Returns an error for tokens without a mapping so the caller can fall back to
-/// the raw bytes, mirroring the reference decoder's tolerant behaviour.
+/// the raw bytes.
 pub fn decode_structured(token: &str, der: &[u8]) -> Result<Vec<u8>, AnchorAsn1Error> {
 	let value = match token {
 		"Address" => address_json(der)?,
@@ -46,9 +45,21 @@ fn read_tlv(input: &[u8]) -> Result<(Tlv<'_>, &[u8]), AnchorAsn1Error> {
 	let (length, header) = if first_len < 0x80 {
 		(first_len, 2)
 	} else {
+		// Reject the indefinite-length form (invalid for DER) and any width that
+		// cannot fit a usize, then accumulate with checked arithmetic so untrusted
+		// input cannot overflow into a wrapped, attacker-chosen length.
 		let count = first_len & 0x7f;
+		if count == 0 || count > core::mem::size_of::<usize>() {
+			return Err(truncated());
+		}
+
 		let bytes = input.get(2..2 + count).ok_or_else(truncated)?;
-		(bytes.iter().fold(0usize, |acc, byte| (acc << 8) | usize::from(*byte)), 2 + count)
+		let length = bytes
+			.iter()
+			.try_fold(0usize, |acc, byte| acc.checked_mul(256)?.checked_add(usize::from(*byte)))
+			.ok_or_else(truncated)?;
+
+		(length, 2 + count)
 	};
 
 	let end = header.checked_add(length).ok_or_else(truncated)?;

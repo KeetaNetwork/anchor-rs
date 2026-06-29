@@ -49,7 +49,7 @@ or6z8/Cbh+JIKGADPmGawrE=
 -----END CERTIFICATE-----
 ";
 
-/// Skip when the component has not been built, mirroring the live tests' guard.
+/// Skip when the component has not been built.
 macro_rules! require_component {
 	() => {
 		if !component_built() {

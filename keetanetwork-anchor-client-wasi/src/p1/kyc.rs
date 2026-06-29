@@ -289,7 +289,7 @@ fn invalid_country() -> CodedError {
 }
 
 // ---------------------------------------------------------------------------
-// JSON data transfer objects (mirroring the WIT records)
+// JSON data transfer objects
 // ---------------------------------------------------------------------------
 
 /// The KYC operation endpoint templates a provider advertises.

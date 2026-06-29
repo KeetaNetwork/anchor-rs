@@ -173,7 +173,7 @@ static void CryptoSelfTest(WasmRuntime runtime)
 	Require(account.Verify(message, signature), "the account must verify its own signature");
 	Require(!account.Verify(Encoding.UTF8.GetBytes("tampered"), signature), "a tampered message must not verify");
 
-	// The reusable account mirrors TS/Rust: encrypt-to-self and mnemonic
+	// The reusable account: encrypt-to-self and mnemonic
 	// derivation both resolve to the same signer behavior.
 	byte[] secret = Encoding.UTF8.GetBytes("for my eyes only");
 	Require(Encoding.UTF8.GetString(account.Decrypt(account.Encrypt(secret))) == "for my eyes only", "encrypt/decrypt must round-trip");
