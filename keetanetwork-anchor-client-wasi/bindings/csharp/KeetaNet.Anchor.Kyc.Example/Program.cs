@@ -3,6 +3,7 @@
 
 using KeetaNet.Anchor.Kyc;
 using System.Text;
+using System.Text.Json;
 using Account = KeetaNet.Anchor.Kyc.Crypto.Account;
 using CryptoCertificate = KeetaNet.Anchor.Kyc.Crypto.Certificate;
 using KycCertificate = KeetaNet.Anchor.Kyc.Crypto.KycCertificate;
@@ -58,6 +59,71 @@ foreach (string algorithm in algorithms)
 }
 
 Console.WriteLine("KYC_OK");
+
+if (Environment.GetEnvironmentVariable("KEETA_LEAF_PEM") is { } leafPem)
+{
+	OracleCheck(runtime, leafPem, RequireEnv("KEETA_ORACLE_JSON"), RequireEnv("KEETA_SUBJECT_SEED"));
+	Console.WriteLine("ORACLE_OK");
+}
+
+// Decrypt and decode every attribute of an issued leaf, asserting each matches
+// the reference oracle. The issued leaf is sensitive throughout, so every value
+// is decrypted with the subject's key; scalars (and dates) compare as text,
+// structured types as order-insensitive JSON.
+static void OracleCheck(WasmRuntime runtime, string leafPem, string oracleJson, string subjectSeed)
+{
+	using Account subject = Account.FromSeed(runtime, subjectSeed, 0, "ecdsa_secp256k1");
+	using KycCertificate leaf = KycCertificate.Parse(runtime, leafPem);
+
+	using JsonDocument oracle = JsonDocument.Parse(oracleJson);
+	foreach (JsonProperty entry in oracle.RootElement.EnumerateObject())
+	{
+		if (entry.Value.ValueKind == JsonValueKind.String)
+		{
+			Require(leaf.GetText(entry.Name, subject) == entry.Value.GetString(), $"scalar attribute `{entry.Name}` must match the oracle");
+			continue;
+		}
+
+		Require(JsonEqual(leaf.GetJson(entry.Name, subject), entry.Value), $"structured attribute `{entry.Name}` must match the oracle");
+	}
+}
+
+// Structural JSON equality: objects compare by key set regardless of order,
+// arrays element-wise in order, scalars by value.
+static bool JsonEqual(JsonElement left, JsonElement right)
+{
+	if (left.ValueKind != right.ValueKind)
+	{
+		return false;
+	}
+
+	switch (left.ValueKind)
+	{
+		case JsonValueKind.Object:
+			Dictionary<string, JsonElement> rightProps = right.EnumerateObject().ToDictionary(property => property.Name, property => property.Value);
+			int leftCount = 0;
+			foreach (JsonProperty property in left.EnumerateObject())
+			{
+				leftCount++;
+				if (!rightProps.TryGetValue(property.Name, out JsonElement value) || !JsonEqual(property.Value, value))
+				{
+					return false;
+				}
+			}
+			return leftCount == rightProps.Count;
+		case JsonValueKind.Array:
+			JsonElement[] leftItems = left.EnumerateArray().ToArray();
+			JsonElement[] rightItems = right.EnumerateArray().ToArray();
+			return leftItems.Length == rightItems.Length
+				&& leftItems.Zip(rightItems, JsonEqual).All(equal => equal);
+		case JsonValueKind.String:
+			return left.GetString() == right.GetString();
+		case JsonValueKind.Number:
+			return left.GetRawText() == right.GetRawText();
+		default:
+			return true;
+	}
+}
 
 // Exercise the offline `crypto` resources against the embedded KYC fixture: an
 // account round-trip, certificate validity, and KYC attribute reads/decryption.

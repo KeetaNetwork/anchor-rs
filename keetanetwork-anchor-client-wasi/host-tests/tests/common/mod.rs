@@ -11,10 +11,33 @@ use std::io::{BufRead, BufReader, Lines, Write};
 use std::path::PathBuf;
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 
-use serde_json::{Map, Value};
+use serde_json::{json, Map, Value};
 
 /// A boxed, thread-safe error so the driver composes with any test's `?`.
 pub type BoxError = Box<dyn Error + Send + Sync>;
+
+/// The subject seed shared by the harness (issuer) and a binding (decryptor)
+pub const SUBJECT_SEED: &str = "1111111111111111111111111111111111111111111111111111111111111111";
+
+/// The attributes the harness issues, spanning every decoded shape: plain string
+/// scalars, a date (UTCTime), and two structured types (`Address`, `EntityType`).
+pub fn issue_attributes() -> Value {
+	json!([
+		{ "name": "fullName", "sensitive": true, "value": "Test User" },
+		{ "name": "email", "sensitive": true, "value": "user@example.com" },
+		{ "name": "dateOfBirth", "sensitive": true, "value": { "__date": "1980-01-01T00:00:00.000Z" } },
+		{ "name": "address", "sensitive": true, "value": {
+			"addressLines": ["100 Belgrave Street"],
+			"streetName": "100 Belgrave Street",
+			"townName": "Oldsmar",
+			"countrySubDivision": "FL",
+			"postalCode": "34677"
+		} },
+		{ "name": "entityType", "sensitive": true, "value": {
+			"person": [{ "id": "123-45-6789", "schemeName": "SSN" }]
+		} }
+	])
+}
 
 /// Locate the compiled KYC harness entry (`dist/kyc.js`).
 pub fn harness_path() -> PathBuf {

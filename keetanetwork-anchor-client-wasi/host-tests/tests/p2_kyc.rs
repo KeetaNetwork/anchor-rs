@@ -9,36 +9,11 @@ use serde_json::{json, Value};
 mod common;
 mod wasmtime_p2;
 
-use common::{field_str, BoxError, KycHarness};
+use common::{field_str, issue_attributes, BoxError, KycHarness, SUBJECT_SEED};
 use wasmtime_p2::bindings::exports::keeta::anchor::kyc::{
 	CertificatesOutcome, KycProvider, StatusOutcome, VerificationOutcome,
 };
 use wasmtime_p2::{coded, instantiate};
-
-/// The subject seed shared by the harness (issuer) and the binding (decryptor);
-/// `Account.fromSeed` defaults to ECDSA secp256k1 on both sides, so the leaf is
-/// encrypted to the same key the binding decrypts with.
-const SUBJECT_SEED: &str = "1111111111111111111111111111111111111111111111111111111111111111";
-
-/// The attributes the harness issues, spanning every decoded shape: plain string
-/// scalars, a date (UTCTime), and two structured types (`Address`, `EntityType`).
-fn issue_attributes() -> Value {
-	json!([
-		{ "name": "fullName", "sensitive": true, "value": "Test User" },
-		{ "name": "email", "sensitive": true, "value": "user@example.com" },
-		{ "name": "dateOfBirth", "sensitive": true, "value": { "__date": "1980-01-01T00:00:00.000Z" } },
-		{ "name": "address", "sensitive": true, "value": {
-			"addressLines": ["100 Belgrave Street"],
-			"streetName": "100 Belgrave Street",
-			"townName": "Oldsmar",
-			"countrySubDivision": "FL",
-			"postalCode": "34677"
-		} },
-		{ "name": "entityType", "sensitive": true, "value": {
-			"person": [{ "id": "123-45-6789", "schemeName": "SSN" }]
-		} }
-	])
-}
 
 /// Project a decrypted attribute's bytes into the JSON value the oracle holds: a
 /// scalar attribute is its UTF-8 text; a structured attribute is its JSON object.
