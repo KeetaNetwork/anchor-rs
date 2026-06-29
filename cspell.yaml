@@ -82,3 +82,11 @@ words:
   - wasip2
   - wasmtime
   - wstd
+  - csharp
+  - dotnet
+  - NuGet
+  - xunit
+  - secp256r1
+  - noop
+  - dto
+  - dtos

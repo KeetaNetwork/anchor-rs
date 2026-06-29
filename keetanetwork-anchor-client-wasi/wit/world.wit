@@ -1,20 +1,15 @@
 package keeta:anchor@0.1.0;
 
-/// Shared value types crossing the component boundary.
+/// KYC-specific value types crossing the component boundary. The base
+/// `coded-error` and the `account`/`certificate` primitives are reused from the
+/// vendored `keeta:client` package, so every binding boundary shares one
+/// account, one certificate, and one error shape.
 interface types {
-	/// A stable, machine-readable error: a programmatic `code` plus a
-	/// human-readable `message`.
-	record coded-error {
-		code: string,
-		message: string,
-	}
-
-	/// A signing account: a 32-byte hex `seed` derived at `index` under
-	/// `algorithm` (`ed25519`, `ecdsa_secp256k1`, or `ecdsa_secp256r1`).
-	record signer-spec {
-		seed: string,
-		index: u32,
-		algorithm: string,
+	/// A KYC attribute present on a certificate: its `name` (the attribute OID)
+	/// and whether its value is `sensitive` (encrypted) or plain.
+	record kyc-attribute {
+		name: string,
+		sensitive: bool,
 	}
 
 	/// The KYC operation endpoint templates a provider advertises. An absent
@@ -36,11 +31,21 @@ interface types {
 		country-codes: option<list<string>>,
 	}
 
-	/// An in-progress verification: its provider `id` and the `web-url` where
-	/// the user completes the flow.
+	/// The cost a provider expects to charge for a verification: a `token` and
+	/// the `min`/`max` bounds of the charge, both decimal strings in that
+	/// token's units.
+	record expected-cost {
+		min: string,
+		max: string,
+		token: string,
+	}
+
+	/// An in-progress verification: its provider `id`, the `web-url` where the
+	/// user completes the flow, and the provider's `expected-cost`.
 	record verification {
 		id: string,
 		web-url: string,
+		expected-cost: expected-cost,
 	}
 
 	/// The provider-reported status of a verification (e.g. `pending`).
@@ -48,14 +53,12 @@ interface types {
 		status: string,
 	}
 
-	/// One issued, PEM-encoded certificate.
-	record certificate {
+	/// One issued, PEM-encoded leaf certificate together with the PEM-encoded
+	/// intermediate certificates that bridge it to a trust root. The consumer
+	/// parses these into `crypto` resources to verify and read claims.
+	record certificate-group {
 		certificate: string,
-	}
-
-	/// The certificates issued for a verification.
-	record certificates {
-		results: list<certificate>,
+		intermediates: list<string>,
 	}
 
 	/// A verification result that the provider may report as pending: either
@@ -71,19 +74,47 @@ interface types {
 		retry(u32),
 	}
 
-	/// A certificates result, ready or retry-after-millis.
+	/// A certificates result: ready with the issued groups, or retry-after-millis.
 	variant certificates-outcome {
-		ready(certificates),
+		ready(list<certificate-group>),
 		retry(u32),
+	}
+}
+
+/// The KYC leaf certificate: a base `keeta:client` certificate plus parsed KYC
+/// attributes/claims. Built on the reused account/certificate primitives.
+interface certificates {
+	use keeta:client/types@0.1.0.{coded-error};
+	use keeta:client/crypto@0.1.0.{account, certificate};
+	use types.{kyc-attribute};
+
+	/// A KYC leaf certificate.
+	resource kyc-certificate {
+		/// Parse a KYC certificate from its PEM encoding.
+		parse: static func(pem: string) -> result<kyc-certificate, coded-error>;
+		/// The underlying base certificate.
+		base: func() -> certificate;
+		/// Whether the leaf is valid at `unix-seconds` (Unix time).
+		valid-at: func(unix-seconds: s64) -> bool;
+		/// Whether the leaf chains to one of `trusted-roots` at `unix-seconds`,
+		/// using `intermediates` to bridge the chain.
+		verify: func(trusted-roots: list<borrow<certificate>>, intermediates: list<borrow<certificate>>, unix-seconds: s64) -> result<bool, coded-error>;
+		/// The KYC attributes the leaf carries.
+		attributes: func() -> list<kyc-attribute>;
+		/// The plain (unencrypted) value of attribute `name`.
+		plain-attribute: func(name: string) -> result<list<u8>, coded-error>;
+		/// The decrypted value of sensitive attribute `name`, using `subject`'s
+		/// private key.
+		decrypt-attribute: func(name: string, subject: borrow<account>) -> result<list<u8>, coded-error>;
 	}
 }
 
 /// The KYC anchor client: discover providers, then create and track
 /// verifications, signing each request with the bound account over `wasi:http`.
 interface kyc {
+	use keeta:client/types@0.1.0.{coded-error};
+	use keeta:client/crypto@0.1.0.{account};
 	use types.{
-		coded-error,
-		signer-spec,
 		kyc-provider,
 		verification-outcome,
 		status-outcome,
@@ -93,8 +124,9 @@ interface kyc {
 	/// A KYC client bound to a signer and a metadata root.
 	resource client {
 		/// Build a client that resolves providers from the `root` account's
-		/// on-chain service metadata, read via the node API at `node-url`.
-		with-signer: static func(node-url: string, root: string, spec: signer-spec) -> result<client, coded-error>;
+		/// on-chain service metadata, read via the node API at `node-url`, and
+		/// signs each request with `signer`.
+		with-account: static func(node-url: string, root: string, signer: borrow<account>) -> result<client, coded-error>;
 		/// Every provider that serves all `countries` (ISO codes).
 		providers: func(countries: list<string>) -> result<list<kyc-provider>, coded-error>;
 		/// Begin a verification with `provider` for `countries`, optionally
@@ -108,7 +140,10 @@ interface kyc {
 }
 
 /// The KYC anchor client as a WASI Preview 2 component, networked over
-/// `wasi:http`.
+/// `wasi:http`, re-exporting the shared `keeta:client` `crypto` primitives
+/// (accounts + base certificates) alongside anchor's KYC certificate and client.
 world keeta-anchor-kyc {
+	export keeta:client/crypto@0.1.0;
+	export certificates;
 	export kyc;
 }

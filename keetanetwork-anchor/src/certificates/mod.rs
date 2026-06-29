@@ -1,4 +1,4 @@
-//! Certificate Module
+//! KycCertificate Module
 //!
 //! This module provides functionality for working with X.509 certificates that
 //! contain KYC (Know Your Customer) attributes. It extends standard X.509
@@ -8,8 +8,8 @@
 //! # Overview
 //!
 //! The module provides:
-//! - [`Certificate`] - A wrapper around X.509 certificates with KYC support
-//! - [`CertificateBuilder`] - A builder for creating certificates with KYC attributes
+//! - [`KycCertificate`] - A wrapper around X.509 certificates with KYC support
+//! - [`KycCertificateBuilder`] - A builder for creating certificates with KYC attributes
 //!
 //! # Basic Usage
 //!
@@ -17,7 +17,7 @@
 //! # use keetanetwork_anchor::doc_utils;
 //! # use keetanetwork_x509::utils::create_dn;
 //! # use keetanetwork_asn1::SubjectPublicKeyInfo;
-//! use keetanetwork_anchor::certificates::{Certificate, CertificateBuilder};
+//! use keetanetwork_anchor::certificates::{KycCertificate, KycCertificateBuilder};
 //! use keetanetwork_anchor::asn1::oids;
 //! use keetanetwork_crypto::prelude::IntoSecret;
 //! use keetanetwork_x509::SerialNumber;
@@ -30,7 +30,7 @@
 //! # let subject_public_key_info = SubjectPublicKeyInfo::try_from(&subject_account)?;
 //!
 //! // Create a certificate with KYC attributes
-//! let certificate = CertificateBuilder::for_end_entity()
+//! let certificate = KycCertificateBuilder::for_end_entity()
 //!     .with_subject_dn(subject_dn)
 //!     .with_issuer_dn(issuer_dn)
 //!     .with_serial_number(SerialNumber::from(12345u64))
@@ -54,20 +54,20 @@
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 //!
-//! # Working with Existing Certificates
+//! # Working with Existing KycCertificates
 //!
 //! ```rust
 //! # use keetanetwork_anchor::doc_utils;
-//! use keetanetwork_anchor::certificates::Certificate;
+//! use keetanetwork_anchor::certificates::KycCertificate;
 //! use keetanetwork_x509::certificates::Certificate as X509Certificate;
 //!
 //! // Wrap an existing X.509 certificate
 //! # let x509_cert = doc_utils::create_test_x509_cert();
-//! let certificate = Certificate::new(x509_cert);
+//! let certificate = KycCertificate::new(x509_cert);
 //!
 //! // Check if it contains KYC attributes
 //! if certificate.has_kyc_attributes() {
-//!     println!("Certificate contains {} KYC attributes", certificate.kyc_attribute_count());
+//!     println!("KycCertificate contains {} KYC attributes", certificate.kyc_attribute_count());
 //!     
 //!     // Access the underlying KYC data
 //!     let kyc_attributes = certificate.kyc_attributes();
@@ -82,16 +82,16 @@
 //!
 //! ```rust
 //! # use keetanetwork_anchor::doc_utils;
-//! use keetanetwork_anchor::certificates::{Certificate, CertificateError};
+//! use keetanetwork_anchor::certificates::{KycCertificate, KycCertificateError};
 //!
 //! # let account = doc_utils::create_secp256k1_test_account(None);
 //! # let certificate = doc_utils::create_test_x509_cert();
-//! # let certificate = Certificate::new(certificate);
+//! # let certificate = KycCertificate::new(certificate);
 //!
 //! // Handle missing attributes
 //! match certificate.get_plain_kyc_attribute("nonExistent") {
 //!     Ok(value) => println!("Attribute value: {:?}", value),
-//!     Err(CertificateError::AttributeNotFound { name }) => {
+//!     Err(KycCertificateError::AttributeNotFound { name }) => {
 //!         println!("Attribute '{}' not found", name);
 //!     }
 //!     Err(e) => println!("Other error: {:?}", e),
@@ -100,7 +100,7 @@
 //! // Handle type mismatches
 //! match certificate.decrypt_kyc_attribute("plainAttribute", &account.keypair) {
 //!     Ok(value) => println!("Decrypted: {:?}", value),
-//!     Err(CertificateError::SensitiveAttributeError { .. }) => {
+//!     Err(KycCertificateError::SensitiveAttributeError { .. }) => {
 //!         println!("Tried to decrypt a plain text attribute");
 //!     }
 //!     Err(e) => println!("Other error: {:?}", e),
@@ -119,14 +119,15 @@ use keetanetwork_x509::certificates::Certificate as X509Certificate;
 
 use crate::asn1::oids;
 use crate::asn1::utils::{get_plain_attribute_oid, get_sensitive_attribute_oid};
-use crate::generated::KYCAttributes;
+use crate::generated::KycAttributes;
+use crate::kyc_schema::codec::decode_value;
 use crate::kyc_schema::Attribute;
 use crate::sensitive_attributes::utils::{assert_attribute_is_plain, assert_attribute_is_sensitive};
 use crate::sensitive_attributes::SensitiveAttribute;
 
 // Re-export commonly used types
-pub use builder::CertificateBuilder;
-pub use error::CertificateError;
+pub use builder::KycCertificateBuilder;
+pub use error::KycCertificateError;
 // Re-export generated types
 pub use crate::generated::{Attribute as KycAttribute, AttributeValue as KycAttributeValue};
 
@@ -142,12 +143,12 @@ pub use crate::generated::{Attribute as KycAttribute, AttributeValue as KycAttri
 ///
 /// ```rust
 /// # use keetanetwork_anchor::doc_utils;
-/// use keetanetwork_anchor::certificates::Certificate;
+/// use keetanetwork_anchor::certificates::KycCertificate;
 /// use keetanetwork_x509::certificates::Certificate as X509Certificate;
 ///
 /// // Wrap an existing X.509 certificate
 /// # let x509_cert = doc_utils::create_test_x509_cert();
-/// let certificate = Certificate::new(x509_cert);
+/// let certificate = KycCertificate::new(x509_cert);
 ///
 /// // Check for KYC attributes
 /// if certificate.has_kyc_attributes() {
@@ -157,14 +158,14 @@ pub use crate::generated::{Attribute as KycAttribute, AttributeValue as KycAttri
 /// }
 /// ```
 #[derive(Debug, Clone)]
-pub struct Certificate {
+pub struct KycCertificate {
 	/// The underlying X.509 certificate
 	inner: X509Certificate,
 	/// Parsed KYC attributes from the certificate
-	kyc_attributes: KYCAttributes,
+	kyc_attributes: KycAttributes,
 }
 
-impl Certificate {
+impl KycCertificate {
 	/// Create a new certificate wrapper
 	///
 	/// Wraps an existing X.509 certificate and automatically parses any KYC
@@ -179,10 +180,10 @@ impl Certificate {
 	///
 	/// ```rust
 	/// # use keetanetwork_anchor::doc_utils;
-	/// use keetanetwork_anchor::certificates::Certificate;
+	/// use keetanetwork_anchor::certificates::KycCertificate;
 	///
 	/// # let x509_cert = doc_utils::create_test_x509_cert();
-	/// let certificate = Certificate::new(x509_cert);
+	/// let certificate = KycCertificate::new(x509_cert);
 	/// assert!(!certificate.has_kyc_attributes()); // Test cert has no KYC data
 	/// ```
 	pub fn new(inner: X509Certificate) -> Self {
@@ -199,10 +200,10 @@ impl Certificate {
 	///
 	/// ```rust
 	/// # use keetanetwork_anchor::doc_utils;
-	/// use keetanetwork_anchor::certificates::Certificate;
+	/// use keetanetwork_anchor::certificates::KycCertificate;
 	///
 	/// # let x509_cert = doc_utils::create_test_x509_cert();
-	/// let certificate = Certificate::new(x509_cert);
+	/// let certificate = KycCertificate::new(x509_cert);
 	/// let x509_ref = certificate.to_x509();
 	/// // Now you can use standard X.509 certificate methods
 	/// ```
@@ -220,7 +221,7 @@ impl Certificate {
 	///
 	/// ```rust
 	/// # use keetanetwork_anchor::doc_utils;
-	/// use keetanetwork_anchor::certificates::CertificateBuilder;
+	/// use keetanetwork_anchor::certificates::KycCertificateBuilder;
 	/// use keetanetwork_crypto::prelude::IntoSecret;
 	///
 	/// # let subject_account = doc_utils::create_secp256k1_test_account(Some(0));
@@ -234,7 +235,7 @@ impl Certificate {
 	/// }
 	/// # Ok::<(), Box<dyn std::error::Error>>(())
 	/// ```
-	pub fn kyc_attributes(&self) -> &KYCAttributes {
+	pub fn kyc_attributes(&self) -> &KycAttributes {
 		&self.kyc_attributes
 	}
 
@@ -256,7 +257,7 @@ impl Certificate {
 	///
 	/// ```rust
 	/// # use keetanetwork_anchor::doc_utils;
-	/// use keetanetwork_anchor::certificates::CertificateBuilder;
+	/// use keetanetwork_anchor::certificates::KycCertificateBuilder;
 	/// use keetanetwork_crypto::prelude::IntoSecret;
 	///
 	/// # let account = doc_utils::create_secp256k1_test_account(None);
@@ -309,7 +310,7 @@ impl Certificate {
 	///
 	/// ```rust
 	/// # use keetanetwork_anchor::doc_utils;
-	/// use keetanetwork_anchor::certificates::CertificateBuilder;
+	/// use keetanetwork_anchor::certificates::KycCertificateBuilder;
 	/// use keetanetwork_crypto::prelude::IntoSecret;
 	///
 	/// # let subject_account = doc_utils::create_secp256k1_test_account(Some(0));
@@ -322,7 +323,7 @@ impl Certificate {
 	/// assert_eq!(email, b"john@example.com");
 	/// # Ok::<(), Box<dyn std::error::Error>>(())
 	/// ```
-	pub fn decrypt_kyc_attribute<K, N>(&self, name: N, keypair: &K) -> Result<Vec<u8>, CertificateError>
+	pub fn decrypt_kyc_attribute<K, N>(&self, name: N, keypair: &K) -> Result<Vec<u8>, KycCertificateError>
 	where
 		K: KeyPair,
 		N: AsRef<str>,
@@ -330,14 +331,14 @@ impl Certificate {
 		let name_str = name.as_ref();
 		let attribute = self
 			.get_kyc_attribute(name_str)
-			.ok_or_else(|| CertificateError::AttributeNotFound { name: name_str.to_string() })?;
+			.ok_or_else(|| KycCertificateError::AttributeNotFound { name: name_str.to_string() })?;
 
 		assert_attribute_is_sensitive(attribute, name_str)?;
 
 		// Decode the sensitive attribute from DER
 		let sensitive_attr: SensitiveAttribute = rasn::der::decode(attribute.as_ref())?;
 		let decrypted = sensitive_attr.decrypt(keypair)?;
-		Ok(decrypted.expose_secret().clone())
+		Ok(decode_value(attribute.name.to_string(), decrypted.expose_secret())?)
 	}
 
 	/// Get a plain text KYC attribute value
@@ -358,7 +359,7 @@ impl Certificate {
 	///
 	/// ```rust
 	/// # use keetanetwork_anchor::doc_utils;
-	/// use keetanetwork_anchor::certificates::CertificateBuilder;
+	/// use keetanetwork_anchor::certificates::KycCertificateBuilder;
 	///
 	/// # let account = doc_utils::create_secp256k1_test_account(None);
 	/// # let certificate = doc_utils::create_test_certificate_builder(&account)
@@ -368,15 +369,15 @@ impl Certificate {
 	/// assert_eq!(postal_code, b"12345");
 	/// # Ok::<(), Box<dyn std::error::Error>>(())
 	/// ```
-	pub fn get_plain_kyc_attribute<N: AsRef<str>>(&self, name: N) -> Result<Vec<u8>, CertificateError> {
+	pub fn get_plain_kyc_attribute<N: AsRef<str>>(&self, name: N) -> Result<Vec<u8>, KycCertificateError> {
 		let name_str = name.as_ref();
 		let attribute = self
 			.get_kyc_attribute(name_str)
-			.ok_or_else(|| CertificateError::AttributeNotFound { name: name_str.to_string() })?;
+			.ok_or_else(|| KycCertificateError::AttributeNotFound { name: name_str.to_string() })?;
 
 		assert_attribute_is_plain(attribute, name_str)?;
 
-		Ok(attribute.as_ref().to_vec())
+		Ok(decode_value(attribute.name.to_string(), attribute.as_ref())?)
 	}
 
 	/// Parse KYC attributes from an X.509 certificate
@@ -384,17 +385,17 @@ impl Certificate {
 	/// Internal method that extracts and parses KYC attributes from the
 	/// certificate's extensions. If no KYC extension is found or parsing
 	/// fails, returns an empty KYC attributes collection.
-	fn parse_kyc_attributes(x509_cert: &X509Certificate) -> KYCAttributes {
+	fn parse_kyc_attributes(x509_cert: &X509Certificate) -> KycAttributes {
 		// Try to find the KYC attributes extension
 		if let Some(extension) = x509_cert.extension(oids::keeta::KYC_ATTRIBUTES_EXTENSION.to_string()) {
 			// Try to decode the extension value
-			if let Ok(kyc_attrs) = rasn::der::decode::<KYCAttributes>(extension.extn_value.as_bytes()) {
+			if let Ok(kyc_attrs) = rasn::der::decode::<KycAttributes>(extension.extn_value.as_bytes()) {
 				return kyc_attrs;
 			}
 		}
 
 		// Return empty attributes if not found or parsing failed
-		KYCAttributes::new()
+		KycAttributes::new()
 	}
 
 	/// Check if the certificate has any KYC attributes
@@ -408,12 +409,12 @@ impl Certificate {
 	///
 	/// ```rust
 	/// # use keetanetwork_anchor::doc_utils;
-	/// use keetanetwork_anchor::certificates::Certificate;
+	/// use keetanetwork_anchor::certificates::KycCertificate;
 	///
 	/// # let x509_cert = doc_utils::create_test_x509_cert();
-	/// let certificate = Certificate::new(x509_cert);
+	/// let certificate = KycCertificate::new(x509_cert);
 	/// if certificate.has_kyc_attributes() {
-	///     println!("Certificate has KYC data");
+	///     println!("KycCertificate has KYC data");
 	/// } else {
 	///     println!("Standard certificate without KYC data");
 	/// }
@@ -432,7 +433,7 @@ impl Certificate {
 	///
 	/// ```rust
 	/// # use keetanetwork_anchor::doc_utils;
-	/// use keetanetwork_anchor::certificates::CertificateBuilder;
+	/// use keetanetwork_anchor::certificates::KycCertificateBuilder;
 	/// use keetanetwork_crypto::prelude::IntoSecret;
 	///
 	/// # let account = doc_utils::create_secp256k1_test_account(None);
@@ -478,29 +479,29 @@ mod tests {
 
 	#[test]
 	fn test_certificate_without_kyc_attributes() {
-		let cert = Certificate::new(create_test_x509_cert());
+		let cert = KycCertificate::new(create_test_x509_cert());
 		assert!(!cert.has_kyc_attributes());
 		assert_eq!(cert.kyc_attribute_count(), 0);
 		assert!(cert.get_kyc_attribute("fullName").is_none());
 
-		// Test Certificate.to_x509
+		// Test KycCertificate.to_x509
 		let x509_cert = cert.to_x509();
 		// Just check that we can access the X509 certificate
 		assert!(x509_cert
 			.extension(oids::keeta::KYC_ATTRIBUTES_EXTENSION.to_string())
 			.is_none());
 
-		// Test Certificate.kyc_attributes
+		// Test KycCertificate.kyc_attributes
 		let kyc_attrs = cert.kyc_attributes();
 		assert_eq!(kyc_attrs.count(), 0);
 	}
 
 	#[test]
 	fn test_certificate_attribute_errors() {
-		let cert = Certificate::new(create_test_x509_cert());
+		let cert = KycCertificate::new(create_test_x509_cert());
 		let result = cert.get_plain_kyc_attribute("nonExistent");
 		assert!(result.is_err());
-		assert!(matches!(result.unwrap_err(), CertificateError::AttributeNotFound { .. }));
+		assert!(matches!(result.unwrap_err(), KycCertificateError::AttributeNotFound { .. }));
 	}
 
 	fn test_certificate_building_functionality<T, S>(account: Account<T>)
@@ -528,7 +529,7 @@ mod tests {
 		assert!(certificate.has_kyc_attributes());
 		assert_eq!(certificate.kyc_attribute_count(), 3);
 
-		// Test Certificate.kyc_attributes() method when KYC attributes are present
+		// Test KycCertificate.kyc_attributes() method when KYC attributes are present
 		let kyc_attrs = certificate.kyc_attributes();
 		assert_eq!(kyc_attrs.count(), 3);
 
@@ -550,11 +551,11 @@ mod tests {
 
 		let decrypt_result = certificate.decrypt_kyc_attribute("nonExistent", &account.keypair);
 		assert!(decrypt_result.is_err());
-		assert!(matches!(decrypt_result.unwrap_err(), CertificateError::AttributeNotFound { .. }));
+		assert!(matches!(decrypt_result.unwrap_err(), KycCertificateError::AttributeNotFound { .. }));
 
 		let plain_result = certificate.get_plain_kyc_attribute("nonExistent");
 		assert!(plain_result.is_err());
-		assert!(matches!(plain_result.unwrap_err(), CertificateError::AttributeNotFound { .. }));
+		assert!(matches!(plain_result.unwrap_err(), KycCertificateError::AttributeNotFound { .. }));
 	}
 
 	crate::test_all_key_types!(test_certificate_building, test_certificate_building_functionality);
@@ -574,12 +575,12 @@ mod tests {
 		let certificate = builder.build(&account.keypair, &account.keypair).unwrap();
 		let result = certificate.decrypt_kyc_attribute("postalCode", &account.keypair);
 		assert!(result.is_err());
-		assert!(matches!(result.unwrap_err(), CertificateError::SensitiveAttributeError { .. }));
+		assert!(matches!(result.unwrap_err(), KycCertificateError::SensitiveAttributeError { .. }));
 
 		// Test trying to get a sensitive attribute as plain
 		let result = certificate.get_plain_kyc_attribute("email");
 		assert!(result.is_err());
-		assert!(matches!(result.unwrap_err(), CertificateError::SensitiveAttributeError { .. }));
+		assert!(matches!(result.unwrap_err(), KycCertificateError::SensitiveAttributeError { .. }));
 	}
 
 	crate::test_all_key_types!(test_certificate_type_errors, test_certificate_attribute_type_errors);

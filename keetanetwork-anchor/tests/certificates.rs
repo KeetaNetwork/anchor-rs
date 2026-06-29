@@ -1,7 +1,7 @@
 mod common;
 
 use keetanetwork_account::{Account, AccountError, Accountable, KeyPair};
-use keetanetwork_anchor::certificates::{Certificate, CertificateBuilder};
+use keetanetwork_anchor::certificates::{KycCertificate, KycCertificateBuilder};
 use keetanetwork_asn1::SubjectPublicKeyInfo;
 use keetanetwork_crypto::prelude::{CryptoSignerWithOptions, IntoSecret, SignatureEncoding};
 use keetanetwork_x509::utils::create_dn;
@@ -13,18 +13,18 @@ use common::{
 };
 use common::{TestAccounts, TestData};
 
-/// Certificate test scenario builder
-pub struct CertificateTestBuilder<T: KeyPair>
+/// KycCertificate test scenario builder
+pub struct KycCertificateTestBuilder<T: KeyPair>
 where
 	Account<T>: TryFrom<Accountable<T>, Error = AccountError>,
 {
 	accounts: TestAccounts<T>,
 	test_data: TestData,
-	ca_certificate: Option<Certificate>,
-	intermediate_certificate: Option<Certificate>,
+	ca_certificate: Option<KycCertificate>,
+	intermediate_certificate: Option<KycCertificate>,
 }
 
-impl<T: KeyPair> Default for CertificateTestBuilder<T>
+impl<T: KeyPair> Default for KycCertificateTestBuilder<T>
 where
 	Account<T>: TryFrom<Accountable<T>, Error = AccountError>,
 {
@@ -33,7 +33,7 @@ where
 	}
 }
 
-impl<T: KeyPair> CertificateTestBuilder<T>
+impl<T: KeyPair> KycCertificateTestBuilder<T>
 where
 	Account<T>: TryFrom<Accountable<T>, Error = AccountError>,
 {
@@ -64,7 +64,7 @@ where
 	}
 
 	/// Create a CA certificate and store it in the builder
-	pub fn create_ca_certificate<S>(&mut self) -> Result<Certificate, Box<dyn std::error::Error>>
+	pub fn create_ca_certificate<S>(&mut self) -> Result<KycCertificate, Box<dyn std::error::Error>>
 	where
 		T: CryptoSignerWithOptions<S> + 'static,
 		S: SignatureEncoding,
@@ -72,7 +72,7 @@ where
 		let ca_dn = create_dn(&[(keetanetwork_x509::oids::CN, "Test CA Root")])?;
 		let ca_public_key_info = SubjectPublicKeyInfo::try_from(&self.accounts.issuer)?;
 
-		let certificate = CertificateBuilder::for_ca()
+		let certificate = KycCertificateBuilder::for_ca()
 			.with_subject_dn(ca_dn.clone())
 			.with_issuer_dn(ca_dn) // Self-signed
 			.with_serial_number(SerialNumber::from(3u64))
@@ -86,7 +86,7 @@ where
 	}
 
 	/// Create an intermediate certificate signed by the CA
-	pub fn create_intermediate_certificate<S>(&mut self) -> Result<Certificate, Box<dyn std::error::Error>>
+	pub fn create_intermediate_certificate<S>(&mut self) -> Result<KycCertificate, Box<dyn std::error::Error>>
 	where
 		T: CryptoSignerWithOptions<S> + 'static,
 		S: SignatureEncoding,
@@ -100,7 +100,7 @@ where
 		let issuer_dn = create_dn(&[(keetanetwork_x509::oids::CN, "Test CA Root")])?; // Signed by CA
 		let subject_public_key_info = SubjectPublicKeyInfo::try_from(&self.accounts.subject)?;
 
-		let certificate = CertificateBuilder::for_ca()
+		let certificate = KycCertificateBuilder::for_ca()
 			.with_subject_dn(subject_dn)
 			.with_issuer_dn(issuer_dn)
 			.with_serial_number(SerialNumber::from(6u64))
@@ -114,7 +114,7 @@ where
 	}
 
 	/// Create a user certificate with KYC attributes signed by the CA
-	pub fn create_user_certificate<S>(&mut self) -> Result<Certificate, Box<dyn std::error::Error>>
+	pub fn create_user_certificate<S>(&mut self) -> Result<KycCertificate, Box<dyn std::error::Error>>
 	where
 		T: CryptoSignerWithOptions<S> + 'static,
 		S: SignatureEncoding,
@@ -128,7 +128,7 @@ where
 		let issuer_dn = create_dn(&[(keetanetwork_x509::oids::CN, "Test CA Root")])?;
 		let subject_public_key_info = SubjectPublicKeyInfo::try_from(&self.accounts.subject)?;
 
-		let certificate = CertificateBuilder::for_end_entity()
+		let certificate = KycCertificateBuilder::for_end_entity()
 			.with_subject_dn(subject_dn)
 			.with_issuer_dn(issuer_dn)
 			.with_serial_number(SerialNumber::from(4u64))
@@ -159,7 +159,7 @@ where
 	}
 
 	/// Create a user certificate with mixed plain and sensitive attributes signed by the CA
-	pub fn create_mixed_certificate<S>(&mut self) -> Result<Certificate, Box<dyn std::error::Error>>
+	pub fn create_mixed_certificate<S>(&mut self) -> Result<KycCertificate, Box<dyn std::error::Error>>
 	where
 		T: CryptoSignerWithOptions<S> + 'static,
 		S: SignatureEncoding,
@@ -173,7 +173,7 @@ where
 		let issuer_dn = create_dn(&[(keetanetwork_x509::oids::CN, "Test CA Root")])?;
 		let subject_public_key_info = SubjectPublicKeyInfo::try_from(&self.accounts.subject)?;
 
-		let certificate = CertificateBuilder::for_end_entity()
+		let certificate = KycCertificateBuilder::for_end_entity()
 			.with_subject_dn(subject_dn)
 			.with_issuer_dn(issuer_dn)
 			.with_serial_number(SerialNumber::from(5u64))
@@ -200,18 +200,18 @@ where
 	}
 
 	/// Get the stored CA certificate
-	pub fn ca_certificate(&self) -> Option<&Certificate> {
+	pub fn ca_certificate(&self) -> Option<&KycCertificate> {
 		self.ca_certificate.as_ref()
 	}
 
 	/// Get the stored intermediate certificate
-	pub fn intermediate_certificate(&self) -> Option<&Certificate> {
+	pub fn intermediate_certificate(&self) -> Option<&KycCertificate> {
 		self.intermediate_certificate.as_ref()
 	}
 
 	/// Get the issuer certificate for user certificate validation
 	/// Returns intermediate if available, otherwise CA
-	pub fn issuer_certificate(&self) -> Option<&Certificate> {
+	pub fn issuer_certificate(&self) -> Option<&KycCertificate> {
 		self.intermediate_certificate
 			.as_ref()
 			.or(self.ca_certificate.as_ref())
@@ -225,7 +225,7 @@ where
 	T: KeyPair + CryptoSignerWithOptions<S> + 'static,
 	S: SignatureEncoding,
 {
-	let mut builder = CertificateTestBuilder::<T>::new();
+	let mut builder = KycCertificateTestBuilder::<T>::new();
 
 	let ca_certificate = builder
 		.create_ca_certificate::<S>()
@@ -251,7 +251,7 @@ where
 	T: KeyPair + CryptoSignerWithOptions<S> + 'static,
 	S: SignatureEncoding,
 {
-	let mut builder = CertificateTestBuilder::<T>::new();
+	let mut builder = KycCertificateTestBuilder::<T>::new();
 
 	// Create certificate with both plain and sensitive attributes
 	let mixed_certificate = builder
@@ -273,7 +273,7 @@ where
 	T: KeyPair + CryptoSignerWithOptions<S> + 'static,
 	S: SignatureEncoding,
 {
-	let mut builder = CertificateTestBuilder::<T>::new();
+	let mut builder = KycCertificateTestBuilder::<T>::new();
 	// Test basic CA certificate without KYC attributes
 	let ca_cert = builder
 		.create_ca_certificate::<S>()
@@ -302,7 +302,7 @@ where
 {
 	let accounts = TestAccounts::<T>::new();
 	// Create a test certificate for error testing
-	let mut builder = CertificateTestBuilder::<T>::new();
+	let mut builder = KycCertificateTestBuilder::<T>::new();
 	let test_cert = builder
 		.create_mixed_certificate::<S>()
 		.expect("Failed to create test certificate");
@@ -325,7 +325,7 @@ where
 	T: KeyPair + CryptoSignerWithOptions<S> + 'static,
 	S: SignatureEncoding,
 {
-	let mut builder = CertificateTestBuilder::<T>::new();
+	let mut builder = KycCertificateTestBuilder::<T>::new();
 
 	// Test that attributes exist but can't be decrypted without the private key
 	let user_certificate = builder
@@ -349,7 +349,7 @@ where
 	S: SignatureEncoding,
 {
 	// Create CA certificate with proper extensions using builder
-	let ca_cert = CertificateTestBuilder::<T>::new()
+	let ca_cert = KycCertificateTestBuilder::<T>::new()
 		.create_ca_certificate::<S>()
 		.expect("Failed to create CA certificate");
 	// Verify CA certificate properties
@@ -368,7 +368,7 @@ where
 	T: KeyPair + CryptoSignerWithOptions<S> + 'static,
 	S: SignatureEncoding,
 {
-	let mut builder = CertificateTestBuilder::<T>::new();
+	let mut builder = KycCertificateTestBuilder::<T>::new();
 	// Test builder creates valid certificates
 	let valid_cert = builder
 		.create_user_certificate::<S>()

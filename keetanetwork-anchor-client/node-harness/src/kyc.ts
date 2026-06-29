@@ -12,6 +12,7 @@ import type * as ResolverModule from '@keetanetwork/anchor/lib/resolver.js';
 import type * as KycServerModule from '@keetanetwork/anchor/services/kyc/server.js';
 import type * as KycCommonModule from '@keetanetwork/anchor/services/kyc/common.js';
 import type * as KycStatusModule from '@keetanetwork/anchor/services/kyc/status.js';
+import type * as CertificatesModule from '@keetanetwork/anchor/lib/certificates.js';
 import type * as KeetaNetModule from '@keetanetwork/keetanet-client';
 import type * as NodeClientModule from '@keetanetwork/keetanet-node/dist/client';
 import type * as NodeTestingModule from '@keetanetwork/keetanet-node/dist/lib/utils/helper_testing.js';
@@ -24,6 +25,7 @@ const resolver = await refs.anchor<typeof ResolverModule>('lib/resolver.js');
 const kycServer = await refs.anchor<typeof KycServerModule>('services/kyc/server.js');
 const kycCommon = await refs.anchor<typeof KycCommonModule>('services/kyc/common.js');
 const kycStatus = await refs.anchor<typeof KycStatusModule>('services/kyc/status.js');
+const certificates = await refs.anchor<typeof CertificatesModule>('lib/certificates.js');
 const KeetaNet = refs.client<typeof KeetaNetModule>();
 const NodeClient = refs.node<typeof NodeClientModule>('@keetanetwork/keetanet-node/dist/client');
 const nodeTesting = refs.node<typeof NodeTestingModule>('@keetanetwork/keetanet-node/dist/lib/utils/helper_testing.js');
@@ -39,6 +41,7 @@ type CertificateAuthority = Awaited<ReturnType<InstanceType<typeof KeetaNetLib.U
 type ReferenceNode = Awaited<ReturnType<typeof nodeTesting.createTestNode>>;
 type UserClient = InstanceType<typeof KeetaNet.UserClient>;
 type GenericAccount = InstanceType<typeof KeetaNetLib.Account>;
+type SigningAccount = ReturnType<typeof KeetaNetLib.Account.fromSeed>;
 type KycServerConfig = ConstructorParameters<typeof kycServer.KeetaNetKYCAnchorHTTPServer>[0];
 type KycServerInstance = InstanceType<typeof kycServer.KeetaNetKYCAnchorHTTPServer>;
 type ServiceMetadata = Parameters<typeof Metadata.formatMetadata>[0];
@@ -59,8 +62,27 @@ interface ChainNode {
 	publish(metadata: ServiceMetadata): Promise<string>;
 }
 
-/* A booted chain node plus the live KYC anchor server it backs. */
-let kycAnchor: { server: KycServerInstance; chain: ChainNode } | undefined;
+/**
+ * A self-signed CA together with the account that owns its signing key, so the
+ * harness can issue leaf certificates that chain to it.
+ */
+interface CertificateAuthorityWithKey {
+	ca: CertificateAuthority;
+	account: SigningAccount;
+}
+
+/**
+ * A booted chain node plus the live KYC anchor server it backs. `issued` maps a
+ * verification id to the PEM chain (`[leaf, ca]`) the anchor serves back through
+ * `getCertificates`, so a binding can fetch a populated leaf over the network.
+ */
+let kycAnchor: {
+	server: KycServerInstance;
+	chain: ChainNode;
+	ca: CertificateAuthority;
+	caAccount: SigningAccount;
+	issued: Map<string, string[]>;
+} | undefined;
 
 interface StartKycAnchorRequest {
 	cmd: 'startKycAnchor';
@@ -87,17 +109,36 @@ interface ShutdownRequest {
 	cmd: 'shutdown';
 }
 
+/**
+ * A single KYC attribute to embed in an issued leaf. `value` is plain JSON; an
+ * object of the form `{ "__date": "<ISO>" }` (at any depth) is revived to a
+ * `Date` so date attributes encode as the reference implementation does.
+ */
+interface IssueAttribute {
+	name: string;
+	sensitive: boolean;
+	value: unknown;
+}
+
+interface IssueCertificateRequest {
+	cmd: 'issueCertificate';
+	attributes: IssueAttribute[];
+	subjectSeed?: string;
+	verificationID?: string;
+}
+
 type KycRequest =
 	StartKycAnchorRequest |
 	StopKycAnchorRequest |
 	BuildMetadataRequest |
 	PublishMetadataRequest |
+	IssueCertificateRequest |
 	ShutdownRequest;
 
 /**
  * Mint a self-signed CA the anchor issues KYC certificates under.
  */
-async function buildCertificateAuthority(): Promise<CertificateAuthority> {
+async function buildCertificateAuthority(): Promise<CertificateAuthorityWithKey> {
 	const caAccount = Account.fromSeed(Account.generateRandomSeed(), 0);
 	const builder = new KeetaNetLib.Utils.Certificate.CertificateBuilder({
 		subjectPublicKey: caAccount,
@@ -107,14 +148,13 @@ async function buildCertificateAuthority(): Promise<CertificateAuthority> {
 		validTo: new Date(Date.now() + (60 * 60 * 1000))
 	});
 
-	return(await builder.build());
+	return({ ca: await builder.build(), account: caAccount });
 }
 
 /**
  * Boot an in-memory reference node and initialize its chain (base token, supply,
  * delegation) so accounts can publish on-chain metadata. The resolver reads that
  * metadata back through the node API, exactly as the reference client does.
- *
  */
 async function bootChainNode(): Promise<ChainNode> {
 	const seed = Account.generateRandomSeed({ asString: true });
@@ -201,11 +241,26 @@ async function bootChainNode(): Promise<ChainNode> {
 	return({ node, api: endpoints.api, repClient, give, publish });
 }
 
-function kycCallbacks(ca: CertificateAuthority, countryCodes: string[] | undefined): KycServerConfig['kyc'] {
+function kycCallbacks(
+	ca: CertificateAuthority,
+	issued: Map<string, string[]>,
+	countryCodes: string[] | undefined
+): KycServerConfig['kyc'] {
 	const kyc: KycServerConfig['kyc'] = {
 		getCertificates: async function(verificationID: string) {
-			/* A verification still in progress reports as not-yet-issued; any
-			 * other id yields the issued CA certificate. */
+			/*
+			 * A leaf issued for this verification is served as a full `[leaf, ca]`
+			 * chain so a binding can resolve and trust it over the network.
+			 */
+			const chain = issued.get(verificationID);
+			if (chain !== undefined) {
+				return(await Promise.resolve(chain.map(certificate => ({ certificate }))));
+			}
+
+			/*
+			 * A verification still in progress reports as not-yet-issued; any
+			 * other id yields the issued CA certificate.
+			 */
 			if (verificationID === 'pending') {
 				throw(new kycCommon.Errors.CertificateNotFound());
 			}
@@ -244,7 +299,8 @@ async function handleStartKycAnchor(request: StartKycAnchorRequest): Promise<Har
 	const sign = request.sign !== false;
 
 	const chain = await bootChainNode();
-	const ca = await buildCertificateAuthority();
+	const { ca, account: caAccount } = await buildCertificateAuthority();
+	const issued = new Map<string, string[]>();
 	const certificateSigner = Account.fromSeed(Account.generateRandomSeed(), 0);
 
 	const server: KycServerInstance = new kycServer.KeetaNetKYCAnchorHTTPServer({
@@ -255,11 +311,11 @@ async function handleStartKycAnchor(request: StartKycAnchorRequest): Promise<Har
 		kycProviderURL: function(verificationID: string): string {
 			return(`${server.url}verify/${encodeURIComponent(verificationID)}`);
 		},
-		kyc: kycCallbacks(ca, countryCodes)
+		kyc: kycCallbacks(ca, issued, countryCodes)
 	});
 
 	await server.start();
-	kycAnchor = { server, chain };
+	kycAnchor = { server, chain, ca, caAccount, issued };
 
 	const entry = await server.serviceMetadata();
 	const metadata = { version: 1, currencyMap: {}, services: { kyc: { [providerId]: entry }}};
@@ -304,12 +360,101 @@ async function handlePublishMetadata(request: PublishMetadataRequest): Promise<H
 	return({ event: 'metadata-published', api: current.chain.api, root });
 }
 
+/**
+ * Recursively revive a JSON request value into the shape the reference builder
+ * expects: an object `{ "__date": "<ISO>" }` becomes a `Date` (at any depth),
+ * everything else passes through unchanged.
+ */
+function reviveValue(value: unknown): unknown {
+	if (Array.isArray(value)) {
+		return(value.map(reviveValue));
+	}
+
+	if (value !== null && typeof value === 'object') {
+		const entries = Object.entries(value);
+		const dateEntry = entries.find(([key]) => key === '__date');
+		if (dateEntry !== undefined && typeof dateEntry[1] === 'string') {
+			return(new Date(dateEntry[1]));
+		}
+
+		const revived: { [key: string]: unknown } = {};
+		for (const [key, nested] of entries) {
+			revived[key] = reviveValue(nested);
+		}
+
+		return(revived);
+	}
+
+	return(value);
+}
+
+/**
+ * Issue a populated KYC leaf for a subject under the running anchor's CA, then
+ * read every attribute back through the reference `Certificate` to produce the
+ * `getValue()` oracle.
+ */
+async function handleIssueCertificate(request: IssueCertificateRequest): Promise<HarnessResponse> {
+	const current = kycAnchor;
+	if (current === undefined) {
+		throw(new Error('no running anchor: start the KYC anchor before issuing certificates'));
+	}
+
+	const subjectSeed = request.subjectSeed ?? Account.generateRandomSeed({ asString: true });
+	const subjectAccount = Account.fromSeed(subjectSeed, 0);
+	const subjectNoPrivate = Account.fromPublicKeyString(subjectAccount.publicKeyString.get());
+
+	const builder = new certificates.CertificateBuilder({
+		issuer: current.caAccount,
+		subject: subjectNoPrivate,
+		validFrom: new Date(Date.now() - 30_000),
+		validTo: new Date(Date.now() + (60 * 60 * 1000))
+	});
+
+	for (const attribute of request.attributes) {
+		// eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+		const name = attribute.name as CertificatesModule.CertificateAttributeNames;
+		// eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+		builder.setAttribute(name, attribute.sensitive, reviveValue(attribute.value) as never);
+	}
+
+	const leaf = await builder.build({ serial: 4 });
+	const leafPEM = leaf.toPEM();
+	const caPEM = current.ca.toPEM();
+
+	const reader = new certificates.Certificate(leaf, { subjectKey: subjectAccount, moment: null });
+	const oracle: { [name: string]: unknown } = {};
+	for (const attribute of request.attributes) {
+		// eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+		const name = attribute.name as CertificatesModule.CertificateAttributeNames;
+		const value = await reader.getAttributeValue(name);
+		/*
+		 * Round-trip through JSON so the oracle is the exact form a binding
+		 * compares against (e.g. `Date` becomes its ISO string).
+		 */
+		oracle[attribute.name] = JSON.parse(JSON.stringify(value));
+	}
+
+	const verificationID = request.verificationID ?? subjectAccount.publicKeyString.get();
+	current.issued.set(verificationID, [leafPEM, caPEM]);
+
+	return({
+		event: 'certificate-issued',
+		verificationID,
+		subjectSeed,
+		subject: subjectAccount.publicKeyString.get(),
+		leaf: leafPEM,
+		ca: caPEM,
+		oracle
+	});
+}
+
 async function handle(request: KycRequest): Promise<HarnessResponse> {
 	switch (request.cmd) {
 		case 'startKycAnchor': return(await handleStartKycAnchor(request));
 		case 'stopKycAnchor': return(await handleStopKycAnchor());
 		case 'buildMetadata': return(handleBuildMetadata(request));
 		case 'publishMetadata': return(await handlePublishMetadata(request));
+		case 'issueCertificate': return(await handleIssueCertificate(request));
 		case 'shutdown': return({ event: 'shutdown' });
 	}
 }

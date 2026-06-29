@@ -29,7 +29,7 @@ impl SigningHarness {
 		self.driver.ready_field("signerPublicKeyAndType")
 	}
 
-	/// The harness-owned signer's `publicKeyString` (the `keeta_…` address used
+	/// The harness-owned signer's `publicKeyString` (the `keeta_...` address used
 	/// as the URL/body `account` parameter).
 	pub fn signer_public_key_string(&self) -> Result<&str, HarnessError> {
 		self.driver.ready_field("signerPublicKeyString")

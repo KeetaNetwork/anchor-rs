@@ -1,6 +1,6 @@
-KYCAttributes DEFINITIONS ::= BEGIN
+KycAttributes DEFINITIONS ::= BEGIN
 
-    KYCAttributes ::= SEQUENCE OF Attribute
+    KycAttributes ::= SEQUENCE OF Attribute
 
     Attribute ::= SEQUENCE {
         -- Name of the attribute

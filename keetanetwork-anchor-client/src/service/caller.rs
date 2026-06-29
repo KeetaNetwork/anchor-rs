@@ -4,7 +4,7 @@ use alloc::string::{String, ToString};
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
-use keetanetwork_account::{Account, KeyPair};
+use keetanetwork_account::GenericAccount;
 use keetanetwork_anchor::signing::{add_signature_to_url, sign_with, SignParams, Signable, Signed, Url};
 use serde::de::DeserializeOwned;
 use serde_json::{json, Map, Value};
@@ -67,26 +67,20 @@ pub struct Call<'a> {
 /// The caller owns the request spine every service shares: fill the endpoint,
 /// attach the signature the [`Auth`] mode requires, send it, and decode the
 /// response into an [`AnchorOutcome`].
-pub struct AnchorCaller<K>
-where
-	K: KeyPair,
-{
+pub struct AnchorCaller {
 	transport: Arc<dyn AnchorHttpTransport>,
-	signer: Account<K>,
+	signer: Arc<GenericAccount>,
 	account: String,
 }
 
-impl<K> AnchorCaller<K>
-where
-	K: KeyPair,
-{
+impl AnchorCaller {
 	/// A caller signing requests with `signer` over `transport`.
-	pub fn new(transport: Arc<dyn AnchorHttpTransport>, signer: Account<K>) -> Self {
+	pub fn new(transport: Arc<dyn AnchorHttpTransport>, signer: Arc<GenericAccount>) -> Self {
 		let account = signer.to_string();
 		Self { transport, signer, account }
 	}
 
-	/// The signer's account string (the `keeta_…` public key).
+	/// The signer's account string (the `keeta_...` public key).
 	pub fn account(&self) -> &str {
 		&self.account
 	}
@@ -171,7 +165,7 @@ where
 
 	fn sign_empty(&self) -> Result<Signed, AnchorClientError> {
 		let params = SignParams::generate();
-		let signed = sign_with(&self.signer, EMPTY, &params)?;
+		let signed = sign_with(self.signer.as_ref(), EMPTY, &params)?;
 		Ok(signed)
 	}
 }

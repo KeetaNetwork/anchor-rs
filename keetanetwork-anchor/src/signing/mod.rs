@@ -19,6 +19,7 @@ use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
 use chrono::{DateTime, SecondsFormat, Utc};
 use format::format_data;
+use keetanetwork_account::account::AccountSigner;
 use keetanetwork_account::{Account, GenericAccount, KeyPair};
 use uuid::Uuid;
 
@@ -100,9 +101,9 @@ impl VerifyOptions {
 ///
 /// This is the common path. Use [`sign_with`] to supply deterministic
 /// [`SignParams`] (e.g. for reproducible tests or replayed requests).
-pub fn sign<K, T>(account: &Account<K>, data: &T) -> Result<Signed, SigningError>
+pub fn sign<A, T>(account: &A, data: &T) -> Result<Signed, SigningError>
 where
-	K: KeyPair,
+	A: AccountSigner + VerifyingAccount + ?Sized,
 	T: ToSignable + ?Sized,
 {
 	let params = SignParams::generate();
@@ -110,9 +111,9 @@ where
 }
 
 /// Sign `data` with `account` using explicit [`SignParams`].
-pub fn sign_with<K, T>(account: &Account<K>, data: &T, params: &SignParams) -> Result<Signed, SigningError>
+pub fn sign_with<A, T>(account: &A, data: &T, params: &SignParams) -> Result<Signed, SigningError>
 where
-	K: KeyPair,
+	A: AccountSigner + VerifyingAccount + ?Sized,
 	T: ToSignable + ?Sized,
 {
 	ensure_canonical_timestamp(&params.timestamp)?;
@@ -126,16 +127,13 @@ where
 
 /// The exact bytes [`sign_with`] signs: the ASN.1 DER verification payload for
 /// `data` under `account` and `params`.
-///
-/// The escape hatch for detached/offline signing (sign these bytes with a
-/// separate device) and for cross-implementation parity checks.
-pub fn verification_data<K, T>(account: &Account<K>, data: &T, params: &SignParams) -> Result<Vec<u8>, SigningError>
+pub fn verification_data<A, T>(account: &A, data: &T, params: &SignParams) -> Result<Vec<u8>, SigningError>
 where
-	K: KeyPair,
+	A: VerifyingAccount + ?Sized,
 	T: ToSignable + ?Sized,
 {
 	let parts = data.to_signable();
-	let signer = account.to_public_key_with_type();
+	let signer = account.public_key_with_type();
 	format_data(&signer, &params.nonce, &params.timestamp, &parts)
 }
 
@@ -156,7 +154,7 @@ where
 /// An account that can verify a signature and expose its `publicKeyAndType`
 /// transport bytes. Implemented for both the statically typed [`Account`]
 /// and the runtime-typed [`GenericAccount`].
-pub(crate) trait VerifyingAccount {
+pub trait VerifyingAccount {
 	fn public_key_with_type(&self) -> Vec<u8>;
 	fn verify_signature(&self, message: &[u8], signature: &[u8]) -> Result<(), VerifyError>;
 }

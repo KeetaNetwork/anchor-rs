@@ -6,9 +6,9 @@
 use keetanetwork_account::{Account, AccountError, Accountable, KeyECDSASECP256K1, KeyPair};
 use keetanetwork_crypto::prelude::{CryptoSignerWithOptions, SignatureEncoding};
 
-use keetanetwork_anchor::certificates::Certificate;
-use keetanetwork_anchor::generated::KYCAttributes;
-use keetanetwork_anchor::kyc_schema::{Attribute, AttributeBuilder, AttributeBuilderLike, KYCAttributesBuilder};
+use keetanetwork_anchor::certificates::KycCertificate;
+use keetanetwork_anchor::generated::KycAttributes;
+use keetanetwork_anchor::kyc_schema::{Attribute, AttributeBuilder, AttributeBuilderLike, KycAttributesBuilder};
 use keetanetwork_anchor::testing::{create_account_from_seed, create_public_key_only_account};
 
 /// Test seed used in TypeScript tests for deterministic account generation
@@ -104,8 +104,8 @@ where
 pub fn create_kyc_with_attributes<T: ToString>(
 	plain_attrs: &[(T, &[u8])],
 	sensitive_attrs: &[(T, &[u8])],
-) -> KYCAttributes {
-	let mut builder = KYCAttributesBuilder::new();
+) -> KycAttributes {
+	let mut builder = KycAttributesBuilder::new();
 
 	for (oid, value) in plain_attrs {
 		builder = builder.with_plain(oid.to_string(), *value);
@@ -138,25 +138,25 @@ pub fn create_sensitive_attribute<T: ToString>(oid: T, value: &[u8]) -> Attribut
 		.expect("Failed to create sensitive attribute")
 }
 
-/// Create a KYC with specific attributes using KYCAttributesBuilder
-pub fn create_kyc_from_attributes(attributes: Vec<Attribute>) -> KYCAttributes {
-	let mut builder = KYCAttributesBuilder::new();
+/// Create a KYC with specific attributes using KycAttributesBuilder
+pub fn create_kyc_from_attributes(attributes: Vec<Attribute>) -> KycAttributes {
+	let mut builder = KycAttributesBuilder::new();
 	for attr in attributes {
 		builder = builder.with_attribute(attr);
 	}
 
-	builder.build().expect("Failed to create KYCAttributes")
+	builder.build().expect("Failed to create KycAttributes")
 }
 
 /// Assert basic KYC properties and counts
-pub fn test_kyc_count(kyc: &KYCAttributes, expected_count: usize) -> Result<(), Box<dyn std::error::Error>> {
+pub fn test_kyc_count(kyc: &KycAttributes, expected_count: usize) -> Result<(), Box<dyn std::error::Error>> {
 	assert_eq!(kyc.0.len(), expected_count);
 	Ok(())
 }
 
 /// Assert mixed attribute counts (plain + sensitive)
 pub fn test_mixed_attribute_counts(
-	kyc: &KYCAttributes,
+	kyc: &KycAttributes,
 	expected_plain: usize,
 	expected_sensitive: usize,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -172,7 +172,7 @@ pub fn test_mixed_attribute_counts(
 }
 
 /// Assert that specific OIDs exist in the KYC
-pub fn test_oids_exist<T: ToString>(kyc: &KYCAttributes, oids: &[T]) -> Result<(), Box<dyn std::error::Error>> {
+pub fn test_oids_exist<T: ToString>(kyc: &KycAttributes, oids: &[T]) -> Result<(), Box<dyn std::error::Error>> {
 	for oid in oids {
 		assert!(kyc.find_by_oid(oid.to_string()).is_some(), "OID {} should exist", oid.to_string());
 	}
@@ -181,7 +181,7 @@ pub fn test_oids_exist<T: ToString>(kyc: &KYCAttributes, oids: &[T]) -> Result<(
 }
 
 /// Assert that specific OIDs do not exist in the KYC
-pub fn test_oids_not_exist<T: ToString>(kyc: &KYCAttributes, oids: &[T]) -> Result<(), Box<dyn std::error::Error>> {
+pub fn test_oids_not_exist<T: ToString>(kyc: &KycAttributes, oids: &[T]) -> Result<(), Box<dyn std::error::Error>> {
 	for oid in oids {
 		assert!(kyc.find_by_oid(oid.to_string()).is_none(), "OID {} should not exist", oid.to_string());
 	}
@@ -202,7 +202,7 @@ pub fn test_attribute_properties(
 
 /// Test certificate attribute access patterns
 pub fn test_certificate_attributes<T, S>(
-	certificate: &Certificate,
+	certificate: &KycCertificate,
 	accounts: &TestAccounts<T>,
 	test_data: &TestData,
 ) -> Result<(), Box<dyn std::error::Error>>
@@ -212,7 +212,7 @@ where
 	Account<T>: TryFrom<Accountable<T>, Error = AccountError>,
 {
 	// Verify certificate has KYC attributes
-	assert!(certificate.has_kyc_attributes(), "Certificate should have KYC attributes");
+	assert!(certificate.has_kyc_attributes(), "KycCertificate should have KYC attributes");
 
 	// Test attribute access patterns
 	if let Some(_full_name_attr) = certificate.get_kyc_attribute("fullName") {
@@ -236,7 +236,7 @@ where
 
 /// Test plain text attribute access
 pub fn test_plain_attributes(
-	certificate: &Certificate,
+	certificate: &KycCertificate,
 	test_data: &TestData,
 ) -> Result<(), Box<dyn std::error::Error>> {
 	// Test postal code if present
@@ -257,7 +257,7 @@ pub fn test_plain_attributes(
 
 /// Helper to assert certificate KYC attribute properties
 pub fn test_has_kyc_attributes(
-	cert: &Certificate,
+	cert: &KycCertificate,
 	expected_count: usize,
 	message: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -273,7 +273,7 @@ pub fn test_has_kyc_attributes(
 
 /// Helper to get KYC attribute value, handling both plain and sensitive attributes
 pub fn test_get_kyc_attribute_value<T>(
-	cert: &Certificate,
+	cert: &KycCertificate,
 	attr_name: &str,
 	keypair: Option<&T>,
 ) -> Result<Vec<u8>, Box<dyn std::error::Error>>
@@ -300,8 +300,8 @@ where
 
 /// Helper to verify certificate trust chain
 pub fn test_certificate_issued_by(
-	user_cert: &Certificate,
-	ca_cert: &Certificate,
+	user_cert: &KycCertificate,
+	ca_cert: &KycCertificate,
 ) -> Result<(), Box<dyn std::error::Error>> {
 	if user_cert.to_x509().is_issued_by(ca_cert.to_x509()) {
 		Ok(())

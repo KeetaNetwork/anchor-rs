@@ -99,9 +99,9 @@ fn signable_vectors_round_trip_through_the_anchor() -> TestResult {
 struct RequestFixture {
 	harness: SigningHarness,
 	account: Account<KeyECDSASECP256K1>,
-	/// The Rust account's `keeta_…` string (the URL/body `account` value).
+	/// The Rust account's `keeta_...` string (the URL/body `account` value).
 	account_string: String,
-	/// The harness signer's `keeta_…` string.
+	/// The harness signer's `keeta_...` string.
 	signer_string: String,
 	params: SignParams,
 	options: VerifyOptions,

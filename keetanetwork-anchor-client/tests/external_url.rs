@@ -71,7 +71,7 @@ impl MapTransport {
 		Self { documents: documents.into_iter().collect() }
 	}
 
-	/// The account segment of a `…/node/ledger/account/<account>` URL.
+	/// The account segment of a `.../node/ledger/account/<account>` URL.
 	fn account_of(url: &str) -> Option<&str> {
 		url.rsplit('/').next()
 	}

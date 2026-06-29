@@ -8,8 +8,8 @@
 
 #[path = "generated/sensitive_attributes.rs"]
 mod sensitive_attributes;
-#[path = "generated/k_y_c_attributes.rs"]
-mod k_y_c_attributes;
+#[path = "generated/kyc_attributes.rs"]
+mod kyc_attributes;
 
 #[path = "generated/from_impls.rs"]
 mod from_impls;
@@ -18,4 +18,6 @@ pub mod builder_ext;
 
 // Re-export all types from the generated modules
 pub use sensitive_attributes::{SensitiveAttributeCipher, SensitiveAttributeHashedValue, SensitiveAttribute};
-pub use k_y_c_attributes::{AttributeValue, Attribute, KYCAttributes};
+pub use kyc_attributes::{AttributeValue, Attribute, KycAttributes};
+#[path = "generated/attribute_types.rs"]
+pub mod attribute_types;

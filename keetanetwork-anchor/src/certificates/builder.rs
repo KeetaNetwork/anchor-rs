@@ -1,4 +1,4 @@
-//! Certificate Builder Module
+//! KycCertificate Builder Module
 //!
 //! This module provides a fluent API for constructing X.509 certificates with
 //! embedded KYC (Know Your Customer) attributes. It extends the standard X.509
@@ -7,14 +7,14 @@
 //! # Overview
 //!
 //! The module provides:
-//! - [`CertificateBuilder`] - A builder for creating certificates with KYC attributes
+//! - [`KycCertificateBuilder`] - A builder for creating certificates with KYC attributes
 //! - [`KycAttributeEntry`] - Internal representation for KYC attribute values
 //!
 //! # Basic Usage
 //!
 //! ```rust
 //! # use keetanetwork_anchor::doc_utils;
-//! use keetanetwork_anchor::certificates::CertificateBuilder;
+//! use keetanetwork_anchor::certificates::KycCertificateBuilder;
 //! use keetanetwork_asn1::SubjectPublicKeyInfo;
 //! use keetanetwork_crypto::prelude::IntoSecret;
 //! use keetanetwork_x509::SerialNumber;
@@ -30,7 +30,7 @@
 //! // Get the subject public key info from the subject's account
 //! let subject_public_key_info = SubjectPublicKeyInfo::try_from(&subject_account)?;
 //! // Create a certificate with KYC attributes
-//! let certificate = CertificateBuilder::for_end_entity()
+//! let certificate = KycCertificateBuilder::for_end_entity()
 //!     .with_subject_dn(subject_dn)
 //!     .with_issuer_dn(issuer_dn)
 //!     .with_serial_number(SerialNumber::from(12345u64))
@@ -46,14 +46,14 @@
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 //!
-//! # Creating Different Certificate Types
+//! # Creating Different KycCertificate Types
 //!
 //! ```rust
 //! # use keetanetwork_anchor::doc_utils;
 //! # use keetanetwork_x509::utils::create_dn;
 //! # use keetanetwork_asn1::SubjectPublicKeyInfo;
 //! # use keetanetwork_x509::oids;
-//! use keetanetwork_anchor::certificates::CertificateBuilder;
+//! use keetanetwork_anchor::certificates::KycCertificateBuilder;
 //! use keetanetwork_x509::SerialNumber;
 //!
 //! # let account = doc_utils::create_secp256k1_test_account(None);
@@ -61,7 +61,7 @@
 //! # let public_key_info = SubjectPublicKeyInfo::try_from(&account).unwrap();
 //!
 //! // End-entity certificate (default for user certificates)
-//! let end_entity_cert = CertificateBuilder::for_end_entity()
+//! let end_entity_cert = KycCertificateBuilder::for_end_entity()
 //!     .with_subject_dn(dn.clone())
 //!     .with_issuer_dn(dn.clone())
 //!     .with_serial_number(SerialNumber::from(1u64))
@@ -70,7 +70,7 @@
 //!     .build(&account.keypair, &account.keypair)?;
 //!
 //! // CA certificate (for certificate authorities)
-//! let ca_cert = CertificateBuilder::for_ca()
+//! let ca_cert = KycCertificateBuilder::for_ca()
 //!     .with_subject_dn(dn.clone())
 //!     .with_issuer_dn(dn)
 //!     .with_serial_number(SerialNumber::from(2u64))
@@ -85,7 +85,7 @@
 //!
 //! ```rust
 //! # use keetanetwork_anchor::doc_utils;
-//! use keetanetwork_anchor::certificates::CertificateBuilder;
+//! use keetanetwork_anchor::certificates::KycCertificateBuilder;
 //! use keetanetwork_crypto::prelude::{IntoSecret, ExposeSecret};
 //!
 //! # let account = doc_utils::create_secp256k1_test_account(None);
@@ -116,7 +116,7 @@
 //!
 //! ```rust
 //! # use keetanetwork_anchor::doc_utils;
-//! use keetanetwork_anchor::certificates::CertificateBuilder;
+//! use keetanetwork_anchor::certificates::KycCertificateBuilder;
 //! use keetanetwork_x509::certificates::ExtensionBuilder;
 //!
 //! # let account = doc_utils::create_secp256k1_test_account(None);
@@ -140,7 +140,7 @@
 //!
 //! ```rust
 //! # use keetanetwork_anchor::doc_utils;
-//! use keetanetwork_anchor::certificates::{CertificateBuilder, CertificateError};
+//! use keetanetwork_anchor::certificates::{KycCertificateBuilder, KycCertificateError};
 //! use keetanetwork_crypto::prelude::IntoSecret;
 //!
 //! # let account = doc_utils::create_secp256k1_test_account(None);
@@ -153,17 +153,17 @@
 //!
 //! // Errors are reported during build
 //! match certificate_builder.build(&account.keypair, &account.keypair) {
-//!     Ok(_) => println!("Certificate built successfully"),
-//!     Err(CertificateError::Asn1Error { .. }) => {
+//!     Ok(_) => println!("KycCertificate built successfully"),
+//!     Err(KycCertificateError::Asn1Error { .. }) => {
 //!         println!("Invalid attribute name provided");
 //!     }
 //!     Err(e) => println!("Other error: {:?}", e),
 //! }
 //!
 //! // Handle missing required fields during build
-//! let incomplete_builder = CertificateBuilder::new(); // Missing required fields
+//! let incomplete_builder = KycCertificateBuilder::new(); // Missing required fields
 //! match incomplete_builder.build(&account.keypair, &account.keypair) {
-//!     Ok(_) => println!("Certificate built successfully"),
+//!     Ok(_) => println!("KycCertificate built successfully"),
 //!     Err(e) => println!("Build failed: {:?}", e),
 //! }
 //! ```
@@ -174,15 +174,16 @@ use alloc::vec::Vec;
 
 use keetanetwork_account::{Account, AccountError, Accountable, KeyPair};
 use keetanetwork_asn1::SubjectPublicKeyInfo;
-use keetanetwork_crypto::prelude::{CryptoSignerWithOptions, SecretBox, SignatureEncoding};
+use keetanetwork_crypto::prelude::{CryptoSignerWithOptions, ExposeSecret, SecretBox, SignatureEncoding};
 use keetanetwork_x509::builder::{CertificateBuilder as X509CertificateBuilder, ExtensionBuilder};
 use keetanetwork_x509::certificates::Extension;
 use keetanetwork_x509::{DistinguishedName, SerialNumber};
 
 use crate::asn1::oids;
-use crate::certificates::{Certificate, CertificateError};
+use crate::certificates::{KycCertificate, KycCertificateError};
 use crate::kyc_schema::builder::AttributeBuilderLike;
-use crate::kyc_schema::{AttributeBuilder, KYCAttributes};
+use crate::kyc_schema::codec::encode_value;
+use crate::kyc_schema::{AttributeBuilder, KycAttributes};
 use crate::sensitive_attributes::{KycAttributeEntry, SensitiveAttributeBuilder};
 
 /// Extended certificate builder that supports KYC attributes
@@ -201,14 +202,14 @@ use crate::sensitive_attributes::{KycAttributeEntry, SensitiveAttributeBuilder};
 ///
 /// # Examples
 ///
-/// ## Basic End-Entity Certificate
+/// ## Basic End-Entity KycCertificate
 ///
 /// ```rust
 /// # use keetanetwork_anchor::doc_utils;
 /// # use keetanetwork_x509::utils::create_dn;
 /// # use keetanetwork_x509::oids;
 /// # use keetanetwork_asn1::SubjectPublicKeyInfo;
-/// use keetanetwork_anchor::certificates::CertificateBuilder;
+/// use keetanetwork_anchor::certificates::KycCertificateBuilder;
 /// use keetanetwork_crypto::prelude::IntoSecret;
 /// use keetanetwork_x509::SerialNumber;
 ///
@@ -218,7 +219,7 @@ use crate::sensitive_attributes::{KycAttributeEntry, SensitiveAttributeBuilder};
 /// # let issuer_dn = create_dn(&[(oids::CN, "Test Issuer")]).unwrap();
 /// # let subject_public_key_info = SubjectPublicKeyInfo::try_from(&subject_account).unwrap();
 ///
-/// let certificate = CertificateBuilder::for_end_entity()
+/// let certificate = KycCertificateBuilder::for_end_entity()
 ///     .with_subject_dn(subject_dn)
 ///     .with_issuer_dn(issuer_dn)
 ///     .with_serial_number(SerialNumber::from(12345u64))
@@ -232,7 +233,7 @@ use crate::sensitive_attributes::{KycAttributeEntry, SensitiveAttributeBuilder};
 /// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 ///
-/// ## CA Certificate with Advanced Features
+/// ## CA KycCertificate with Advanced Features
 ///
 /// ```rust
 /// # use keetanetwork_anchor::doc_utils;
@@ -240,36 +241,36 @@ use crate::sensitive_attributes::{KycAttributeEntry, SensitiveAttributeBuilder};
 /// # use keetanetwork_x509::oids;
 /// # use keetanetwork_asn1::SubjectPublicKeyInfo;
 /// use keetanetwork_x509::SerialNumber;
-/// use keetanetwork_anchor::certificates::CertificateBuilder;
+/// use keetanetwork_anchor::certificates::KycCertificateBuilder;
 ///
 /// # let ca_account = doc_utils::create_secp256k1_test_account(None);
 /// # let ca_dn = create_dn(&[(oids::CN, "Test CA")]).unwrap();
 /// # let ca_public_key_info = SubjectPublicKeyInfo::try_from(&ca_account).unwrap();
 ///
-/// let ca_certificate = CertificateBuilder::for_ca()
+/// let ca_certificate = KycCertificateBuilder::for_ca()
 ///     .with_subject_dn(ca_dn.clone())
 ///     .with_issuer_dn(ca_dn) // Self-signed
 ///     .with_serial_number(SerialNumber::from(1u64))
 ///     .with_validity_days(3650) // 10 years
 ///     .with_subject_public_key(ca_public_key_info)
 ///     .with_basic_constraints(true, Some(3)) // CA with path length 3
-///     .with_key_usage(0x06) // Certificate signing
+///     .with_key_usage(0x06) // KycCertificate signing
 ///     .build(&ca_account.keypair, &ca_account.keypair)?;
 ///
 /// assert!(ca_certificate.to_x509().is_ca());
 /// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 #[derive(Debug, Default)]
-pub struct CertificateBuilder {
+pub struct KycCertificateBuilder {
 	/// The underlying X.509 certificate builder
 	inner: X509CertificateBuilder,
 	/// KYC attributes to include in the certificate
 	kyc_attributes: BTreeMap<String, KycAttributeEntry>,
 	/// Collected errors from KYC attribute operations
-	errors: Vec<CertificateError>,
+	errors: Vec<KycCertificateError>,
 }
 
-impl CertificateBuilder {
+impl KycCertificateBuilder {
 	/// Create a new certificate builder
 	///
 	/// Creates a new builder with default settings. You'll need to configure
@@ -287,9 +288,9 @@ impl CertificateBuilder {
 	/// # Examples
 	///
 	/// ```rust
-	/// use keetanetwork_anchor::certificates::CertificateBuilder;
+	/// use keetanetwork_anchor::certificates::KycCertificateBuilder;
 	///
-	/// let builder = CertificateBuilder::for_end_entity();
+	/// let builder = KycCertificateBuilder::for_end_entity();
 	/// // Add subject, issuer, and other required fields...
 	/// ```
 	pub fn for_end_entity() -> Self {
@@ -300,7 +301,7 @@ impl CertificateBuilder {
 		}
 	}
 
-	/// Create a builder for a CA (Certificate Authority) certificate.
+	/// Create a builder for a CA (KycCertificate Authority) certificate.
 	///
 	/// Creates a builder pre-configured for CA certificates. These certificates
 	/// can be used to sign other certificates and establish a chain of trust.
@@ -308,9 +309,9 @@ impl CertificateBuilder {
 	/// # Examples
 	///
 	/// ```rust
-	/// use keetanetwork_anchor::certificates::CertificateBuilder;
+	/// use keetanetwork_anchor::certificates::KycCertificateBuilder;
 	///
-	/// let builder = CertificateBuilder::for_ca();
+	/// let builder = KycCertificateBuilder::for_ca();
 	/// // Add required extensions...
 	/// ```
 	pub fn for_ca() -> Self {
@@ -346,11 +347,11 @@ impl CertificateBuilder {
 	/// # Examples
 	///
 	/// ```rust
-	/// use keetanetwork_anchor::certificates::CertificateBuilder;
+	/// use keetanetwork_anchor::certificates::KycCertificateBuilder;
 	/// use keetanetwork_anchor::sensitive_attributes::KycAttributeEntry;
 	/// use keetanetwork_crypto::prelude::IntoSecret;
 	///
-	/// let builder = CertificateBuilder::new()
+	/// let builder = KycCertificateBuilder::new()
 	///     // Add plain text attribute
 	///     .with_kyc_attribute(
 	///         "fullName",
@@ -395,9 +396,9 @@ impl CertificateBuilder {
 	/// # Examples
 	///
 	/// ```rust
-	/// use keetanetwork_anchor::certificates::CertificateBuilder;
+	/// use keetanetwork_anchor::certificates::KycCertificateBuilder;
 	///
-	/// let builder = CertificateBuilder::new()
+	/// let builder = KycCertificateBuilder::new()
 	///     .with_plain_attribute("postalCode", "12345");
 	/// // Errors will be reported during build()
 	/// ```
@@ -421,10 +422,10 @@ impl CertificateBuilder {
 	/// # Examples
 	///
 	/// ```rust
-	/// use keetanetwork_anchor::certificates::CertificateBuilder;
+	/// use keetanetwork_anchor::certificates::KycCertificateBuilder;
 	/// use keetanetwork_crypto::prelude::IntoSecret;
 	///
-	/// let builder = CertificateBuilder::new()
+	/// let builder = KycCertificateBuilder::new()
 	///     .with_sensitive_attribute("email", b"john@example.com".to_vec().into_secret())
 	///     .with_sensitive_attribute("phoneNumber", b"+1-555-123-4567".to_vec().into_secret())
 	///     .with_sensitive_attribute("address", b"123 Main St, City, State".to_vec().into_secret());
@@ -446,7 +447,7 @@ impl CertificateBuilder {
 	/// # Examples
 	///
 	/// ```rust
-	/// use keetanetwork_anchor::certificates::CertificateBuilder;
+	/// use keetanetwork_anchor::certificates::KycCertificateBuilder;
 	/// use keetanetwork_x509::oids;
 	/// use keetanetwork_x509::utils::create_dn;
 	///
@@ -456,7 +457,7 @@ impl CertificateBuilder {
 	///     (oids::C, "US"),
 	/// ])?;
 	///
-	/// let builder = CertificateBuilder::new()
+	/// let builder = KycCertificateBuilder::new()
 	///     .with_subject_dn(subject_dn);
 	/// # Ok::<(), Box<dyn std::error::Error>>(())
 	/// ```
@@ -478,7 +479,7 @@ impl CertificateBuilder {
 	/// # Examples
 	///
 	/// ```rust
-	/// use keetanetwork_anchor::certificates::CertificateBuilder;
+	/// use keetanetwork_anchor::certificates::KycCertificateBuilder;
 	/// use keetanetwork_x509::oids;
 	/// use keetanetwork_x509::utils::create_dn;
 	///
@@ -488,7 +489,7 @@ impl CertificateBuilder {
 	///     (oids::C, "US"),
 	/// ])?;
 	///
-	/// let builder = CertificateBuilder::new()
+	/// let builder = KycCertificateBuilder::new()
 	///     .with_issuer_dn(issuer_dn);
 	/// # Ok::<(), Box<dyn std::error::Error>>(())
 	/// ```
@@ -510,10 +511,10 @@ impl CertificateBuilder {
 	/// # Examples
 	///
 	/// ```rust
-	/// use keetanetwork_anchor::certificates::CertificateBuilder;
+	/// use keetanetwork_anchor::certificates::KycCertificateBuilder;
 	/// use keetanetwork_x509::SerialNumber;
 	///
-	/// let builder = CertificateBuilder::new()
+	/// let builder = KycCertificateBuilder::new()
 	///     .with_serial_number(SerialNumber::from(12345u64));
 	/// ```
 	pub fn with_serial_number(mut self, serial: SerialNumber) -> Self {
@@ -534,14 +535,14 @@ impl CertificateBuilder {
 	/// # Examples
 	///
 	/// ```rust
-	/// use keetanetwork_anchor::certificates::CertificateBuilder;
+	/// use keetanetwork_anchor::certificates::KycCertificateBuilder;
 	///
 	/// // End-entity certificate valid for 1 year
-	/// let user_cert_builder = CertificateBuilder::for_end_entity()
+	/// let user_cert_builder = KycCertificateBuilder::for_end_entity()
 	///     .with_validity_days(365);
 	///
 	/// // CA certificate valid for 10 years
-	/// let ca_cert_builder = CertificateBuilder::for_ca()
+	/// let ca_cert_builder = KycCertificateBuilder::for_ca()
 	///     .with_validity_days(3650);
 	/// ```
 	pub fn with_validity_days(mut self, days: u64) -> Self {
@@ -562,13 +563,13 @@ impl CertificateBuilder {
 	///
 	/// ```rust
 	/// # use keetanetwork_anchor::doc_utils;
-	/// use keetanetwork_anchor::certificates::CertificateBuilder;
+	/// use keetanetwork_anchor::certificates::KycCertificateBuilder;
 	/// use keetanetwork_asn1::SubjectPublicKeyInfo;
 	///
 	/// # let account = doc_utils::create_secp256k1_test_account(None);
 	/// let public_key_info = SubjectPublicKeyInfo::try_from(&account)?;
 	///
-	/// let builder = CertificateBuilder::new()
+	/// let builder = KycCertificateBuilder::new()
 	///     .with_subject_public_key(public_key_info);
 	/// # Ok::<(), Box<dyn std::error::Error>>(())
 	/// ```
@@ -579,7 +580,7 @@ impl CertificateBuilder {
 
 	/// Set whether this is a CA certificate.
 	///
-	/// Marks the certificate as a Certificate Authority (CA) certificate,
+	/// Marks the certificate as a KycCertificate Authority (CA) certificate,
 	/// which can be used to issue and sign other certificates.
 	///
 	/// # Arguments
@@ -594,14 +595,14 @@ impl CertificateBuilder {
 	/// # Examples
 	///
 	/// ```rust
-	/// use keetanetwork_anchor::certificates::CertificateBuilder;
+	/// use keetanetwork_anchor::certificates::KycCertificateBuilder;
 	///
 	/// // Create a CA certificate
-	/// let ca_builder = CertificateBuilder::new()
+	/// let ca_builder = KycCertificateBuilder::new()
 	///     .with_is_ca(true);
 	///
 	/// // Create an end-entity certificate
-	/// let user_builder = CertificateBuilder::new()
+	/// let user_builder = KycCertificateBuilder::new()
 	///     .with_is_ca(false);
 	/// ```
 	pub fn with_is_ca(mut self, is_ca: bool) -> Self {
@@ -621,7 +622,7 @@ impl CertificateBuilder {
 	/// # Examples
 	///
 	/// ```rust
-	/// use keetanetwork_anchor::certificates::CertificateBuilder;
+	/// use keetanetwork_anchor::certificates::KycCertificateBuilder;
 	/// use keetanetwork_x509::certificates::ExtensionBuilder;
 	///
 	/// let custom_extension = ExtensionBuilder::new()
@@ -630,7 +631,7 @@ impl CertificateBuilder {
 	///     .with_critical(false)
 	///     .build()?;
 	///
-	/// let builder = CertificateBuilder::new()
+	/// let builder = KycCertificateBuilder::new()
 	///     .with_extension(custom_extension);
 	/// # Ok::<(), Box<dyn std::error::Error>>(())
 	/// ```
@@ -653,18 +654,18 @@ impl CertificateBuilder {
 	/// # Examples
 	///
 	/// ```rust
-	/// use keetanetwork_anchor::certificates::CertificateBuilder;
+	/// use keetanetwork_anchor::certificates::KycCertificateBuilder;
 	///
 	/// // Root CA with unlimited path length
-	/// let root_ca = CertificateBuilder::for_ca()
+	/// let root_ca = KycCertificateBuilder::for_ca()
 	///     .with_basic_constraints(true, None);
 	///
 	/// // Intermediate CA with maximum path length of 2
-	/// let intermediate_ca = CertificateBuilder::for_ca()
+	/// let intermediate_ca = KycCertificateBuilder::for_ca()
 	///     .with_basic_constraints(true, Some(2));
 	///
 	/// // End-entity certificate (not a CA)
-	/// let end_entity = CertificateBuilder::for_end_entity()
+	/// let end_entity = KycCertificateBuilder::for_end_entity()
 	///     .with_basic_constraints(false, None);
 	/// ```
 	pub fn with_basic_constraints(mut self, is_ca: bool, path_length: Option<u8>) -> Self {
@@ -689,20 +690,20 @@ impl CertificateBuilder {
 	/// - `0x04` - Key encipherment
 	/// - `0x08` - Data encipherment
 	/// - `0x10` - Key agreement
-	/// - `0x20` - Certificate signing (for CAs)
+	/// - `0x20` - KycCertificate signing (for CAs)
 	/// - `0x40` - CRL signing
 	///
 	/// # Examples
 	///
 	/// ```rust
-	/// use keetanetwork_anchor::certificates::CertificateBuilder;
+	/// use keetanetwork_anchor::certificates::KycCertificateBuilder;
 	///
 	/// // CA certificate that can sign certificates and CRLs
-	/// let ca_builder = CertificateBuilder::for_ca()
+	/// let ca_builder = KycCertificateBuilder::for_ca()
 	///     .with_key_usage(0x20 | 0x40);
 	///
 	/// // End-entity certificate for digital signatures and key encipherment
-	/// let user_builder = CertificateBuilder::for_end_entity()
+	/// let user_builder = KycCertificateBuilder::for_end_entity()
 	///     .with_key_usage(0x01 | 0x04);
 	/// ```
 	pub fn with_key_usage(mut self, key_usage_bits: u16) -> Self {
@@ -734,13 +735,13 @@ impl CertificateBuilder {
 	///
 	/// # Examples
 	///
-	/// ## Self-Signed Certificate
+	/// ## Self-Signed KycCertificate
 	///
 	/// ```rust
 	/// # use keetanetwork_anchor::doc_utils;
 	/// # use keetanetwork_x509::utils::create_dn;
 	/// # use keetanetwork_asn1::SubjectPublicKeyInfo;
-	/// use keetanetwork_anchor::certificates::CertificateBuilder;
+	/// use keetanetwork_anchor::certificates::KycCertificateBuilder;
 	/// use keetanetwork_crypto::prelude::IntoSecret;
 	/// use keetanetwork_x509::SerialNumber;
 	/// use keetanetwork_x509::oids;
@@ -749,7 +750,7 @@ impl CertificateBuilder {
 	/// # let dn = create_dn(&[(oids::CN, "Test User")])?;
 	/// # let public_key_info = SubjectPublicKeyInfo::try_from(&account)?;
 	///
-	/// let certificate = CertificateBuilder::for_ca()
+	/// let certificate = KycCertificateBuilder::for_ca()
 	///     .with_subject_dn(dn.clone())
 	///     .with_issuer_dn(dn) // Same as subject for self-signed
 	///     .with_serial_number(SerialNumber::from(1u64))
@@ -761,14 +762,14 @@ impl CertificateBuilder {
 	/// # Ok::<(), Box<dyn std::error::Error>>(())
 	/// ```
 	///
-	/// ## CA-Signed Certificate
+	/// ## CA-Signed KycCertificate
 	///
 	/// ```rust
 	/// # use keetanetwork_anchor::doc_utils;
 	/// # use keetanetwork_x509::utils::create_dn;
 	/// # use keetanetwork_x509::oids;
 	/// # use keetanetwork_asn1::SubjectPublicKeyInfo;
-	/// use keetanetwork_anchor::certificates::CertificateBuilder;
+	/// use keetanetwork_anchor::certificates::KycCertificateBuilder;
 	/// use keetanetwork_crypto::prelude::IntoSecret;
 	/// use keetanetwork_x509::SerialNumber;
 	///
@@ -778,7 +779,7 @@ impl CertificateBuilder {
 	/// # let ca_dn = create_dn(&[(oids::CN, "Example CA")])?;
 	/// # let subject_public_key_info = SubjectPublicKeyInfo::try_from(&subject_account)?;
 	///
-	/// let certificate = CertificateBuilder::for_end_entity()
+	/// let certificate = KycCertificateBuilder::for_end_entity()
 	///     .with_subject_dn(subject_dn)
 	///     .with_issuer_dn(ca_dn) // Different issuer
 	///     .with_serial_number(SerialNumber::from(12345u64))
@@ -789,7 +790,11 @@ impl CertificateBuilder {
 	/// assert!(certificate.is_ok());
 	/// # Ok::<(), Box<dyn std::error::Error>>(())
 	/// ```
-	pub fn build<T, S>(mut self, subject_keypair: &T, signing_keypair: &T) -> Result<Certificate, CertificateError>
+	pub fn build<T, S>(
+		mut self,
+		subject_keypair: &T,
+		signing_keypair: &T,
+	) -> Result<KycCertificate, KycCertificateError>
 	where
 		Account<T>: TryFrom<Accountable<T>, Error = AccountError>,
 		T: KeyPair + CryptoSignerWithOptions<S> + 'static,
@@ -808,7 +813,7 @@ impl CertificateBuilder {
 
 		// Build the underlying X.509 certificate
 		let x509_cert = self.inner.build(signing_keypair)?;
-		Ok(Certificate::new(x509_cert))
+		Ok(KycCertificate::new(x509_cert))
 	}
 
 	/// Build the KYC attributes extension.
@@ -825,19 +830,25 @@ impl CertificateBuilder {
 	///
 	/// - `Ok(_)` - X.509 extension containing the KYC attributes
 	/// - `Err(_)` - If extension creation fails
-	fn build_kyc_extension<T: KeyPair>(&self, subject_keypair: &T) -> Result<Extension, CertificateError>
+	fn build_kyc_extension<T: KeyPair>(&self, subject_keypair: &T) -> Result<Extension, KycCertificateError>
 	where
 		Account<T>: TryFrom<Accountable<T>, Error = AccountError>,
 	{
-		let mut kyc_attributes = KYCAttributes::new();
+		let mut kyc_attributes = KycAttributes::new();
 		for (name, entry) in &self.kyc_attributes {
 			let oid = entry.to_oid(name)?;
+			let oid_string = oid.to_string();
 			let attribute_builder = AttributeBuilder::new().with_oid(oid);
 			let attribute_builder = match entry {
-				KycAttributeEntry::PlainText(value) => attribute_builder.with_value(value).as_plain(),
-				KycAttributeEntry::Sensitive(_) => {
-					let sensitive_attribute_builder = SensitiveAttributeBuilder::from(entry);
-					let sensitive_value = sensitive_attribute_builder.build(subject_keypair)?;
+				KycAttributeEntry::PlainText(value) => {
+					let encoded = encode_value(&oid_string, value)?;
+					attribute_builder.with_value(encoded).as_plain()
+				}
+				KycAttributeEntry::Sensitive(secret) => {
+					let encoded = encode_value(&oid_string, secret.expose_secret())?;
+					let sensitive_value = SensitiveAttributeBuilder::new()
+						.with_value(encoded)
+						.build(subject_keypair)?;
 
 					attribute_builder
 						.with_value(sensitive_value.to_der()?)
@@ -880,10 +891,10 @@ mod tests {
 	#[test]
 	fn test_certificate_builder_creation() {
 		let builders = [
-			CertificateBuilder::new(),
-			CertificateBuilder::for_end_entity(),
-			CertificateBuilder::for_ca(),
-			CertificateBuilder::default(),
+			KycCertificateBuilder::new(),
+			KycCertificateBuilder::for_end_entity(),
+			KycCertificateBuilder::for_ca(),
+			KycCertificateBuilder::default(),
 		];
 
 		for builder in builders {
@@ -893,7 +904,7 @@ mod tests {
 
 	#[test]
 	fn test_kyc_attribute_setting() {
-		let mut builder = CertificateBuilder::new();
+		let mut builder = KycCertificateBuilder::new();
 		for (name, value, sensitive) in TEST_ATTRIBUTES {
 			builder = if *sensitive {
 				builder.with_sensitive_attribute(name, value.as_bytes().to_vec().into_secret())
@@ -925,7 +936,7 @@ mod tests {
 
 		// Create a test extension using ExtensionBuilder
 		let test_extension = ExtensionBuilder::for_key_usage(0x01);
-		let builder = CertificateBuilder::new()
+		let builder = KycCertificateBuilder::new()
 			.with_subject_dn(subject_dn.clone())
 			.with_issuer_dn(issuer_dn.clone())
 			.with_serial_number(serial)
@@ -946,7 +957,7 @@ mod tests {
 			let builder = create_test_certificate_builder(&account).with_plain_attribute(name, "value");
 			let result = builder.build(&account.keypair, &account.keypair);
 			assert!(result.is_err());
-			assert!(matches!(result.unwrap_err(), CertificateError::SensitiveAttributeError { .. }));
+			assert!(matches!(result.unwrap_err(), KycCertificateError::SensitiveAttributeError { .. }));
 		}
 	}
 

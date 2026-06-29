@@ -13,7 +13,7 @@ crate-type = ["cdylib", "rlib"]
 
 [features]
 # Exactly one of `p1`/`p2` MUST be enabled for a wasi build.
-p1 = []
+p1 = ["dep:keetanetwork-client-wasi", "keetanetwork-client-wasi/p1"]
 # `p2`: wasm32-wasip2 component (wit-bindgen) networked over wasi:http.
 p2 = ["dep:wstd", "dep:wit-bindgen"]
 
@@ -27,12 +27,35 @@ keetanetwork-account = { workspace = true, default-features = false, features = 
 ] }
 hex = { workspace = true, features = ["alloc"] }
 
-# On a wasi target the P2 component adds the networked transport and resilience.
+# On a wasi target the networked KYC surface adds the transport and resilience.
+# P1 reaches HTTP through host imports; P2 reaches it through `wasi:http`.
 [target.'cfg(target_os = "wasi")'.dependencies]
 keetanetwork-anchor-client = { path = "../keetanetwork-anchor-client", default-features = false, features = [
 	"kyc",
 	"wasi",
 	"resilience",
 ] }
+
+keetanetwork-anchor = { path = "../keetanetwork-anchor", default-features = false, features = [
+	"alloc",
+	"x509",
+	"chrono",
+	"serde",
+] }
+keetanetwork-bindings = { workspace = true }
+keetanetwork-x509 = { workspace = true, default-features = false, features = [
+	"rasn",
+	"alloc",
+] }
+keetanetwork-crypto = { workspace = true, default-features = false, features = [
+	"signature",
+	"encryption",
+] }
+chrono = { workspace = true, default-features = false, features = ["alloc"] }
+async-trait = { workspace = true }
+serde = { workspace = true, features = ["alloc"] }
+serde_json = { workspace = true, features = ["alloc"] }
+base64 = { workspace = true, features = ["alloc"] }
 wstd = { workspace = true, optional = true }
 wit-bindgen = { workspace = true, optional = true }
+keetanetwork-client-wasi = { workspace = true, optional = true }

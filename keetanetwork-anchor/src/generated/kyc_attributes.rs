@@ -27,4 +27,4 @@ impl Attribute {
 }
 #[derive(AsnType, Debug, Clone, Decode, Encode, PartialEq, Eq, Hash)]
 #[rasn(delegate)]
-pub struct KYCAttributes(pub SequenceOf<Attribute>);
+pub struct KycAttributes(pub SequenceOf<Attribute>);

@@ -2,7 +2,7 @@
 
 use alloc::sync::Arc;
 
-use keetanetwork_account::{Account, KeyPair};
+use keetanetwork_account::GenericAccount;
 
 use super::caller::AnchorCaller;
 use crate::resolver::Resolver;
@@ -12,23 +12,16 @@ use crate::transport::AnchorHttpTransport;
 /// signed request execution.
 ///
 /// A per-service client (e.g. [`KycClient`](crate::services::kyc::KycClient))
-/// holds one context and delegates discovery and execution to it, so the
-/// service client itself carries no transport or signing logic.
-pub struct AnchorContext<K>
-where
-	K: KeyPair,
-{
+/// holds one context and delegates discovery and execution to it.
+pub struct AnchorContext {
 	resolver: Resolver,
-	caller: AnchorCaller<K>,
+	caller: AnchorCaller,
 }
 
-impl<K> AnchorContext<K>
-where
-	K: KeyPair,
-{
+impl AnchorContext {
 	/// A context resolving through `resolver` and signing requests with
 	/// `signer` over `transport`.
-	pub fn new(resolver: Resolver, transport: Arc<dyn AnchorHttpTransport>, signer: Account<K>) -> Self {
+	pub fn new(resolver: Resolver, transport: Arc<dyn AnchorHttpTransport>, signer: Arc<GenericAccount>) -> Self {
 		let caller = AnchorCaller::new(transport, signer);
 		Self { resolver, caller }
 	}
@@ -39,7 +32,7 @@ where
 	}
 
 	/// The caller used to execute signed requests.
-	pub fn caller(&self) -> &AnchorCaller<K> {
+	pub fn caller(&self) -> &AnchorCaller {
 		&self.caller
 	}
 }

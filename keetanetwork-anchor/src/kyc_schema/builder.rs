@@ -7,7 +7,7 @@
 //!
 //! The module provides two main builders:
 //! - [`AttributeBuilder`] - For creating individual KYC attributes
-//! - [`KYCAttributesBuilder`] - For creating collections of KYC attributes
+//! - [`KycAttributesBuilder`] - For creating collections of KYC attributes
 //!
 //! # Basic Usage
 //!
@@ -15,7 +15,7 @@
 //! use keetanetwork_anchor::iso20022::{ContactDetails, PhoneNumber};
 //! use keetanetwork_anchor::kyc_schema::builder::{
 //!     AttributeBuilder,
-//!     KYCAttributesBuilder,
+//!     KycAttributesBuilder,
 //!     AttributeBuilderExtensions
 //! };
 //!
@@ -29,7 +29,7 @@
 //! );
 //!
 //! // Create a collection of attributes
-//! let kyc_attributes = KYCAttributesBuilder::new()
+//! let kyc_attributes = KycAttributesBuilder::new()
 //!     .with_attribute(attribute_name)
 //!     .with_attribute(attribute_email)
 //!     .with_attribute(attribute_contact.try_into()?)
@@ -48,7 +48,7 @@ use rasn::types::OctetString;
 
 use super::error::KycSchemaError;
 use crate::asn1::utils::parse_oid_string;
-use crate::generated::{Attribute, AttributeValue, KYCAttributes};
+use crate::generated::{Attribute, AttributeValue, KycAttributes};
 
 pub trait AttributeBuilderLike: Default {
 	/// Create a new attribute builder
@@ -262,10 +262,10 @@ impl AttributeBuilderLike for AttributeBuilder {
 /// # Examples
 ///
 /// ```rust
-/// use keetanetwork_anchor::kyc_schema::builder::KYCAttributesBuilder;
+/// use keetanetwork_anchor::kyc_schema::builder::KycAttributesBuilder;
 /// use keetanetwork_anchor::asn1::oids;
 ///
-/// let kyc_attributes = KYCAttributesBuilder::new()
+/// let kyc_attributes = KycAttributesBuilder::new()
 ///     .with_sensitive(oids::keeta::FULL_NAME, b"John Doe")
 ///     .with_sensitive(oids::keeta::EMAIL, b"john@example.com")
 ///     .with_sensitive(oids::keeta::PHONE_NUMBER, b"+1234567890")
@@ -275,12 +275,12 @@ impl AttributeBuilderLike for AttributeBuilder {
 /// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 #[derive(Debug, Default, Clone)]
-pub struct KYCAttributesBuilder {
+pub struct KycAttributesBuilder {
 	attributes: Vec<Attribute>,
 	errors: Vec<KycSchemaError>,
 }
 
-impl KYCAttributesBuilder {
+impl KycAttributesBuilder {
 	/// Create a new KYC attributes builder.
 	pub fn new() -> Self {
 		Self::default()
@@ -302,7 +302,7 @@ impl KYCAttributesBuilder {
 	/// use keetanetwork_anchor::kyc_schema::builder::{
 	///     AttributeBuilder,
 	///     AttributeBuilderExtensions,
-	///     KYCAttributesBuilder,
+	///     KycAttributesBuilder,
 	/// };
 	/// use keetanetwork_anchor::iso20022::{
 	///     DateAndPlaceOfBirth,
@@ -326,7 +326,7 @@ impl KYCAttributesBuilder {
 	///
 	/// #[cfg(feature = "chrono")]
 	/// let attribute_birth = Attribute::try_from(birth_info)?;
-	/// let mut kyc_attributes_builder = KYCAttributesBuilder::new()
+	/// let mut kyc_attributes_builder = KycAttributesBuilder::new()
 	///     .with_attribute(attribute_name)
 	///     .with_attribute(attribute_email);
 	///
@@ -362,10 +362,10 @@ impl KYCAttributesBuilder {
 	/// # Examples
 	///
 	/// ```rust
-	/// use keetanetwork_anchor::kyc_schema::builder::KYCAttributesBuilder;
+	/// use keetanetwork_anchor::kyc_schema::builder::KycAttributesBuilder;
 	/// use keetanetwork_anchor::asn1::oids;
 	///
-	/// let kyc_attributes = KYCAttributesBuilder::new()
+	/// let kyc_attributes = KycAttributesBuilder::new()
 	///     .with_plain(oids::ADDRESS_POSTAL_CODE, b"12345")
 	///     .build();
 	/// assert!(kyc_attributes.is_ok());
@@ -404,10 +404,10 @@ impl KYCAttributesBuilder {
 	/// # Examples
 	///
 	/// ```rust
-	/// use keetanetwork_anchor::kyc_schema::builder::KYCAttributesBuilder;
+	/// use keetanetwork_anchor::kyc_schema::builder::KycAttributesBuilder;
 	/// use keetanetwork_anchor::asn1::oids;
 	///
-	/// let kyc_attributes = KYCAttributesBuilder::new()
+	/// let kyc_attributes = KycAttributesBuilder::new()
 	///     .with_sensitive(oids::keeta::EMAIL, b"john@example.com")
 	///     .build();
 	/// assert!(kyc_attributes.is_ok());
@@ -434,22 +434,22 @@ impl KYCAttributesBuilder {
 
 	/// Build the KYC attributes collection
 	///
-	/// Validates all collected attributes and constructs the final [`KYCAttributes`]
+	/// Validates all collected attributes and constructs the final [`KycAttributes`]
 	/// collection. If any errors were collected during the building process,
 	/// returns the first error encountered.
 	///
 	/// # Returns
 	///
-	/// - `Ok(_)` - Successfully constructed [`KYCAttributes`] collection
+	/// - `Ok(_)` - Successfully constructed [`KycAttributes`] collection
 	/// - `Err(_)` - If any validation errors occurred during building
 	///
 	/// # Examples
 	///
 	/// ```rust
-	/// use keetanetwork_anchor::kyc_schema::builder::KYCAttributesBuilder;
+	/// use keetanetwork_anchor::kyc_schema::builder::KycAttributesBuilder;
 	/// use keetanetwork_anchor::asn1::oids;
 	///
-	/// let kyc_attributes = KYCAttributesBuilder::new()
+	/// let kyc_attributes = KycAttributesBuilder::new()
 	///     .with_plain(oids::keeta::FULL_NAME, b"John Doe")
 	///     .with_sensitive(oids::keeta::EMAIL, b"john@example.com")
 	///     .build()?;
@@ -457,12 +457,12 @@ impl KYCAttributesBuilder {
 	/// assert_eq!(kyc_attributes.count(), 2);
 	/// # Ok::<(), Box<dyn std::error::Error>>(())
 	/// ```
-	pub fn build(self) -> Result<KYCAttributes, KycSchemaError> {
+	pub fn build(self) -> Result<KycAttributes, KycSchemaError> {
 		// Return the first error if any were collected
 		if let Some(error) = self.errors.into_iter().next() {
 			Err(error)
 		} else {
-			Ok(KYCAttributes::from_iter(self.attributes))
+			Ok(KycAttributes::from_iter(self.attributes))
 		}
 	}
 }
@@ -501,8 +501,8 @@ mod tests {
 		.unwrap()
 	}
 
-	/// Helper function to add test data to `KYCAttributesBuilder``.
-	fn add_test_data_to_builder(builder: KYCAttributesBuilder, test_data: &TestData) -> KYCAttributesBuilder {
+	/// Helper function to add test data to `KycAttributesBuilder``.
+	fn add_test_data_to_builder(builder: KycAttributesBuilder, test_data: &TestData) -> KycAttributesBuilder {
 		if test_data.is_sensitive {
 			builder.with_sensitive(test_data.oid.clone(), test_data.value)
 		} else {
@@ -539,7 +539,7 @@ mod tests {
 
 	#[test]
 	fn test_kyc_attributes_builder() {
-		let mut builder = KYCAttributesBuilder::new();
+		let mut builder = KycAttributesBuilder::new();
 		for test_case in &TEST_DATA[0..2] {
 			builder = add_test_data_to_builder(builder, test_case);
 		}
@@ -558,7 +558,7 @@ mod tests {
 	#[test]
 	fn test_builder_with_manual_attributes() {
 		let attrs: Vec<Attribute> = TEST_DATA[2..4].iter().map(build_test_attribute).collect();
-		let mut builder = KYCAttributesBuilder::new();
+		let mut builder = KycAttributesBuilder::new();
 		for attr in attrs {
 			builder = builder.with_attribute(attr);
 		}
@@ -576,7 +576,7 @@ mod tests {
 	#[test]
 	fn test_builder_error_collection() {
 		// Test that errors are collected and reported on build
-		let result = KYCAttributesBuilder::new()
+		let result = KycAttributesBuilder::new()
 			.with_plain("invalid.oid", b"test")
 			.with_sensitive("1.2.3.4", b"valid")
 			.build();
