@@ -25,7 +25,7 @@ const NO_CONTENT: u16 = 204;
 pub(crate) enum MetadataLocation {
 	/// On-chain metadata for `account`, read via the node API.
 	KeetaNet {
-		/// The `keeta_…` account whose `info.metadata` holds the document.
+		/// The `keeta_...` account whose `info.metadata` holds the document.
 		account: String,
 	},
 

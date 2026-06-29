@@ -34,6 +34,24 @@ pub struct Verification {
 	/// The web URL where the user completes the verification flow.
 	#[serde(rename = "webURL")]
 	pub web_url: String,
+
+	/// The cost the provider expects to charge for the verification.
+	#[serde(rename = "expectedCost")]
+	pub expected_cost: ExpectedCost,
+}
+
+/// The cost a provider expects to charge for a verification: a `token` and the
+/// `min`/`max` bounds of the charge, both decimal strings in that token's units.
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+pub struct ExpectedCost {
+	/// The minimum expected charge, a decimal string in `token` units.
+	pub min: String,
+
+	/// The maximum expected charge, a decimal string in `token` units.
+	pub max: String,
+
+	/// The token the charge is denominated in (its public key string).
+	pub token: String,
 }
 
 /// A verification's current status.
@@ -46,8 +64,12 @@ pub struct VerificationStatus {
 /// A single issued certificate.
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
 pub struct Certificate {
-	/// The PEM-encoded certificate.
+	/// The PEM-encoded leaf certificate.
 	pub certificate: String,
+
+	/// PEM-encoded intermediate certificates bridging the leaf to a trust root.
+	#[serde(default)]
+	pub intermediates: Vec<String>,
 }
 
 /// The certificates issued for a verification.
@@ -62,7 +84,6 @@ pub use client::KycClient;
 mod client {
 	use alloc::vec::Vec;
 
-	use keetanetwork_account::KeyPair;
 	use serde_json::{Map, Value};
 
 	use super::{Certificates, KycQuery, Verification, VerificationStatus};
@@ -75,19 +96,13 @@ mod client {
 	/// Each method discovers no transport or signing details of its own: the
 	/// context's resolver finds providers and its caller signs and sends each
 	/// operation.
-	pub struct KycClient<K>
-	where
-		K: KeyPair,
-	{
-		context: AnchorContext<K>,
+	pub struct KycClient {
+		context: AnchorContext,
 	}
 
-	impl<K> KycClient<K>
-	where
-		K: KeyPair,
-	{
+	impl KycClient {
 		/// A client discovering and signing through `context`.
-		pub fn new(context: AnchorContext<K>) -> Self {
+		pub fn new(context: AnchorContext) -> Self {
 			Self { context }
 		}
 

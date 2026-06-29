@@ -12,7 +12,7 @@ use keetanetwork_x509::utils::create_dn;
 use keetanetwork_x509::{certificates::Certificate as X509Certificate, SerialNumber};
 
 use crate::{
-	certificates::CertificateBuilder,
+	certificates::KycCertificateBuilder,
 	sensitive_attributes::{SensitiveAttribute, SensitiveAttributeBuilder},
 };
 
@@ -61,7 +61,7 @@ pub fn create_network_test_account(network_id: Option<u64>) -> Account<KeyNETWOR
 }
 
 /// Create a test certificate builder with standard configuration.
-pub fn create_test_certificate_builder<T>(account: &Account<T>) -> CertificateBuilder
+pub fn create_test_certificate_builder<T>(account: &Account<T>) -> KycCertificateBuilder
 where
 	T: KeyPair,
 {
@@ -71,7 +71,7 @@ where
 		create_dn(&[(keetanetwork_x509::oids::CN, "Test Issuer")]).expect("Failed to create test issuer DN");
 	let public_key_info = SubjectPublicKeyInfo::try_from(account).expect("Failed to create SubjectPublicKeyInfo");
 
-	CertificateBuilder::for_end_entity()
+	KycCertificateBuilder::for_end_entity()
 		.with_subject_dn(subject_dn.clone())
 		.with_issuer_dn(issuer_dn)
 		.with_serial_number(SerialNumber::from(12345u64))

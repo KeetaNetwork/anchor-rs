@@ -9,7 +9,7 @@ use crate::sensitive_attributes::error::SensitiveAttributeError;
 /// Error type for certificate operations
 #[derive(Debug, Clone, PartialEq, Snafu)]
 #[snafu(visibility(pub))]
-pub enum CertificateError {
+pub enum KycCertificateError {
 	#[snafu(display("Sensitive attribute error: {}", source))]
 	SensitiveAttributeError { source: SensitiveAttributeError },
 
@@ -32,7 +32,7 @@ pub enum CertificateError {
 	MissingRequiredField { field: String },
 }
 
-crate::impl_source_error_from!(CertificateError, {
+crate::impl_source_error_from!(KycCertificateError, {
 	SensitiveAttributeError => SensitiveAttributeError,
 	keetanetwork_x509::error::CertificateError => X509Error,
 	AnchorAsn1Error => Asn1Error,
@@ -48,17 +48,17 @@ mod tests {
 
 	test_error_from_conversions!(
 		test_from_conversions,
-		CertificateError,
+		KycCertificateError,
 		[SensitiveAttributeError::InvalidVersion, AnchorAsn1Error::InvalidOid { reason: "test".to_string() },]
 	);
 	test_error_variants!(
 		test_error_variants,
 		[
-			CertificateError::SensitiveAttributeError { source: SensitiveAttributeError::MissingValue },
-			CertificateError::Asn1Error { source: AnchorAsn1Error::InvalidOid { reason: "test".to_string() } },
-			CertificateError::AttributeNotFound { name: "test".to_string() },
-			CertificateError::InvalidAttributeValue { name: "test".to_string(), reason: "test".to_string() },
-			CertificateError::MissingRequiredField { field: "test".to_string() },
+			KycCertificateError::SensitiveAttributeError { source: SensitiveAttributeError::MissingValue },
+			KycCertificateError::Asn1Error { source: AnchorAsn1Error::InvalidOid { reason: "test".to_string() } },
+			KycCertificateError::AttributeNotFound { name: "test".to_string() },
+			KycCertificateError::InvalidAttributeValue { name: "test".to_string(), reason: "test".to_string() },
+			KycCertificateError::MissingRequiredField { field: "test".to_string() },
 		]
 	);
 }

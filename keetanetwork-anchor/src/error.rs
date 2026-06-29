@@ -1,7 +1,7 @@
 use snafu::Snafu;
 
 use crate::asn1::error::AnchorAsn1Error;
-use crate::certificates::error::CertificateError;
+use crate::certificates::error::KycCertificateError;
 use crate::impl_source_error_from;
 use crate::sensitive_attributes::error::SensitiveAttributeError;
 
@@ -13,7 +13,7 @@ pub enum AnchorError {
 	Asn1Error { source: AnchorAsn1Error },
 
 	#[snafu(display("Certificate error: {}", source))]
-	CertificateError { source: CertificateError },
+	KycCertificateError { source: KycCertificateError },
 
 	#[snafu(display("Sensitive attribute error: {}", source))]
 	SensitiveAttributeError { source: SensitiveAttributeError },
@@ -21,7 +21,7 @@ pub enum AnchorError {
 
 impl_source_error_from!(AnchorError, {
 	AnchorAsn1Error => Asn1Error,
-	CertificateError => CertificateError,
+	KycCertificateError => KycCertificateError,
 	SensitiveAttributeError => SensitiveAttributeError,
 });
 
@@ -35,7 +35,7 @@ mod tests {
 		AnchorError,
 		[
 			AnchorAsn1Error::InvalidOid { reason: "test.oid".to_string() },
-			CertificateError::SensitiveAttributeError { source: SensitiveAttributeError::InvalidVersion },
+			KycCertificateError::SensitiveAttributeError { source: SensitiveAttributeError::InvalidVersion },
 			SensitiveAttributeError::InvalidVersion,
 		]
 	);
@@ -44,8 +44,8 @@ mod tests {
 		test_error_variants,
 		[
 			AnchorError::Asn1Error { source: AnchorAsn1Error::InvalidOid { reason: "test.oid".to_string() } },
-			AnchorError::CertificateError {
-				source: CertificateError::SensitiveAttributeError { source: SensitiveAttributeError::InvalidVersion }
+			AnchorError::KycCertificateError {
+				source: KycCertificateError::SensitiveAttributeError { source: SensitiveAttributeError::InvalidVersion }
 			},
 			AnchorError::SensitiveAttributeError { source: SensitiveAttributeError::MissingValue },
 		]

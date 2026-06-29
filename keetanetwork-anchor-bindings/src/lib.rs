@@ -9,5 +9,6 @@
 extern crate alloc;
 
 pub mod account;
+pub mod certificate;
 pub mod error;
 pub mod parse;

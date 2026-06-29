@@ -20,7 +20,7 @@ pub enum RetryAfter {
 	/// A relative delay, in seconds (`Retry-After: 120`).
 	Seconds(u64),
 
-	/// An absolute HTTP-date (`Retry-After: Wed, 21 Oct 2025 …`).
+	/// An absolute HTTP-date (`Retry-After: Wed, 21 Oct 2025 ...`).
 	HttpDate(String),
 }
 

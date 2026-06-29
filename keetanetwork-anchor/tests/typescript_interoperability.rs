@@ -8,7 +8,7 @@ mod common;
 use core::str::FromStr;
 
 use keetanetwork_account::KeyECDSASECP256K1;
-use keetanetwork_anchor::certificates::Certificate;
+use keetanetwork_anchor::certificates::KycCertificate;
 use keetanetwork_anchor::testing::create_account_from_seed_hex;
 use keetanetwork_x509::certificates::Certificate as X509Certificate;
 
@@ -43,21 +43,21 @@ const TEST_CASES: &[InteropTestCase] = &[
 	},
 ];
 
-/// Parse a certificate from PEM fixture and wrap it in our Certificate type
-fn parse_certificate_from_fixture(fixture_name: &str) -> Certificate {
+/// Parse a certificate from PEM fixture and wrap it in our KycCertificate type
+fn parse_certificate_from_fixture(fixture_name: &str) -> KycCertificate {
 	let pem_content = load_pem_fixture(fixture_name);
 	let x509_cert = X509Certificate::from_str(&pem_content).expect("Failed to parse PEM certificate");
-	Certificate::new(x509_cert)
+	KycCertificate::new(x509_cert)
 }
 
 #[test]
 fn test_typescript_certificate_parsing() {
 	for test_case in TEST_CASES {
 		let certificate = parse_certificate_from_fixture(test_case.pem_fixture);
-		assert!(certificate.has_kyc_attributes(), "{}: Certificate should have KYC attributes", test_case.name);
+		assert!(certificate.has_kyc_attributes(), "{}: KycCertificate should have KYC attributes", test_case.name);
 		assert!(
 			certificate.kyc_attribute_count() >= test_case.expected_attributes.len(),
-			"{}: Certificate should have at least {} KYC attributes, found {}",
+			"{}: KycCertificate should have at least {} KYC attributes, found {}",
 			test_case.name,
 			test_case.expected_attributes.len(),
 			certificate.kyc_attribute_count()
@@ -134,7 +134,7 @@ fn test_typescript_certificate_subject_contains_keeta() {
 		let subject = x509.tbs_certificate.subject.to_string();
 		assert!(
 			subject.to_lowercase().contains("keeta_"),
-			"{}: Certificate subject should contain 'keeta_', got: {}",
+			"{}: KycCertificate subject should contain 'keeta_', got: {}",
 			test_case.name,
 			subject
 		);

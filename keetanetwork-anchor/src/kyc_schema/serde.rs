@@ -8,9 +8,9 @@ use serde::ser::SerializeStruct;
 use serde::{Deserialize, Serialize};
 
 use crate::asn1::utils::parse_oid_string;
-use crate::generated::{Attribute, AttributeValue, KYCAttributes};
+use crate::generated::{Attribute, AttributeValue, KycAttributes};
 
-impl Serialize for KYCAttributes {
+impl Serialize for KycAttributes {
 	fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
 	where
 		S: serde::Serializer,
@@ -19,7 +19,7 @@ impl Serialize for KYCAttributes {
 	}
 }
 
-impl<'de> Deserialize<'de> for KYCAttributes {
+impl<'de> Deserialize<'de> for KycAttributes {
 	fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
 	where
 		D: serde::Deserializer<'de>,
@@ -89,7 +89,7 @@ mod tests {
 	use super::*;
 	use crate::asn1::oids;
 	use crate::kyc_schema::builder::AttributeBuilderLike;
-	use crate::kyc_schema::{AttributeBuilder, KYCAttributes};
+	use crate::kyc_schema::{AttributeBuilder, KycAttributes};
 
 	struct TestAttribute {
 		oid: rasn::types::ObjectIdentifier,
@@ -120,7 +120,7 @@ mod tests {
 
 	#[test]
 	fn test_json_serialization() {
-		let mut attributes = KYCAttributes::new();
+		let mut attributes = KycAttributes::new();
 
 		// Add test attributes
 		for test_attr in &TEST_ATTRIBUTES {
@@ -133,7 +133,7 @@ mod tests {
 		assert!(!json.is_empty());
 
 		// Deserialize from JSON
-		let deserialized: KYCAttributes = serde_json::from_str(&json).unwrap();
+		let deserialized: KycAttributes = serde_json::from_str(&json).unwrap();
 		assert_eq!(deserialized.count(), TEST_ATTRIBUTES.len());
 
 		// Verify all attributes match

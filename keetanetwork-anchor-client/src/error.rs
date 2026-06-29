@@ -176,6 +176,23 @@ pub enum AnchorClientError {
 	},
 }
 
+impl AnchorClientError {
+	/// The stable, programmatic code identifying this failure, shared by every
+	/// FFI boundary so a single mapping survives the addition of variants.
+	pub fn code(&self) -> &'static str {
+		match self {
+			Self::Transport { .. } => "TRANSPORT",
+			Self::Resolver { .. } => "RESOLVER",
+			Self::Url { .. } => "INVALID_URL",
+			Self::Signing { .. } => "SIGNING",
+			Self::Request { .. } => "REQUEST",
+			Self::Body { .. } => "INVALID_BODY",
+			Self::Service { .. } => "SERVICE",
+			Self::UnsupportedOperation { .. } => "UNSUPPORTED_OPERATION",
+		}
+	}
+}
+
 #[cfg(feature = "codec")]
 impl From<serde_json::Error> for AnchorClientError {
 	fn from(error: serde_json::Error) -> Self {

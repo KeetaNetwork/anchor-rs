@@ -9,7 +9,7 @@ use std::error::Error;
 use std::sync::Arc;
 
 use common::account_from_seed;
-use keetanetwork_account::KeyECDSASECP256K1;
+use keetanetwork_account::GenericAccount;
 use keetanetwork_anchor_client::{AnchorContext, AnchorOutcome, CountryCode, KycClient, ReqwestTransport, Resolver};
 use support::{HarnessError, KycHarness};
 
@@ -18,10 +18,10 @@ type TestResult = Result<(), Box<dyn Error>>;
 /// A KYC client whose resolver reads the `root` account's on-chain metadata
 /// through the node API at `api`, and whose caller signs with a deterministic
 /// account over the live reqwest transport.
-fn client_for(api: &str, root: &str) -> Result<KycClient<KeyECDSASECP256K1>, Box<dyn Error>> {
+fn client_for(api: &str, root: &str) -> Result<KycClient, Box<dyn Error>> {
 	let transport = Arc::new(ReqwestTransport::try_default()?);
 	let resolver = Resolver::new(transport.clone(), api, [root.to_string()]);
-	let signer = account_from_seed(0x11);
+	let signer = Arc::new(GenericAccount::EcdsaSecp256k1(account_from_seed(0x11)));
 	let context = AnchorContext::new(resolver, transport, signer);
 
 	Ok(KycClient::new(context))
@@ -48,6 +48,10 @@ async fn kyc_client_runs_the_full_verification_path() -> TestResult {
 		.ok_or(HarnessError::MissingField { field: "verification" })?;
 	assert!(!verification.id.is_empty(), "the anchor must assign a verification id");
 	assert!(!verification.web_url.is_empty(), "verification must carry a web URL");
+	assert!(
+		!verification.expected_cost.token.is_empty(),
+		"verification must carry an expected-cost token"
+	);
 
 	let status = client
 		.get_verification_status(&provider, &verification.id)

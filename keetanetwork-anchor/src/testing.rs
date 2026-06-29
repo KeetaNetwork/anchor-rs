@@ -8,9 +8,9 @@ use keetanetwork_asn1::SubjectPublicKeyInfo;
 use keetanetwork_crypto::prelude::IntoSecret;
 use keetanetwork_x509::SerialNumber;
 
-use crate::certificates::CertificateBuilder;
+use crate::certificates::KycCertificateBuilder;
 use crate::kyc_schema::builder::AttributeBuilderLike;
-use crate::kyc_schema::{Attribute, AttributeBuilder, KYCAttributes, KYCAttributesBuilder};
+use crate::kyc_schema::{Attribute, AttributeBuilder, KycAttributes, KycAttributesBuilder};
 use crate::sensitive_attributes::{SensitiveAttribute, SensitiveAttributeBuilder, SensitiveAttributeProof};
 
 /// Test data from TypeScript test
@@ -102,12 +102,12 @@ pub fn create_test_sensitive_attribute<T: KeyPair>(account: &Account<T>, test_va
 	builder.build(&account.keypair).unwrap()
 }
 
-/// Helper function to create a CertificateBuilder with default test data.
-pub fn create_test_certificate_builder<T: KeyPair>(account: &Account<T>) -> CertificateBuilder {
+/// Helper function to create a KycCertificateBuilder with default test data.
+pub fn create_test_certificate_builder<T: KeyPair>(account: &Account<T>) -> KycCertificateBuilder {
 	let subject_dn = keetanetwork_x509::utils::create_dn(&[(keetanetwork_x509::oids::CN, "Test Subject")]).unwrap();
 	let subject_public_key_info = SubjectPublicKeyInfo::try_from(account).unwrap();
 
-	CertificateBuilder::for_end_entity()
+	KycCertificateBuilder::for_end_entity()
 		.with_subject_dn(subject_dn.clone())
 		.with_issuer_dn(subject_dn)
 		.with_serial_number(SerialNumber::from(12345u64))
@@ -115,9 +115,9 @@ pub fn create_test_certificate_builder<T: KeyPair>(account: &Account<T>) -> Cert
 		.with_subject_public_key(subject_public_key_info)
 }
 
-/// Helper to create a KYCAttributes collection from test data
-pub fn create_test_kyc_attributes() -> KYCAttributes {
-	let mut builder = KYCAttributesBuilder::new();
+/// Helper to create a KycAttributes collection from test data
+pub fn create_test_kyc_attributes() -> KycAttributes {
+	let mut builder = KycAttributesBuilder::new();
 
 	for &(oid_str, value, is_sensitive) in TEST_KYC_ATTRIBUTES {
 		if is_sensitive {

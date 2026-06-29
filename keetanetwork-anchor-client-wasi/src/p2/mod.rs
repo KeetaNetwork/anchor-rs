@@ -1,34 +1,293 @@
-//! WASI Preview 2 component exposing the networked KYC anchor client.
-//!
-//! The generic [`KycClient<K>`](keetanetwork_anchor_client::KycClient) is bound
-//! to a concrete key type at the boundary: `with-signer` matches the spec's
-//! algorithm name and selects the matching variant of [`AnyKyc`].
+//! WASI Preview 2 component: the `crypto` primitives plus the networked KYC `client`.
 
 #![allow(clippy::arc_with_non_send_sync)]
 
 use core::future::Future;
 use std::sync::Arc;
 
-use keetanetwork_account::{KeyECDSASECP256K1, KeyECDSASECP256R1, KeyED25519, KeyPair};
-use keetanetwork_anchor_bindings::account::{account_from_seed, invalid_algorithm};
+use keetanetwork_account::GenericAccount;
+use keetanetwork_anchor::certificates::KycCertificate as CoreKycCertificate;
 use keetanetwork_anchor_client::resilience::{ResilientTransport, WasiRuntime};
 use keetanetwork_anchor_client::{
-	AnchorClientError, AnchorContext, AnchorHttpTransport, AnchorOutcome, Certificate, Certificates, CountryCode,
+	AnchorClientError, AnchorContext, AnchorHttpTransport, AnchorOutcome, Certificates, CountryCode, ExpectedCost,
 	KycClient, KycOperations, KycProvider, Resolver, Verification, VerificationStatus, WasiTransport,
 };
+use keetanetwork_anchor_bindings::certificate as kyc_cert_ops;
+use keetanetwork_anchor_bindings::error::CodedError as CoreCodedError;
+use keetanetwork_bindings::account as account_ops;
+use keetanetwork_bindings::x509 as x509_ops;
+use keetanetwork_x509::certificates::Certificate as X509Certificate;
 use wstd::runtime::block_on;
 
 wit_bindgen::generate!({
 	world: "keeta-anchor-kyc",
 	path: "wit",
+	// The world re-exports the vendored `keeta:client` `crypto` interface and
+	// `use`s its `types`, so generate bindings for those foreign interfaces too.
+	generate_all,
 });
 
-use exports::keeta::anchor::kyc::{Client, Guest, GuestClient};
-use keeta::anchor::types::{
-	Certificate as WitCertificate, Certificates as WitCertificates, CertificatesOutcome, CodedError,
-	KycOperations as WitOperations, KycProvider as WitProvider, SignerSpec, StatusOutcome,
-	Verification as WitVerification, VerificationOutcome, VerificationStatus as WitVerificationStatus,
+use exports::keeta::anchor::certificates::{
+	Guest as CertificatesGuest, GuestKycCertificate, KycCertificate as WitKycCertificate,
 };
+use exports::keeta::anchor::kyc::{Client, Guest as KycGuest, GuestClient};
+use exports::keeta::client::crypto::{
+	Account as WitAccount, AccountBorrow, Certificate as WitCertificate, CertificateBorrow, Guest as CryptoGuest,
+	GuestAccount, GuestCertificate,
+};
+use keeta::anchor::types::{
+	CertificateGroup, CertificatesOutcome, ExpectedCost as WitExpectedCost, KycAttribute,
+	KycOperations as WitOperations, KycProvider as WitProvider, StatusOutcome, Verification as WitVerification,
+	VerificationOutcome, VerificationStatus as WitVerificationStatus,
+};
+use keeta::client::types::CodedError;
+
+/// An erased Keeta account shared by reference across the `crypto` boundary.
+type AccountRef = Arc<GenericAccount>;
+
+/// Multiply Unix `seconds` into milliseconds for the millisecond-based cores,
+/// rejecting a value that would overflow.
+fn seconds_to_millis(seconds: i64) -> Result<i64, CodedError> {
+	seconds
+		.checked_mul(1000)
+		.ok_or_else(|| CodedError { code: "INVALID_DATE".into(), message: "unix seconds out of range".into() })
+}
+
+struct Component;
+
+impl CryptoGuest for Component {
+	type Account = AccountResource;
+	type Certificate = CertificateResource;
+}
+
+impl CertificatesGuest for Component {
+	type KycCertificate = KycCertificateResource;
+}
+
+// ---------------------------------------------------------------------------
+// account resource
+// ---------------------------------------------------------------------------
+
+/// A signing or read-only account, stored erased over its algorithm.
+struct AccountResource {
+	account: AccountRef,
+}
+
+impl GuestAccount for AccountResource {
+	fn from_seed(seed: String, index: u32, algorithm: String) -> Result<WitAccount, CodedError> {
+		let account = account_ops::account_from_seed(&seed, index, &algorithm)?;
+		Ok(WitAccount::new(Self { account }))
+	}
+
+	fn from_private_key(key: String, algorithm: String) -> Result<WitAccount, CodedError> {
+		let account = account_ops::account_from_private_key(&key, &algorithm)?;
+		Ok(WitAccount::new(Self { account }))
+	}
+
+	fn from_passphrase(words: Vec<String>, index: u32, algorithm: String) -> Result<WitAccount, CodedError> {
+		let account = account_ops::account_from_passphrase(words, index, &algorithm)?;
+		Ok(WitAccount::new(Self { account }))
+	}
+
+	fn from_public_key(key: String, algorithm: String) -> Result<WitAccount, CodedError> {
+		let account = account_ops::account_from_public_key(&key, &algorithm)?;
+		Ok(WitAccount::new(Self { account }))
+	}
+
+	fn from_address(address: String) -> Result<WitAccount, CodedError> {
+		let account = account_ops::account_from_address(&address)?;
+		Ok(WitAccount::new(Self { account }))
+	}
+
+	fn generate_seed() -> String {
+		account_ops::generate_seed().unwrap_or_default()
+	}
+
+	fn generate_passphrase() -> Vec<String> {
+		account_ops::generate_passphrase().unwrap_or_default()
+	}
+
+	fn address(&self) -> String {
+		account_ops::account_address(&self.account)
+	}
+
+	fn algorithm(&self) -> String {
+		account_ops::account_algorithm(&self.account)
+	}
+
+	fn public_key(&self) -> String {
+		account_ops::account_public_key(&self.account)
+	}
+
+	fn sign(&self, message: Vec<u8>) -> Result<Vec<u8>, CodedError> {
+		Ok(account_ops::account_sign(&self.account, &message)?)
+	}
+
+	fn verify(&self, message: Vec<u8>, signature: Vec<u8>) -> bool {
+		account_ops::account_verify(&self.account, &message, &signature)
+	}
+
+	fn encrypt(&self, plaintext: Vec<u8>) -> Result<Vec<u8>, CodedError> {
+		Ok(account_ops::account_encrypt(&self.account, &plaintext)?)
+	}
+
+	fn decrypt(&self, ciphertext: Vec<u8>) -> Result<Vec<u8>, CodedError> {
+		Ok(account_ops::account_decrypt(&self.account, &ciphertext)?)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// certificate resource
+// ---------------------------------------------------------------------------
+
+/// A base X.509 certificate: a provider CA, a trust root, or an intermediate.
+struct CertificateResource {
+	certificate: X509Certificate,
+}
+
+impl GuestCertificate for CertificateResource {
+	fn parse(pem: String) -> Result<WitCertificate, CodedError> {
+		let certificate = x509_ops::certificate_from_pem(&pem)?;
+		Ok(WitCertificate::new(Self { certificate }))
+	}
+
+	fn pem(&self) -> Result<String, CodedError> {
+		Ok(x509_ops::certificate_pem(&self.certificate)?)
+	}
+
+	fn valid_at(&self, unix_seconds: i64) -> bool {
+		seconds_to_millis(unix_seconds)
+			.ok()
+			.and_then(|millis| x509_ops::certificate_valid_at(&self.certificate, millis).ok())
+			.unwrap_or(false)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// kyc-certificate resource
+// ---------------------------------------------------------------------------
+
+/// A KYC leaf certificate: a base certificate plus parsed KYC attributes.
+struct KycCertificateResource {
+	certificate: CoreKycCertificate,
+}
+
+impl GuestKycCertificate for KycCertificateResource {
+	fn parse(pem: String) -> Result<WitKycCertificate, CodedError> {
+		let certificate = kyc_cert_ops::from_pem(&pem)?;
+		Ok(WitKycCertificate::new(Self { certificate }))
+	}
+
+	fn base(&self) -> WitCertificate {
+		WitCertificate::new(CertificateResource { certificate: self.certificate.to_x509().clone() })
+	}
+
+	fn valid_at(&self, unix_seconds: i64) -> bool {
+		seconds_to_millis(unix_seconds)
+			.ok()
+			.and_then(|millis| kyc_cert_ops::valid_at(&self.certificate, millis).ok())
+			.unwrap_or(false)
+	}
+
+	fn verify(
+		&self,
+		trusted_roots: Vec<CertificateBorrow<'_>>,
+		intermediates: Vec<CertificateBorrow<'_>>,
+		unix_seconds: i64,
+	) -> Result<bool, CodedError> {
+		let roots = collect_certificates(&trusted_roots);
+		let bridges = collect_certificates(&intermediates);
+		let millis = seconds_to_millis(unix_seconds)?;
+
+		Ok(kyc_cert_ops::verify(&self.certificate, &roots, &bridges, millis)?)
+	}
+
+	fn attributes(&self) -> Vec<KycAttribute> {
+		kyc_cert_ops::attributes(&self.certificate)
+			.into_iter()
+			.map(|(name, sensitive)| KycAttribute { name, sensitive })
+			.collect()
+	}
+
+	fn plain_attribute(&self, name: String) -> Result<Vec<u8>, CodedError> {
+		Ok(kyc_cert_ops::plain_attribute(&self.certificate, &name)?)
+	}
+
+	fn decrypt_attribute(&self, name: String, subject: AccountBorrow<'_>) -> Result<Vec<u8>, CodedError> {
+		let account = &subject.get::<AccountResource>().account;
+		Ok(kyc_cert_ops::decrypt_attribute_with_account(&self.certificate, &name, account)?)
+	}
+}
+
+/// Clone each borrowed base certificate out for the chain evaluator.
+fn collect_certificates(borrows: &[CertificateBorrow<'_>]) -> Vec<X509Certificate> {
+	borrows
+		.iter()
+		.map(|borrow| borrow.get::<CertificateResource>().certificate.clone())
+		.collect()
+}
+
+// ---------------------------------------------------------------------------
+// kyc client resource
+// ---------------------------------------------------------------------------
+
+/// The resource state backing the exported `client`.
+struct KycSession {
+	inner: KycClient,
+}
+
+impl KycGuest for Component {
+	type Client = KycSession;
+}
+
+impl GuestClient for KycSession {
+	fn with_account(node_url: String, root: String, signer: AccountBorrow<'_>) -> Result<Client, CodedError> {
+		let account = Arc::clone(&signer.get::<AccountResource>().account);
+		Ok(Client::new(Self { inner: build_client(node_url, root, account) }))
+	}
+
+	fn providers(&self, countries: Vec<String>) -> Result<Vec<WitProvider>, CodedError> {
+		let codes = country_codes(&countries)?;
+		let providers = run(async { self.inner.providers(&codes).await })?;
+		Ok(providers.into_iter().map(WitProvider::from).collect())
+	}
+
+	fn create_verification(
+		&self,
+		provider: WitProvider,
+		countries: Vec<String>,
+		redirect_url: Option<String>,
+	) -> Result<VerificationOutcome, CodedError> {
+		let provider = KycProvider::try_from(provider)?;
+		let codes = country_codes(&countries)?;
+		let redirect = redirect_url.as_deref();
+		let outcome = run(async { self.inner.create_verification(&provider, &codes, redirect).await })?;
+		Ok(outcome.into())
+	}
+
+	fn get_certificates(&self, provider: WitProvider, id: String) -> Result<CertificatesOutcome, CodedError> {
+		let provider = KycProvider::try_from(provider)?;
+		let outcome = run(async { self.inner.get_certificates(&provider, &id).await })?;
+		Ok(outcome.into())
+	}
+
+	fn get_verification_status(&self, provider: WitProvider, id: String) -> Result<StatusOutcome, CodedError> {
+		let provider = KycProvider::try_from(provider)?;
+		let outcome = run(async { self.inner.get_verification_status(&provider, &id).await })?;
+		Ok(outcome.into())
+	}
+}
+
+/// Build a networked KYC client signed by `signer`: a `wasi:http` transport
+/// wrapped in the resilience policy, a metadata resolver reading `root` via the
+/// node API at `node_url`, and the bound `signer`.
+fn build_client(node_url: String, root: String, signer: Arc<GenericAccount>) -> KycClient {
+	let base: Arc<dyn AnchorHttpTransport> = Arc::new(WasiTransport::default());
+	let transport: Arc<dyn AnchorHttpTransport> = Arc::new(ResilientTransport::new(base, WasiRuntime));
+	let resolver = Resolver::new(transport.clone(), node_url, [root]);
+	let context = AnchorContext::new(resolver, transport, signer);
+	KycClient::new(context)
+}
 
 /// Drive an async client call to completion on the `wstd` reactor, projecting
 /// its error to the WIT boundary type.
@@ -47,129 +306,19 @@ fn country_codes(values: &[String]) -> Result<Vec<CountryCode>, CodedError> {
 		.collect()
 }
 
-/// Build a networked KYC client for a concrete key type: a `wasi:http`
-/// transport wrapped in the resilience policy, a metadata resolver reading the
-/// `root` account via the node API at `node_url`, and a signer from the spec.
-fn build_client<K>(node_url: String, root: String, seed: &str, index: u32) -> Result<KycClient<K>, CodedError>
-where
-	K: KeyPair,
-{
-	let signer = account_from_seed::<K>(seed, index)?;
-	let base: Arc<dyn AnchorHttpTransport> = Arc::new(WasiTransport::default());
-	let transport: Arc<dyn AnchorHttpTransport> = Arc::new(ResilientTransport::new(base, WasiRuntime));
-	let resolver = Resolver::new(transport.clone(), node_url, [root]);
-	let context = AnchorContext::new(resolver, transport, signer);
-	Ok(KycClient::new(context))
-}
-
-/// A KYC client monomorphized over one signing algorithm. The variants differ
-/// in size, so each is boxed.
-enum AnyKyc {
-	Ed25519(Box<KycClient<KeyED25519>>),
-	Secp256k1(Box<KycClient<KeyECDSASECP256K1>>),
-	Secp256r1(Box<KycClient<KeyECDSASECP256R1>>),
-}
-
-/// Run `body` against the inner client whatever its algorithm, binding it to
-/// `client` in each arm.
-macro_rules! on_client {
-	($session:expr, $client:ident => $body:expr) => {
-		match &$session.inner {
-			AnyKyc::Ed25519($client) => $body,
-			AnyKyc::Secp256k1($client) => $body,
-			AnyKyc::Secp256r1($client) => $body,
-		}
-	};
-}
-
-/// The resource state backing the exported `client`.
-struct KycSession {
-	inner: AnyKyc,
-}
-
-struct Component;
-
-impl Guest for Component {
-	type Client = KycSession;
-}
-
-impl GuestClient for KycSession {
-	fn with_signer(node_url: String, root: String, spec: SignerSpec) -> Result<Client, CodedError> {
-		let seed = spec.seed.as_str();
-		let inner = match spec.algorithm.as_str() {
-			"ed25519" => AnyKyc::Ed25519(Box::new(build_client::<KeyED25519>(node_url, root, seed, spec.index)?)),
-			"ecdsa_secp256k1" => {
-				AnyKyc::Secp256k1(Box::new(build_client::<KeyECDSASECP256K1>(node_url, root, seed, spec.index)?))
-			}
-			"ecdsa_secp256r1" => {
-				AnyKyc::Secp256r1(Box::new(build_client::<KeyECDSASECP256R1>(node_url, root, seed, spec.index)?))
-			}
-			_ => return Err(invalid_algorithm().into()),
-		};
-
-		Ok(Client::new(Self { inner }))
-	}
-
-	fn providers(&self, countries: Vec<String>) -> Result<Vec<WitProvider>, CodedError> {
-		let codes = country_codes(&countries)?;
-		let providers = run(async { on_client!(self, client => client.providers(&codes).await) })?;
-		Ok(providers.into_iter().map(WitProvider::from).collect())
-	}
-
-	fn create_verification(
-		&self,
-		provider: WitProvider,
-		countries: Vec<String>,
-		redirect_url: Option<String>,
-	) -> Result<VerificationOutcome, CodedError> {
-		let provider = KycProvider::try_from(provider)?;
-		let codes = country_codes(&countries)?;
-		let redirect = redirect_url.as_deref();
-		let outcome =
-			run(async { on_client!(self, client => client.create_verification(&provider, &codes, redirect).await) })?;
-		Ok(outcome.into())
-	}
-
-	fn get_certificates(&self, provider: WitProvider, id: String) -> Result<CertificatesOutcome, CodedError> {
-		let provider = KycProvider::try_from(provider)?;
-		let outcome = run(async { on_client!(self, client => client.get_certificates(&provider, &id).await) })?;
-		Ok(outcome.into())
-	}
-
-	fn get_verification_status(&self, provider: WitProvider, id: String) -> Result<StatusOutcome, CodedError> {
-		let provider = KycProvider::try_from(provider)?;
-		let outcome = run(async { on_client!(self, client => client.get_verification_status(&provider, &id).await) })?;
-		Ok(outcome.into())
-	}
-}
-
 // ---------------------------------------------------------------------------
 // Boundary conversions: core domain values to/from the generated WIT types.
 // ---------------------------------------------------------------------------
 
 impl From<AnchorClientError> for CodedError {
 	fn from(error: AnchorClientError) -> Self {
-		Self { code: error_code(&error).into(), message: error.to_string() }
+		Self { code: error.code().into(), message: error.to_string() }
 	}
 }
 
-impl From<keetanetwork_anchor_bindings::error::CodedError> for CodedError {
-	fn from(error: keetanetwork_anchor_bindings::error::CodedError) -> Self {
+impl From<CoreCodedError> for CodedError {
+	fn from(error: CoreCodedError) -> Self {
 		Self { code: error.code, message: error.message }
-	}
-}
-
-/// The stable boundary code for an anchor client failure.
-fn error_code(error: &AnchorClientError) -> &'static str {
-	match error {
-		AnchorClientError::Transport { .. } => "TRANSPORT",
-		AnchorClientError::Resolver { .. } => "RESOLVER",
-		AnchorClientError::Url { .. } => "INVALID_URL",
-		AnchorClientError::Signing { .. } => "SIGNING",
-		AnchorClientError::Request { .. } => "REQUEST",
-		AnchorClientError::Body { .. } => "INVALID_BODY",
-		AnchorClientError::Service { .. } => "SERVICE",
-		AnchorClientError::UnsupportedOperation { .. } => "UNSUPPORTED_OPERATION",
 	}
 }
 
@@ -225,10 +374,20 @@ impl From<WitOperations> for KycOperations {
 	}
 }
 
+impl From<ExpectedCost> for WitExpectedCost {
+	fn from(cost: ExpectedCost) -> Self {
+		Self { min: cost.min, max: cost.max, token: cost.token }
+	}
+}
+
 impl From<AnchorOutcome<Verification>> for VerificationOutcome {
 	fn from(outcome: AnchorOutcome<Verification>) -> Self {
 		match outcome {
-			AnchorOutcome::Ready(value) => Self::Ready(WitVerification { id: value.id, web_url: value.web_url }),
+			AnchorOutcome::Ready(value) => Self::Ready(WitVerification {
+				id: value.id,
+				web_url: value.web_url,
+				expected_cost: value.expected_cost.into(),
+			}),
 			AnchorOutcome::Retry { after_ms } => Self::Retry(after_ms),
 		}
 	}
@@ -247,12 +406,15 @@ impl From<AnchorOutcome<Certificates>> for CertificatesOutcome {
 	fn from(outcome: AnchorOutcome<Certificates>) -> Self {
 		match outcome {
 			AnchorOutcome::Ready(value) => {
-				let results = value
+				let groups = value
 					.results
 					.into_iter()
-					.map(|Certificate { certificate }| WitCertificate { certificate })
+					.map(|certificate| CertificateGroup {
+						certificate: certificate.certificate,
+						intermediates: certificate.intermediates,
+					})
 					.collect();
-				Self::Ready(WitCertificates { results })
+				Self::Ready(groups)
 			}
 			AnchorOutcome::Retry { after_ms } => Self::Retry(after_ms),
 		}

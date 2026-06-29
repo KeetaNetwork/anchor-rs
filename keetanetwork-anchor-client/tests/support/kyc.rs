@@ -17,7 +17,7 @@ pub struct KycAnchor {
 	pub root: String,
 	/// The provider's CA certificate (PEM).
 	pub ca: String,
-	/// The metadata signer's `keeta_…` string, when the entry is signed.
+	/// The metadata signer's `keeta_...` string, when the entry is signed.
 	pub signer: Option<String>,
 	/// The provider id (the key under `services.kyc`).
 	pub provider_id: String,

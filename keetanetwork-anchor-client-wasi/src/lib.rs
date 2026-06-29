@@ -15,6 +15,11 @@ compile_error!("enable exactly one of the `p1` or `p2` features for a wasi build
 #[cfg(all(target_os = "wasi", not(any(feature = "p1", feature = "p2"))))]
 compile_error!("enable exactly one of the `p1` or `p2` features for a wasi build");
 
+// P1 only: link the node WASI core module so its `keeta_*` crypto exports
+// (accounts, certificates, ...) are emitted into this module.
+#[cfg(all(feature = "p1", target_os = "wasi"))]
+extern crate keetanetwork_client_wasi;
+
 #[cfg(all(feature = "p2", target_os = "wasi"))]
 mod p2;
 

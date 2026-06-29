@@ -1,34 +1,6 @@
 //! Boundary error shared by the anchor binding crates.
 
-use alloc::string::String;
-
-/// Code used when a core error exposes no stable code.
-pub const UNKNOWN_CODE: &str = "UNKNOWN";
-
-/// A core failure reduced to a stable code and a human-readable message.
-///
-/// This is the single error shape that crosses every FFI boundary, so
-/// consumers in any host language branch on `code` and surface `message`.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CodedError {
-	/// Stable, machine-readable code consumers branch on.
-	pub code: String,
-	/// Human-readable description.
-	pub message: String,
-}
-
-impl CodedError {
-	/// A coded error from a code and message.
-	pub fn new(code: impl Into<String>, message: impl Into<String>) -> Self {
-		Self { code: code.into(), message: message.into() }
-	}
-
-	/// A coded error from an optional static code, falling back to
-	/// [`UNKNOWN_CODE`] when absent.
-	pub fn coded(code: Option<&str>, message: impl Into<String>) -> Self {
-		Self::new(code.unwrap_or(UNKNOWN_CODE), message)
-	}
-}
+pub use keetanetwork_bindings::error::{CodedError, UNKNOWN_CODE};
 
 /// Derive `From<$error> for CodedError` for core errors that expose an
 /// optional stable `code()` and a `Display` message.
@@ -53,14 +25,14 @@ mod tests {
 
 	enum SampleError {
 		Coded,
-		Uncoded,
+		NonCoded,
 	}
 
 	impl SampleError {
 		fn code(&self) -> Option<&'static str> {
 			match self {
 				Self::Coded => Some("SAMPLE_CODED"),
-				Self::Uncoded => None,
+				Self::NonCoded => None,
 			}
 		}
 	}
@@ -101,7 +73,7 @@ mod tests {
 
 	#[test]
 	fn from_maps_an_uncoded_error_to_unknown() {
-		let coded = CodedError::from(SampleError::Uncoded);
+		let coded = CodedError::from(SampleError::NonCoded);
 		assert_eq!(coded.code, UNKNOWN_CODE);
 	}
 }

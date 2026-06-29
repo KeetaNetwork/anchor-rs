@@ -11,7 +11,7 @@
 //! use keetanetwork_anchor::asn1::oids;
 //! use keetanetwork_anchor::kyc_schema::{
 //!     AttributeBuilder,
-//!     KYCAttributesBuilder,
+//!     KycAttributesBuilder,
 //!     AttributeBuilderLike
 //! };
 //!
@@ -29,7 +29,7 @@
 //!     .build()?;
 //!
 //! // Create a collection using the builder
-//! let kyc_data = KYCAttributesBuilder::new()
+//! let kyc_data = KycAttributesBuilder::new()
 //!     .with_attribute(name_attr)
 //!     .with_attribute(email_attr)
 //!     .with_plain(oids::ADDRESS_POSTAL_CODE, b"12345")
@@ -54,10 +54,10 @@
 //! The module distinguishes between plain and sensitive attributes:
 //!
 //! ```rust
-//! use keetanetwork_anchor::kyc_schema::KYCAttributesBuilder;
+//! use keetanetwork_anchor::kyc_schema::KycAttributesBuilder;
 //! use keetanetwork_anchor::asn1::oids;
 //!
-//! let kyc_data = KYCAttributesBuilder::new()
+//! let kyc_data = KycAttributesBuilder::new()
 //!     // Plain text - for non-sensitive information
 //!     .with_plain(oids::ADDRESS_POSTAL_CODE, b"12345")
 //!     // Sensitive - for personally identifiable information
@@ -80,12 +80,12 @@
 //!
 //! ```rust
 //! use keetanetwork_anchor::kyc_schema::{
-//!     KYCAttributes,
-//!     KYCAttributesBuilder
+//!     KycAttributes,
+//!     KycAttributesBuilder
 //! };
 //! use keetanetwork_anchor::asn1::oids;
 //!
-//! let kyc_attributes = KYCAttributesBuilder::new()
+//! let kyc_attributes = KycAttributesBuilder::new()
 //!     .with_plain(oids::keeta::FULL_NAME, b"John Doe")
 //!     .with_sensitive(oids::keeta::EMAIL, b"john@example.com")
 //!     .build()?;
@@ -93,15 +93,18 @@
 //! // Encode to DER bytes
 //! let der_bytes = kyc_attributes.to_der()?;
 //! // Decode from DER bytes
-//! let kyc_attributes = KYCAttributes::try_from(der_bytes)?;
+//! let kyc_attributes = KycAttributes::try_from(der_bytes)?;
 //! let attribute = kyc_attributes.find_by_oid(&oids::keeta::FULL_NAME);
 //! assert!(attribute.is_some());
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 
 pub mod builder;
+pub mod codec;
 pub mod error;
 
+#[cfg(feature = "serde")]
+pub mod structured;
 #[cfg(feature = "serde")]
 pub mod serde;
 
@@ -109,8 +112,8 @@ use alloc::string::ToString;
 use alloc::vec::Vec;
 
 // Re-exports
-pub use crate::generated::{Attribute, AttributeValue, KYCAttributes};
-pub use builder::{AttributeBuilder, AttributeBuilderLike, KYCAttributesBuilder};
+pub use crate::generated::{Attribute, AttributeValue, KycAttributes};
+pub use builder::{AttributeBuilder, AttributeBuilderLike, KycAttributesBuilder};
 pub use error::KycSchemaError;
 
 impl Attribute {
@@ -157,7 +160,7 @@ impl AsRef<[u8]> for Attribute {
 	}
 }
 
-impl KYCAttributes {
+impl KycAttributes {
 	/// Create a new empty collection of KYC attributes.
 	pub fn new() -> Self {
 		Self::default()
@@ -170,12 +173,12 @@ impl KYCAttributes {
 	/// ```rust
 	/// use keetanetwork_anchor::asn1::oids;
 	/// use keetanetwork_anchor::kyc_schema::{
-	///    KYCAttributes,
+	///    KycAttributes,
 	///    AttributeBuilder,
 	///    AttributeBuilderLike
 	/// };
 	///
-	/// let mut kyc = KYCAttributes::new();
+	/// let mut kyc = KycAttributes::new();
 	/// let attr = AttributeBuilder::default()    
 	///     .with_oid(oids::keeta::FULL_NAME)
 	///     .with_value(b"John Doe")
@@ -198,10 +201,10 @@ impl KYCAttributes {
 	/// # Examples
 	///
 	/// ```rust
-	/// use keetanetwork_anchor::kyc_schema::KYCAttributesBuilder;
+	/// use keetanetwork_anchor::kyc_schema::KycAttributesBuilder;
 	/// use keetanetwork_anchor::asn1::oids;
 	///
-	/// let kyc = KYCAttributesBuilder::new()
+	/// let kyc = KycAttributesBuilder::new()
 	///     .with_plain(oids::keeta::FULL_NAME, b"John Doe")
 	///     .build()?;
 	///
@@ -224,10 +227,10 @@ impl KYCAttributes {
 	/// # Examples
 	///
 	/// ```rust
-	/// use keetanetwork_anchor::kyc_schema::KYCAttributesBuilder;
+	/// use keetanetwork_anchor::kyc_schema::KycAttributesBuilder;
 	/// use keetanetwork_anchor::asn1::oids;
 	///
-	/// let kyc = KYCAttributesBuilder::new()
+	/// let kyc = KycAttributesBuilder::new()
 	///     .with_sensitive(oids::keeta::FULL_NAME, b"John Doe")
 	///     .with_sensitive(oids::keeta::EMAIL, b"john@example.com")
 	///     .build()?;
@@ -249,9 +252,9 @@ impl KYCAttributes {
 	/// # Examples
 	///
 	/// ```rust
-	/// use keetanetwork_anchor::kyc_schema::KYCAttributes;
+	/// use keetanetwork_anchor::kyc_schema::KycAttributes;
 	///
-	/// let empty_kyc = KYCAttributes::new();
+	/// let empty_kyc = KycAttributes::new();
 	/// assert!(empty_kyc.is_empty());
 	/// ```
 	pub fn is_empty(&self) -> bool {
@@ -266,10 +269,10 @@ impl KYCAttributes {
 	/// # Examples
 	///
 	/// ```rust
-	/// use keetanetwork_anchor::kyc_schema::KYCAttributesBuilder;
+	/// use keetanetwork_anchor::kyc_schema::KycAttributesBuilder;
 	/// use keetanetwork_anchor::asn1::oids;
 	///
-	/// let kyc = KYCAttributesBuilder::new()
+	/// let kyc = KycAttributesBuilder::new()
 	///     .with_sensitive(oids::keeta::FULL_NAME, b"John Doe")
 	///     .with_plain(oids::ADDRESS_POSTAL_CODE, b"12345")
 	///     .build()?;
@@ -297,10 +300,10 @@ impl KYCAttributes {
 	/// # Examples
 	///
 	/// ```rust
-	/// use keetanetwork_anchor::kyc_schema::KYCAttributesBuilder;
+	/// use keetanetwork_anchor::kyc_schema::KycAttributesBuilder;
 	/// use keetanetwork_anchor::asn1::oids;
 	///
-	/// let kyc = KYCAttributesBuilder::new()
+	/// let kyc = KycAttributesBuilder::new()
 	///     .with_plain(oids::ADDRESS_POSTAL_CODE, b"12345")
 	///     .with_sensitive(oids::keeta::EMAIL, b"john@example.com")
 	///     .build()?;
@@ -320,10 +323,10 @@ impl KYCAttributes {
 	/// # Examples
 	///
 	/// ```rust
-	/// use keetanetwork_anchor::kyc_schema::KYCAttributesBuilder;
+	/// use keetanetwork_anchor::kyc_schema::KycAttributesBuilder;
 	/// use keetanetwork_anchor::asn1::oids;
 	///
-	/// let kyc = KYCAttributesBuilder::new()
+	/// let kyc = KycAttributesBuilder::new()
 	///     .with_plain(oids::ADDRESS_POSTAL_CODE, b"12345")
 	///     .with_sensitive(oids::keeta::EMAIL, b"john@example.com")
 	///     .build()?;
@@ -336,22 +339,22 @@ impl KYCAttributes {
 		self.0.iter().filter(|attr| !attr.is_sensitive())
 	}
 
-	/// Convert the KYCAttributes to DER-encoded bytes
+	/// Convert the KycAttributes to DER-encoded bytes
 	pub fn to_der(&self) -> Result<Vec<u8>, KycSchemaError> {
 		self.try_into()
 	}
 }
 
-// Default implementation for KYCAttributes. This is generated and does not
+// Default implementation for KycAttributes. This is generated and does not
 // have the `Default` derive.
 #[allow(clippy::derivable_impls)]
-impl Default for KYCAttributes {
+impl Default for KycAttributes {
 	fn default() -> Self {
 		Self(rasn::types::SequenceOf::new())
 	}
 }
 
-impl IntoIterator for KYCAttributes {
+impl IntoIterator for KycAttributes {
 	type Item = Attribute;
 	type IntoIter = alloc::vec::IntoIter<Attribute>;
 
@@ -360,7 +363,7 @@ impl IntoIterator for KYCAttributes {
 	}
 }
 
-impl<'a> IntoIterator for &'a KYCAttributes {
+impl<'a> IntoIterator for &'a KycAttributes {
 	type Item = &'a Attribute;
 	type IntoIter = core::slice::Iter<'a, Attribute>;
 
@@ -369,29 +372,29 @@ impl<'a> IntoIterator for &'a KYCAttributes {
 	}
 }
 
-impl FromIterator<Attribute> for KYCAttributes {
+impl FromIterator<Attribute> for KycAttributes {
 	fn from_iter<T: IntoIterator<Item = Attribute>>(iter: T) -> Self {
 		Self(iter.into_iter().collect())
 	}
 }
 
-impl TryFrom<&KYCAttributes> for Vec<u8> {
+impl TryFrom<&KycAttributes> for Vec<u8> {
 	type Error = KycSchemaError;
 
-	fn try_from(attr: &KYCAttributes) -> core::result::Result<Self, Self::Error> {
+	fn try_from(attr: &KycAttributes) -> core::result::Result<Self, Self::Error> {
 		Ok(rasn::der::encode(attr)?)
 	}
 }
 
-impl TryFrom<KYCAttributes> for Vec<u8> {
+impl TryFrom<KycAttributes> for Vec<u8> {
 	type Error = KycSchemaError;
 
-	fn try_from(attr: KYCAttributes) -> core::result::Result<Self, Self::Error> {
+	fn try_from(attr: KycAttributes) -> core::result::Result<Self, Self::Error> {
 		(&attr).try_into()
 	}
 }
 
-impl TryFrom<&[u8]> for KYCAttributes {
+impl TryFrom<&[u8]> for KycAttributes {
 	type Error = KycSchemaError;
 
 	fn try_from(bytes: &[u8]) -> core::result::Result<Self, Self::Error> {
@@ -399,7 +402,7 @@ impl TryFrom<&[u8]> for KYCAttributes {
 	}
 }
 
-impl TryFrom<Vec<u8>> for KYCAttributes {
+impl TryFrom<Vec<u8>> for KycAttributes {
 	type Error = KycSchemaError;
 
 	fn try_from(bytes: Vec<u8>) -> core::result::Result<Self, Self::Error> {
@@ -426,14 +429,14 @@ mod tests {
 
 	#[test]
 	fn test_kyc_attributes_new() {
-		let kyc = KYCAttributes::new();
+		let kyc = KycAttributes::new();
 		assert!(kyc.is_empty());
 		assert_eq!(kyc.count(), 0);
 	}
 
 	#[test]
 	fn test_kyc_attributes_add_attribute() {
-		let mut kyc = KYCAttributes::new();
+		let mut kyc = KycAttributes::new();
 		let attr = create_test_attribute("1.2.3.4.1", b"test", false);
 
 		kyc.add_attribute(attr);
@@ -526,7 +529,7 @@ mod tests {
 			.map(|&(oid_str, value, is_sensitive)| create_test_attribute(oid_str, value, is_sensitive))
 			.collect();
 
-		let kyc: KYCAttributes = attrs.into_iter().collect();
+		let kyc: KycAttributes = attrs.into_iter().collect();
 		assert_eq!(kyc.count(), TEST_KYC_ATTRIBUTES.len());
 	}
 
@@ -534,7 +537,7 @@ mod tests {
 	fn test_der_roundtrip() {
 		let original = create_test_kyc_attributes();
 		let der_bytes: Vec<u8> = original.clone().try_into().unwrap();
-		let decoded: KYCAttributes = der_bytes.try_into().unwrap();
+		let decoded: KycAttributes = der_bytes.try_into().unwrap();
 		assert_eq!(decoded.count(), original.count());
 	}
 }

@@ -45,4 +45,6 @@ pub use resolver::{decode_base64, parse_metadata, CountryCode, KycOperations, Ky
 pub use service::{AnchorCaller, AnchorContext, AnchorOutcome, Auth, Call, Endpoint, Method};
 
 #[cfg(feature = "kyc")]
-pub use services::kyc::{Certificate, Certificates, KycClient, KycQuery, Verification, VerificationStatus};
+pub use services::kyc::{
+	Certificate, Certificates, ExpectedCost, KycClient, KycQuery, Verification, VerificationStatus,
+};

@@ -2,7 +2,7 @@ use keetanetwork_account::{Account, AccountError, Accountable, KeyPair};
 use keetanetwork_crypto::prelude::{CryptoSignerWithOptions, SignatureEncoding};
 
 use keetanetwork_anchor::asn1::oids;
-use keetanetwork_anchor::generated::KYCAttributes;
+use keetanetwork_anchor::generated::KycAttributes;
 
 mod common;
 use common::{
@@ -114,7 +114,7 @@ where
 	assert!(!der_bytes.is_empty());
 
 	// Verify decoded attributes match original
-	let decoded_kyc = KYCAttributes::try_from(der_bytes).expect("Failed to decode KYC from DER");
+	let decoded_kyc = KycAttributes::try_from(der_bytes).expect("Failed to decode KYC from DER");
 	assert!(test_kyc_count(&decoded_kyc, 2).is_ok());
 	assert!(test_oids_exist(&decoded_kyc, &[oids::ADDRESS_POSTAL_CODE, oids::keeta::EMAIL]).is_ok());
 }
@@ -160,7 +160,7 @@ where
 	assert!(!json_str.is_empty());
 
 	// Test JSON deserialization
-	let deserialized: KYCAttributes = serde_json::from_str(&json_str).expect("Failed to deserialize JSON to KYC");
+	let deserialized: KycAttributes = serde_json::from_str(&json_str).expect("Failed to deserialize JSON to KYC");
 	// Verify deserialized data matches original
 	assert!(test_kyc_count(&deserialized, 2).is_ok());
 	assert!(test_oids_exist(&deserialized, &[oids::ADDRESS_POSTAL_CODE, oids::keeta::EMAIL]).is_ok());

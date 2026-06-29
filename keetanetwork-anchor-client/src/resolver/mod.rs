@@ -56,7 +56,7 @@ impl Resolver {
 	/// A resolver reading `roots` (in priority order) from the node API at
 	/// `node_api`, signing nothing (metadata reads are unauthenticated).
 	///
-	/// Each root is a `keeta_…` account string whose `info.metadata` holds the
+	/// Each root is a `keeta_...` account string whose `info.metadata` holds the
 	/// service-metadata document. A trailing `/` on `node_api` is ignored.
 	pub fn new(
 		transport: Arc<dyn AnchorHttpTransport>,

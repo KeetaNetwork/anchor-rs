@@ -44,6 +44,35 @@ make test-feat
 make test-all
 ```
 
+### Language bindings
+
+#### C#
+
+The C# SDK (`keetanetwork-anchor-client-wasi/bindings/csharp`) is a proof-of-concept binding kept in-tree. It is an in-process .NET host over the WASI Preview 1 core module (`target/wasm32-wasip1/...`): the resolver, request signing, resilience, and polling all run inside the one portable `.wasm`; the C# side only shims HTTP and timers and marshals JSON.
+
+It is exercised by the Rust host-test `csharp_p1_kyc.rs`, which boots the live TypeScript anchor and drives the C# example (`KeetaNet.Anchor.Kyc.Example`) end-to-end via the .NET CLI — exactly like the wasmtime P2 host-test, just through the bound SDK.
+
+Local dependencies (macOS):
+
+```bash
+# .NET SDK (the Wasmtime native runtime ships inside the NuGet package)
+brew install --cask dotnet-sdk
+
+# The wasm targets the host-tests build
+rustup target add wasm32-wasip1 wasm32-wasip2
+
+# Node.js 20 drives the TypeScript signing-parity harness
+brew install node@20
+```
+
+Run all WASI host e2e tests (the wasmtime P2 component and the bound C# SDK over P1) against the live TypeScript anchor:
+
+```bash
+make test-wasi
+```
+
+The C# test **skips** locally when the .NET SDK is absent so a Rust-only checkout still passes; CI sets `CI`, which forces the run, so the binding is always exercised there.
+
 ### Code Coverage
 
 ```bash
