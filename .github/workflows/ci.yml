@@ -11,6 +11,10 @@ env:
 
 jobs:
   test:
+    permissions:
+      contents: read
+      packages: read
+
     name: Test
     runs-on: ubuntu-latest
     steps:
@@ -53,6 +57,10 @@ jobs:
       run: make test-all
 
   wasi:
+    permissions:
+      contents: read
+      packages: read
+
     name: WASI bindings e2e
     runs-on: ubuntu-latest
     steps:
@@ -101,6 +109,10 @@ jobs:
         NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   lint:
+    permissions:
+      contents: read
+      packages: read
+
     name: Lint
     runs-on: ubuntu-latest
     steps:
