@@ -52,7 +52,7 @@ version = "0.3.0"
 default-features = false
 
 [workspace.dependencies.keetanetwork-client-wasi]
-version = "0.2.2"
+version = "0.3.0"
 default-features = false
 
 [workspace.dependencies.rasn]
