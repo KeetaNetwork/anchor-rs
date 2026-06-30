@@ -8,12 +8,13 @@ use alloc::vec::Vec;
 use chrono::{DateTime, Utc};
 use keetanetwork_account::{Account, AccountError, Accountable, GenericAccount, KeyPair};
 use keetanetwork_anchor::certificates::{KycCertificate, KycCertificateBuilder, KycCertificateError};
+use keetanetwork_anchor::sensitive_attributes::{SensitiveAttributeProof, SensitiveAttributeProofHash};
 use keetanetwork_anchor::trust::{evaluate_certificate_chain, CertificateChainStatus, CertificateRecord};
 use keetanetwork_bindings::x509::{
 	certificate_der, certificate_from_der, certificate_from_pem, certificate_pem, certificate_valid_at,
 	subject_public_key,
 };
-use keetanetwork_crypto::prelude::{CryptoSignerWithOptions, IntoSecret, SignatureEncoding};
+use keetanetwork_crypto::prelude::{CryptoSignerWithOptions, ExposeSecret, IntoSecret, SignatureEncoding};
 use keetanetwork_x509::certificates::Certificate;
 use keetanetwork_x509::utils::create_dn;
 use keetanetwork_x509::{oids, SerialNumber};
@@ -132,6 +133,95 @@ where
 		GenericAccount::EcdsaSecp256k1(inner) => decrypt_attribute(certificate, name, &inner.keypair),
 		GenericAccount::EcdsaSecp256r1(inner) => decrypt_attribute(certificate, name, &inner.keypair),
 		_ => Err(CodedError::new(UNSUPPORTED_KEY_TYPE, "attribute decryption requires a signing account")),
+	}
+}
+
+/// A proof attesting to a sensitive attribute's committed value, validatable
+/// against the certificate with only the subject's public key. `value` is the
+/// base64 attribute value the proof reveals; `salt` is its base64 commitment
+/// salt. Both cross binding boundaries as opaque strings.
+pub struct AttributeProof {
+	pub value: String,
+	pub salt: String,
+}
+
+impl From<SensitiveAttributeProof> for AttributeProof {
+	fn from(proof: SensitiveAttributeProof) -> Self {
+		Self { value: proof.value.expose_secret().clone(), salt: proof.hash.salt }
+	}
+}
+
+impl From<AttributeProof> for SensitiveAttributeProof {
+	fn from(proof: AttributeProof) -> Self {
+		Self { value: proof.value.into_secret(), hash: SensitiveAttributeProofHash { salt: proof.salt } }
+	}
+}
+
+/// Prove the sensitive attribute `name`, decrypting it with the subject's
+/// `keypair`. The proof validates against this certificate without the private
+/// key, so it can be shared for selective disclosure.
+pub fn prove_attribute<K, N>(certificate: &KycCertificate, name: N, keypair: &K) -> Result<AttributeProof, CodedError>
+where
+	K: KeyPair,
+	N: AsRef<str>,
+{
+	certificate
+		.prove_kyc_attribute(name, keypair)
+		.map(AttributeProof::from)
+		.map_err(coded)
+}
+
+/// Prove a sensitive attribute for an erased account, dispatching on its signing
+/// algorithm. Mirrors [`decrypt_attribute_with_account`] for the proof path.
+pub fn prove_attribute_with_account<N>(
+	certificate: &KycCertificate,
+	name: N,
+	account: &Arc<GenericAccount>,
+) -> Result<AttributeProof, CodedError>
+where
+	N: AsRef<str>,
+{
+	match account.as_ref() {
+		GenericAccount::Ed25519(inner) => prove_attribute(certificate, name, &inner.keypair),
+		GenericAccount::EcdsaSecp256k1(inner) => prove_attribute(certificate, name, &inner.keypair),
+		GenericAccount::EcdsaSecp256r1(inner) => prove_attribute(certificate, name, &inner.keypair),
+		_ => Err(CodedError::new(UNSUPPORTED_KEY_TYPE, "attribute proof requires a signing account")),
+	}
+}
+
+/// Validate a `proof` for the sensitive attribute `name` against this
+/// certificate, using `keypair`'s public key.
+pub fn validate_attribute_proof<K, N>(
+	certificate: &KycCertificate,
+	name: N,
+	keypair: &K,
+	proof: AttributeProof,
+) -> Result<bool, CodedError>
+where
+	K: KeyPair,
+	N: AsRef<str>,
+{
+	certificate
+		.validate_kyc_attribute_proof(name, keypair, proof.into())
+		.map_err(coded)
+}
+
+/// Validate an attribute `proof` for an erased account, dispatching on its
+/// signing algorithm.
+pub fn validate_attribute_proof_with_account<N>(
+	certificate: &KycCertificate,
+	name: N,
+	account: &Arc<GenericAccount>,
+	proof: AttributeProof,
+) -> Result<bool, CodedError>
+where
+	N: AsRef<str>,
+{
+	match account.as_ref() {
+		GenericAccount::Ed25519(inner) => validate_attribute_proof(certificate, name, &inner.keypair, proof),
+		GenericAccount::EcdsaSecp256k1(inner) => validate_attribute_proof(certificate, name, &inner.keypair, proof),
+		GenericAccount::EcdsaSecp256r1(inner) => validate_attribute_proof(certificate, name, &inner.keypair, proof),
+		_ => Err(CodedError::new(UNSUPPORTED_KEY_TYPE, "attribute proof requires a signing account")),
 	}
 }
 
@@ -443,6 +533,41 @@ mod tests {
 			decrypt_attribute_with_account(&certificate, "email", &subject).unwrap(),
 			b"john@example.com".to_vec()
 		);
+	}
+
+	#[test]
+	fn proves_and_validates_every_sensitive_attribute() {
+		let (certificate, subject) = fixture();
+		for &(name, _) in SENSITIVE {
+			let proof = prove_attribute(&certificate, name, &subject.keypair).unwrap();
+			assert!(validate_attribute_proof(&certificate, name, &subject.keypair, proof).unwrap());
+		}
+	}
+
+	#[test]
+	fn proves_and_validates_for_an_erased_subject() {
+		let (certificate, subject) = fixture();
+		let account = Arc::new(GenericAccount::EcdsaSecp256k1(subject));
+		for &(name, _) in SENSITIVE {
+			let proof = prove_attribute_with_account(&certificate, name, &account).unwrap();
+			assert!(validate_attribute_proof_with_account(&certificate, name, &account, proof).unwrap());
+		}
+	}
+
+	#[test]
+	fn a_proof_does_not_validate_against_a_different_attribute() {
+		let (certificate, subject) = fixture();
+		let proof = prove_attribute(&certificate, "fullName", &subject.keypair).unwrap();
+		assert!(!validate_attribute_proof(&certificate, "email", &subject.keypair, proof).unwrap());
+	}
+
+	#[test]
+	fn proving_a_plain_attribute_is_rejected() {
+		let (certificate, subject) = fixture();
+		let code = prove_attribute(&certificate, "postalCode", &subject.keypair)
+			.err()
+			.map(|error| error.code);
+		assert_eq!(code, Some(SENSITIVE_ATTRIBUTE.to_string()));
 	}
 
 	#[test]

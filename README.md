@@ -50,7 +50,7 @@ make test-all
 
 The C# SDK (`keetanetwork-anchor-client-wasi/bindings/csharp`) is a proof-of-concept binding kept in-tree. It is an in-process .NET host over the WASI Preview 1 core module (`target/wasm32-wasip1/...`): the resolver, request signing, resilience, and polling all run inside the one portable `.wasm`; the C# side only shims HTTP and timers and marshals JSON.
 
-It is exercised by the Rust host-test `csharp_p1_kyc.rs`, which boots the live TypeScript anchor and drives the C# example (`KeetaNet.Anchor.Kyc.Example`) end-to-end via the .NET CLI — exactly like the wasmtime P2 host-test, just through the bound SDK.
+It is exercised by the Rust host-test `csharp_p1_kyc.rs`, which boots the live TypeScript anchor and drives the C# test harness (`KeetaNet.Anchor.Kyc.Harness`) end-to-end via the .NET CLI — exactly like the wasmtime P2 host-test, just through the bound SDK.
 
 Local dependencies (macOS):
 

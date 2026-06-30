@@ -1,12 +1,16 @@
-// Proof-of-concept driver for the C# KYC binding, exercised by the Rust
-// host-tests `csharp_p1_kyc.rs` (networked) and `p1_crypto.rs` (offline crypto).
+// Test harness for the C# KYC binding, exercised by the Rust host-tests
+// `csharp_p1_kyc.rs` (networked) and `p1_crypto.rs` (crypto only). Each env-var
+// mode runs assertions and prints a sentinel the host-tests check for.
 
 using KeetaNet.Anchor.Kyc;
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using Account = KeetaNet.Anchor.Kyc.Crypto.Account;
+using AttributeProof = KeetaNet.Anchor.Kyc.Crypto.AttributeProof;
 using CryptoCertificate = KeetaNet.Anchor.Kyc.Crypto.Certificate;
 using KycCertificate = KeetaNet.Anchor.Kyc.Crypto.KycCertificate;
+using KycCertificateBuilder = KeetaNet.Anchor.Kyc.Crypto.KycCertificateBuilder;
 
 string wasmPath = RequireEnv("KEETA_ANCHOR_P1_WASM");
 
@@ -17,6 +21,22 @@ if (Environment.GetEnvironmentVariable("KEETA_CRYPTO_ONLY") is not null)
 {
 	CryptoSelfTest(runtime);
 	Console.WriteLine("CRYPTO_OK");
+	return;
+}
+
+// Offline mode: issue a leaf through the builder, then read it back. No node.
+if (Environment.GetEnvironmentVariable("KEETA_ISSUE_ONLY") is not null)
+{
+	IssueSelfTest(runtime);
+	Console.WriteLine("ISSUE_OK");
+	return;
+}
+
+// Offline mode: issue a leaf, then prove and validate a sensitive attribute.
+if (Environment.GetEnvironmentVariable("KEETA_PROVE_ONLY") is not null)
+{
+	ProveSelfTest(runtime);
+	Console.WriteLine("PROVE_OK");
 	return;
 }
 
@@ -66,6 +86,15 @@ if (Environment.GetEnvironmentVariable("KEETA_LEAF_PEM") is { } leafPem)
 	Console.WriteLine("ATTRIBUTES_OK");
 }
 
+// Cross-implementation conformance against the live TypeScript anchor: validate
+// a TS-produced proof for the anchor leaf, then issue a leaf and prove an
+// attribute on the C# side for the TS reader to read back and validate.
+if (Environment.GetEnvironmentVariable("KEETA_CONFORMANCE") is not null)
+{
+	Conformance(runtime);
+	Console.WriteLine("CONFORMANCE_OK");
+}
+
 // Decrypt and decode every attribute of an issued leaf, asserting each matches
 // the reference values.
 static void CheckAttributes(WasmRuntime runtime, string leafPem, string attributesJson, string subjectSeed)
@@ -85,6 +114,77 @@ static void CheckAttributes(WasmRuntime runtime, string leafPem, string attribut
 		Require(JsonEqual(leaf.GetJson(entry.Name, subject), entry.Value), $"structured attribute `{entry.Name}` must match the reference value");
 	}
 }
+
+// Cross-implementation conformance against the live TypeScript anchor:
+//  1. validate a proof the TS reader produced for the anchor-issued leaf,
+//  2. issue a leaf on the C# side and prove an attribute on it, emitting both
+//     for the Rust orchestrator to hand to the TS reader to read and validate.
+static void Conformance(WasmRuntime runtime)
+{
+	string subjectSeed = RequireEnv("KEETA_SUBJECT_SEED");
+	string proveName = RequireEnv("KEETA_TS_PROOF_NAME");
+	string wrongName = RequireEnv("KEETA_TS_WRONG_NAME");
+
+	using Account subject = Account.FromSeed(runtime, subjectSeed, 0, "ecdsa_secp256k1");
+
+	// 1. Validate a proof the TypeScript reader produced for the anchor leaf: it
+	// validates for its attribute and not for a different one.
+	using KycCertificate anchorLeaf = KycCertificate.Parse(runtime, RequireEnv("KEETA_LEAF_PEM"));
+	AttributeProof tsProof = JsonSerializer.Deserialize<AttributeProof>(RequireEnv("KEETA_TS_PROOF_JSON"), Camel())
+		?? throw new InvalidOperationException("the TypeScript proof JSON was empty");
+	Console.WriteLine($"TS_PROOF_VALID={Bool(anchorLeaf.ValidateProof(proveName, subject, tsProof))}");
+	Console.WriteLine($"TS_PROOF_WRONG={Bool(anchorLeaf.ValidateProof(wrongName, subject, tsProof))}");
+
+	// 2. Issue a leaf on the C# side for the TypeScript reader to read back. The
+	// subject shares the anchor's seed so the TS reader decrypts with one key.
+	using Account issuer = Account.FromSeed(runtime, new string('2', 64), 0, "ecdsa_secp256k1");
+	KycCertificateBuilder builder = KycCertificate.Builder(runtime)
+		.Subject(subject)
+		.Issuer(issuer)
+		.SubjectName("Subject")
+		.IssuerName("Issuer")
+		.Serial(11)
+		.Validity(DateTimeOffset.FromUnixTimeSeconds(1_700_000_000), DateTimeOffset.FromUnixTimeSeconds(1_900_000_000));
+	ApplyAttributes(builder, RequireEnv("KEETA_ISSUE_JSON"));
+	using KycCertificate issued = builder.Issue();
+	Console.WriteLine($"CS_LEAF={JsonSerializer.Serialize(issued.Pem())}");
+
+	// 3. Prove an attribute on the C# leaf for the TypeScript reader to validate.
+	AttributeProof csProof = issued.Prove(proveName, subject);
+	Console.WriteLine($"CS_PROOF={JsonSerializer.Serialize(csProof, Camel())}");
+}
+
+// Embed each attribute from a raw issue document, mapping its JSON value to the
+// builder's typed setters: a string scalar, a `{ "__date": "<ISO>" }` date, or
+// an arbitrary structured value.
+static void ApplyAttributes(KycCertificateBuilder builder, string issueJson)
+{
+	using JsonDocument document = JsonDocument.Parse(issueJson);
+	foreach (JsonElement entry in document.RootElement.EnumerateArray())
+	{
+		string name = entry.GetProperty("name").GetString()!;
+		bool sensitive = entry.GetProperty("sensitive").GetBoolean();
+		JsonElement value = entry.GetProperty("value");
+
+		switch (value.ValueKind)
+		{
+			case JsonValueKind.String:
+				builder.SetAttribute(name, sensitive, value.GetString()!);
+				break;
+			case JsonValueKind.Object when value.TryGetProperty("__date", out JsonElement date):
+				builder.SetAttribute(name, sensitive,
+					DateTimeOffset.Parse(date.GetString()!, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind));
+				break;
+			default:
+				builder.SetAttribute(name, sensitive, value);
+				break;
+		}
+	}
+}
+
+static JsonSerializerOptions Camel() => new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+
+static string Bool(bool value) => value ? "true" : "false";
 
 // Structural JSON equality: objects compare by key set regardless of order,
 // arrays element-wise in order, scalars by value.
@@ -208,6 +308,75 @@ static void CryptoSelfTest(WasmRuntime runtime)
 
 	byte[] email = kyc.DecryptAttribute("email", account);
 	Require(Encoding.UTF8.GetString(email) == "john@example.com", "the decrypted email must match the issued claim");
+}
+
+// Issue a leaf through the fluent builder across distinct subject/issuer
+// algorithms, then read every shape back through the same module: a plain scalar,
+// a decrypted scalar, a decrypted date, and a decrypted structured value.
+static void IssueSelfTest(WasmRuntime runtime)
+{
+	const string subjectSeed = "1111111111111111111111111111111111111111111111111111111111111111";
+	const string issuerSeed = "2222222222222222222222222222222222222222222222222222222222222222";
+
+	using Account subject = Account.FromSeed(runtime, subjectSeed, 0, "ed25519");
+	using Account issuer = Account.FromSeed(runtime, issuerSeed, 0, "ecdsa_secp256k1");
+
+	JsonElement address = JsonSerializer.Deserialize<JsonElement>(
+		"""{"addressType":"HOME","postalCode":"34677","townName":"Oldsmar"}""");
+
+	using KycCertificate leaf = KycCertificate.Builder(runtime)
+		.Subject(subject)
+		.Issuer(issuer)
+		.SubjectName("Subject")
+		.IssuerName("Issuer")
+		.Serial(7)
+		.Validity(DateTimeOffset.FromUnixTimeSeconds(1_700_000_000), DateTimeOffset.FromUnixTimeSeconds(1_900_000_000))
+		.SetAttribute("postalCode", sensitive: false, "12345")
+		.SetAttribute("email", sensitive: true, "user@example.com")
+		.SetAttribute("dateOfBirth", sensitive: true, DateTimeOffset.FromUnixTimeSeconds(315_532_800))
+		.SetAttribute("address", sensitive: true, address)
+		.Issue();
+
+	string pem = leaf.Pem();
+	Require(pem.Contains("BEGIN CERTIFICATE"), "the issued leaf must encode to PEM");
+
+	using KycCertificate parsed = KycCertificate.Parse(runtime, pem);
+	Require(Encoding.UTF8.GetString(parsed.PlainAttribute("postalCode")) == "12345", "the plain postal code must read back");
+	Require(parsed.GetText("email", subject) == "user@example.com", "the sensitive email must decrypt to the issued value");
+	Require(parsed.GetText("dateOfBirth", subject) == "1980-01-01T00:00:00.000Z", "the sensitive date must decrypt to its ISO form");
+	Require(
+		parsed.GetJson("address", subject).GetProperty("postalCode").GetString() == "34677",
+		"the sensitive structured address must decrypt to its JSON value");
+}
+
+// Issue a leaf, then prove a sensitive attribute and validate the proof against
+// the leaf using only the subject account: a proof for the attribute validates,
+// a proof for a different attribute does not.
+static void ProveSelfTest(WasmRuntime runtime)
+{
+	const string subjectSeed = "1111111111111111111111111111111111111111111111111111111111111111";
+	const string issuerSeed = "2222222222222222222222222222222222222222222222222222222222222222";
+
+	using Account subject = Account.FromSeed(runtime, subjectSeed, 0, "ed25519");
+	using Account issuer = Account.FromSeed(runtime, issuerSeed, 0, "ecdsa_secp256k1");
+
+	using KycCertificate leaf = KycCertificate.Builder(runtime)
+		.Subject(subject)
+		.Issuer(issuer)
+		.SubjectName("Subject")
+		.IssuerName("Issuer")
+		.Serial(7)
+		.Validity(DateTimeOffset.FromUnixTimeSeconds(1_700_000_000), DateTimeOffset.FromUnixTimeSeconds(1_900_000_000))
+		.SetAttribute("email", sensitive: true, "user@example.com")
+		.SetAttribute("fullName", sensitive: true, "Test User")
+		.Issue();
+
+	AttributeProof proof = leaf.Prove("email", subject);
+	Require(proof.Value.Length > 0 && proof.Salt.Length > 0, "the proof must carry a value and salt");
+	Require(leaf.ValidateProof("email", subject, proof), "the attribute proof must validate against the leaf");
+
+	AttributeProof other = leaf.Prove("fullName", subject);
+	Require(!leaf.ValidateProof("email", subject, other), "a proof for a different attribute must not validate");
 }
 
 static string RequireEnv(string name) =>

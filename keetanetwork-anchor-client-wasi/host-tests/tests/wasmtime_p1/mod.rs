@@ -87,6 +87,20 @@ impl P1 {
 		self.read_handle(bytes)
 	}
 
+	/// A proof for sensitive attribute `name`, as its `{ value, salt }` JSON.
+	pub fn prove(&mut self, leaf: i32, name: &str, account: i32) -> wasmtime::Result<Vec<u8>> {
+		let (name_ptr, name_len) = self.write(name.as_bytes())?;
+		let bytes = self.call4("keeta_kyc_certificate_prove", leaf, name_ptr, name_len, account)?;
+		self.read_handle(bytes)
+	}
+
+	/// Whether `proof` (JSON) validates for attribute `name`: `1`/`0`/`-1`.
+	pub fn validate_proof(&mut self, leaf: i32, name: &str, account: i32, proof: &[u8]) -> wasmtime::Result<i32> {
+		let (name_ptr, name_len) = self.write(name.as_bytes())?;
+		let (proof_ptr, proof_len) = self.write(proof)?;
+		self.call6("keeta_kyc_certificate_validate_proof", leaf, name_ptr, name_len, account, proof_ptr, proof_len)
+	}
+
 	/// Reserve guest memory and copy `data` into it, returning `(ptr, len)`.
 	fn write(&mut self, data: &[u8]) -> wasmtime::Result<(i32, i32)> {
 		let len = data.len() as i32;
@@ -174,5 +188,12 @@ impl P1 {
 			.instance
 			.get_typed_func::<(i32, i32, i32, i32, i32), i32>(&mut self.store, name)?;
 		func.call(&mut self.store, (a, b, c, d, e))
+	}
+
+	fn call6(&mut self, name: &str, a: i32, b: i32, c: i32, d: i32, e: i32, f: i32) -> wasmtime::Result<i32> {
+		let func = self
+			.instance
+			.get_typed_func::<(i32, i32, i32, i32, i32, i32), i32>(&mut self.store, name)?;
+		func.call(&mut self.store, (a, b, c, d, e, f))
 	}
 }

@@ -36,9 +36,9 @@ use exports::keeta::client::crypto::{
 	GuestAccount, GuestCertificate,
 };
 use keeta::anchor::types::{
-	CertificateGroup, CertificatesOutcome, ExpectedCost as WitExpectedCost, IssueAttribute, KycAttribute,
-	KycOperations as WitOperations, KycProvider as WitProvider, StatusOutcome, Verification as WitVerification,
-	VerificationOutcome, VerificationStatus as WitVerificationStatus,
+	AttributeProof as WitAttributeProof, CertificateGroup, CertificatesOutcome, ExpectedCost as WitExpectedCost,
+	IssueAttribute, KycAttribute, KycOperations as WitOperations, KycProvider as WitProvider, StatusOutcome,
+	Verification as WitVerification, VerificationOutcome, VerificationStatus as WitVerificationStatus,
 };
 use keeta::client::types::CodedError;
 
@@ -258,6 +258,23 @@ impl GuestKycCertificate for KycCertificateResource {
 	fn decrypt_attribute(&self, name: String, subject: AccountBorrow<'_>) -> Result<Vec<u8>, CodedError> {
 		let account = &subject.get::<AccountResource>().account;
 		Ok(kyc_cert_ops::decrypt_attribute_with_account(&self.certificate, &name, account)?)
+	}
+
+	fn prove(&self, name: String, subject: AccountBorrow<'_>) -> Result<WitAttributeProof, CodedError> {
+		let account = &subject.get::<AccountResource>().account;
+		let proof = kyc_cert_ops::prove_attribute_with_account(&self.certificate, &name, account)?;
+		Ok(WitAttributeProof { value: proof.value, salt: proof.salt })
+	}
+
+	fn validate_proof(
+		&self,
+		name: String,
+		subject: AccountBorrow<'_>,
+		proof: WitAttributeProof,
+	) -> Result<bool, CodedError> {
+		let account = &subject.get::<AccountResource>().account;
+		let proof = kyc_cert_ops::AttributeProof { value: proof.value, salt: proof.salt };
+		Ok(kyc_cert_ops::validate_attribute_proof_with_account(&self.certificate, &name, account, proof)?)
 	}
 }
 

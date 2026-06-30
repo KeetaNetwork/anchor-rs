@@ -239,6 +239,56 @@ public sealed partial class WasmRuntime
 		}
 	}
 
+	internal byte[] KycCertificateProve(int handle, string name, int accountHandle)
+	{
+		var owned = new List<Argument>();
+		try
+		{
+			Argument label = Write(name, owned);
+			return TakeBytes(Invoke<int, int, int, int, int>(
+				"keeta_kyc_certificate_prove", handle, label.Pointer, label.Length, accountHandle));
+		}
+		finally
+		{
+			FreeAll(owned);
+		}
+	}
+
+	internal bool KycCertificateValidateProof(int handle, string name, int accountHandle, string proof)
+	{
+		var owned = new List<Argument>();
+		try
+		{
+			Argument label = Write(name, owned);
+			Argument document = Write(proof, owned);
+			return TakeFlag(Invoke<int, int, int, int, int, int, int>(
+				"keeta_kyc_certificate_validate_proof",
+				handle, label.Pointer, label.Length, accountHandle, document.Pointer, document.Length));
+		}
+		finally
+		{
+			FreeAll(owned);
+		}
+	}
+
+	internal int KycCertificateIssue(int subjectHandle, int issuerHandle, string parameters)
+	{
+		var owned = new List<Argument>();
+		try
+		{
+			Argument args = Write(parameters, owned);
+			return TakeHandle(Invoke<int, int, int, int, int>(
+				"keeta_kyc_certificate_issue", subjectHandle, issuerHandle, args.Pointer, args.Length));
+		}
+		finally
+		{
+			FreeAll(owned);
+		}
+	}
+
+	internal string KycCertificatePem(int handle) =>
+		Text(Invoke<int, int>("keeta_kyc_certificate_pem", handle));
+
 	internal void KycCertificateFree(int handle) => Free("keeta_kyc_certificate_free", handle);
 
 	// -----------------------------------------------------------------------

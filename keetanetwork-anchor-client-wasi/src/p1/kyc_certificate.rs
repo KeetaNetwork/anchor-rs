@@ -191,6 +191,85 @@ pub unsafe extern "C" fn keeta_kyc_certificate_decrypt_attribute(
 	bytes_result(cert_ops::decrypt_attribute_with_account(&certificate, &name, &account))
 }
 
+/// A proof for sensitive attribute `name`, decrypting it with the account
+/// `account_handle`; returns a bytes handle to JSON `{ value, salt }` (`0` on
+/// error). The proof validates against the leaf without the private key.
+///
+/// # Safety
+///
+/// `(name_ptr, name_len)` MUST describe an initialized, readable guest buffer.
+#[no_mangle]
+pub unsafe extern "C" fn keeta_kyc_certificate_prove(
+	handle: i32,
+	name_ptr: i32,
+	name_len: i32,
+	account_handle: i32,
+) -> i32 {
+	let Some(certificate) = leaf(handle) else {
+		return 0;
+	};
+	let Some(name) = (unsafe { string_in(name_ptr, name_len) }) else {
+		return 0;
+	};
+	let Some(account) = account(account_handle) else {
+		return 0;
+	};
+
+	let proof = match cert_ops::prove_attribute_with_account(&certificate, &name, &account) {
+		Ok(proof) => proof,
+		Err(error) => return fail(error),
+	};
+
+	let dto = AttributeProofDto { value: proof.value, salt: proof.salt };
+	bytes_result(serde_json::to_vec(&dto).map_err(|error| CodedError::new("ENCODE", error.to_string())))
+}
+
+/// Whether the JSON `{ value, salt }` proof at `(proof_ptr, proof_len)` attests
+/// to sensitive attribute `name`, validated with the account `account_handle`'s
+/// public key. Returns `1`/`0`/`-1` (error; see the last error).
+///
+/// # Safety
+///
+/// Each `(ptr, len)` MUST describe an initialized, readable guest buffer.
+#[no_mangle]
+pub unsafe extern "C" fn keeta_kyc_certificate_validate_proof(
+	handle: i32,
+	name_ptr: i32,
+	name_len: i32,
+	account_handle: i32,
+	proof_ptr: i32,
+	proof_len: i32,
+) -> i32 {
+	let Some(certificate) = leaf(handle) else {
+		return -1;
+	};
+	let Some(name) = (unsafe { string_in(name_ptr, name_len) }) else {
+		return -1;
+	};
+	let Some(account) = account(account_handle) else {
+		return -1;
+	};
+
+	let bytes = unsafe { bytes_in(proof_ptr, proof_len) };
+	let dto: AttributeProofDto = match serde_json::from_slice(&bytes) {
+		Ok(dto) => dto,
+		Err(error) => {
+			fail(CodedError::new("DECODE", error.to_string()));
+			return -1;
+		}
+	};
+
+	let proof = cert_ops::AttributeProof { value: dto.value, salt: dto.salt };
+	match cert_ops::validate_attribute_proof_with_account(&certificate, &name, &account, proof) {
+		Ok(true) => 1,
+		Ok(false) => 0,
+		Err(error) => {
+			fail(error);
+			-1
+		}
+	}
+}
+
 /// Issue a leaf signed by the account `issuer_handle` for the account
 /// `subject_handle`, configured by a JSON `IssueParams` buffer; returns a leaf
 /// handle (`0` on error). Sensitive attributes are encrypted to the subject.
@@ -311,4 +390,11 @@ struct IssueAttributeDto {
 	name: String,
 	sensitive: bool,
 	value: Vec<u8>,
+}
+
+/// A sensitive-attribute proof on the wire: a base64 `value` and `salt`.
+#[derive(Serialize, Deserialize)]
+struct AttributeProofDto {
+	value: String,
+	salt: String,
 }

@@ -48,5 +48,11 @@ fn p1_kyc_issues_a_leaf_across_algorithms() -> Result<(), BoxError> {
 	let decrypted = p1.decrypt_attribute(leaf, "email", subject)?;
 	assert_eq!(decrypted, b"john@example.com".to_vec(), "the sensitive attribute must decrypt to the issued value");
 
+	// The subject proves the sensitive attribute, and the proof validates back
+	// against the leaf.
+	let proof = p1.prove(leaf, "email", subject)?;
+	let valid = p1.validate_proof(leaf, "email", subject, &proof)?;
+	assert_eq!(valid, 1, "the sensitive attribute proof must validate against the issued leaf");
+
 	Ok(())
 }

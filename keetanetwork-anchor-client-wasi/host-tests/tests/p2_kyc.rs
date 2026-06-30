@@ -184,6 +184,20 @@ async fn p2_kyc_issues_a_leaf_across_algorithms() -> Result<(), BoxError> {
 		.map_err(coded)?;
 	assert_eq!(decrypted, b"john@example.com".to_vec(), "the sensitive attribute must decrypt to the issued value");
 
+	// The subject can prove the sensitive attribute, and the proof validates back
+	// against the leaf with the subject's public key alone.
+	let proof = certificates
+		.kyc_certificate()
+		.call_prove(&mut store, re_parsed, "email", subject)
+		.await?
+		.map_err(coded)?;
+	let valid = certificates
+		.kyc_certificate()
+		.call_validate_proof(&mut store, re_parsed, "email", subject, &proof)
+		.await?
+		.map_err(coded)?;
+	assert!(valid, "the sensitive attribute proof must validate against the issued leaf");
+
 	Ok(())
 }
 

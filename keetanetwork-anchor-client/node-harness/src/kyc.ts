@@ -139,6 +139,34 @@ interface DecodeCertificateRequest {
 	attributes: string[];
 }
 
+/** The reference `SensitiveAttribute` and the proof shape its `getProof` emits. */
+type SensitiveAttribute = InstanceType<typeof certificates.SensitiveAttribute>;
+type AttributeProof = Awaited<ReturnType<SensitiveAttribute['getProof']>>;
+
+/**
+ * Generate a proof for the sensitive attribute `name` on an externally issued
+ * `leaf`, decrypting with `subjectSeed`. The proof validates against the same
+ * leaf without the subject's private key.
+ */
+interface ProveAttributeRequest {
+	cmd: 'proveAttribute';
+	leaf: string;
+	subjectSeed: string;
+	name: string;
+}
+
+/**
+ * Validate `proof` for the sensitive attribute `name` against an externally
+ * issued `leaf`, using the subject public key derived from `subjectSeed`.
+ */
+interface ValidateProofRequest {
+	cmd: 'validateProof';
+	leaf: string;
+	subjectSeed: string;
+	name: string;
+	proof: AttributeProof;
+}
+
 type KycRequest =
 	StartKycAnchorRequest |
 	StopKycAnchorRequest |
@@ -146,6 +174,8 @@ type KycRequest =
 	PublishMetadataRequest |
 	IssueCertificateRequest |
 	DecodeCertificateRequest |
+	ProveAttributeRequest |
+	ValidateProofRequest |
 	ShutdownRequest;
 
 /**
@@ -482,6 +512,44 @@ async function handleDecodeCertificate(request: DecodeCertificateRequest): Promi
 	return({ event: 'certificate-decoded', attributes });
 }
 
+/**
+ * Resolve the live `SensitiveAttribute` for `name` on an externally issued
+ * `leaf`, constructed with the subject key derived from `subjectSeed` so it can
+ * decrypt and prove. Throws if the attribute is absent or not sensitive.
+ */
+function sensitiveAttribute(leaf: string, subjectSeed: string, name: string): SensitiveAttribute {
+	const subjectAccount = Account.fromSeed(subjectSeed, 0);
+	const reader = new certificates.Certificate(leaf, { subjectKey: subjectAccount, moment: null });
+
+	// eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+	const entry = reader.attributes[name as CertificatesModule.CertificateAttributeNames];
+	if (!entry?.sensitive) {
+		throw(new Error(`attribute ${name} is not a sensitive attribute on the certificate`));
+	}
+
+	return(entry.value);
+}
+
+/**
+ * Prove the sensitive attribute `name` on an externally issued leaf, producing
+ * the proof a third party validates with `validateProof`.
+ */
+async function handleProveAttribute(request: ProveAttributeRequest): Promise<HarnessResponse> {
+	const attribute = sensitiveAttribute(request.leaf, request.subjectSeed, request.name);
+	const proof = await attribute.getProof();
+	return({ event: 'attribute-proved', proof });
+}
+
+/**
+ * Validate a proof for the sensitive attribute `name` against an externally
+ * issued leaf using the reference reader.
+ */
+async function handleValidateProof(request: ValidateProofRequest): Promise<HarnessResponse> {
+	const attribute = sensitiveAttribute(request.leaf, request.subjectSeed, request.name);
+	const valid = await attribute.validateProof(request.proof);
+	return({ event: 'proof-validated', valid });
+}
+
 async function handle(request: KycRequest): Promise<HarnessResponse> {
 	switch (request.cmd) {
 		case 'startKycAnchor': return(await handleStartKycAnchor(request));
@@ -490,6 +558,8 @@ async function handle(request: KycRequest): Promise<HarnessResponse> {
 		case 'publishMetadata': return(await handlePublishMetadata(request));
 		case 'issueCertificate': return(await handleIssueCertificate(request));
 		case 'decodeCertificate': return(await handleDecodeCertificate(request));
+		case 'proveAttribute': return(await handleProveAttribute(request));
+		case 'validateProof': return(await handleValidateProof(request));
 		case 'shutdown': return({ event: 'shutdown' });
 	}
 }

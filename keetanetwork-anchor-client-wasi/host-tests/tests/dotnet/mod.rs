@@ -1,4 +1,4 @@
-//! Shared helpers for driving the C# SDK example through the .NET CLI.
+//! Shared helpers for driving the C# SDK test harness through the .NET CLI.
 
 #![allow(dead_code)]
 
@@ -15,9 +15,9 @@ pub fn module_path() -> PathBuf {
 	manifest_dir.join("../../target/wasm32-wasip1/debug/keetanetwork_anchor_client_wasi.wasm")
 }
 
-/// The C# SDK example project directory.
-pub fn example_dir() -> PathBuf {
-	PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../bindings/csharp/KeetaNet.Anchor.Kyc.Example")
+/// The C# SDK test-harness project directory.
+pub fn harness_dir() -> PathBuf {
+	PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../bindings/csharp/KeetaNet.Anchor.Kyc.Harness")
 }
 
 /// Whether the .NET CLI is available on this machine.

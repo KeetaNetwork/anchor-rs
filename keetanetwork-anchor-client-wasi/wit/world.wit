@@ -21,6 +21,15 @@ interface types {
 		value: list<u8>,
 	}
 
+	/// A proof attesting to a sensitive attribute's committed value, validated
+	/// against the certificate with only the subject's public key. `value` is the
+	/// base64 attribute value the proof reveals; `salt` is its base64 commitment
+	/// salt.
+	record attribute-proof {
+		value: string,
+		salt: string,
+	}
+
 	/// The KYC operation endpoint templates a provider advertises. An absent
 	/// field means the provider does not offer that operation.
 	record kyc-operations {
@@ -95,7 +104,7 @@ interface types {
 interface certificates {
 	use keeta:client/types@0.1.0.{coded-error};
 	use keeta:client/crypto@0.1.0.{account, certificate};
-	use types.{kyc-attribute, issue-attribute};
+	use types.{kyc-attribute, issue-attribute, attribute-proof};
 
 	/// A KYC leaf certificate.
 	resource kyc-certificate {
@@ -123,6 +132,12 @@ interface certificates {
 		/// The decrypted value of sensitive attribute `name`, using `subject`'s
 		/// private key.
 		decrypt-attribute: func(name: string, subject: borrow<account>) -> result<list<u8>, coded-error>;
+		/// A proof for sensitive attribute `name`, decrypting it with `subject`.
+		/// The proof validates against this certificate without the private key.
+		prove: func(name: string, subject: borrow<account>) -> result<attribute-proof, coded-error>;
+		/// Whether `proof` attests to sensitive attribute `name`, validated with
+		/// `subject`'s public key.
+		validate-proof: func(name: string, subject: borrow<account>, proof: attribute-proof) -> result<bool, coded-error>;
 	}
 }
 

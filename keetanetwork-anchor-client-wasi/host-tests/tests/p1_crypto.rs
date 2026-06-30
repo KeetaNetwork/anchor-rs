@@ -7,7 +7,7 @@ mod dotnet;
 
 use std::process::Command;
 
-use dotnet::{dotnet_available, example_dir, module_path};
+use dotnet::{dotnet_available, harness_dir, module_path};
 
 #[test]
 fn csharp_crypto_resources_round_trip() {
@@ -25,7 +25,7 @@ fn csharp_crypto_resources_round_trip() {
 
 	let output = Command::new("dotnet")
 		.args(["run", "--project"])
-		.arg(example_dir())
+		.arg(harness_dir())
 		.args(["-c", "Release"])
 		.env("KEETA_ANCHOR_P1_WASM", &module)
 		.env("KEETA_CRYPTO_ONLY", "1")

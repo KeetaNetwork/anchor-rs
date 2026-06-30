@@ -40,6 +40,61 @@ pub fn issue_attributes() -> Value {
 	])
 }
 
+/// The reference value a reader recovers for each issued attribute: a scalar is
+/// its string, a `{ "__date": "<ISO>" }` is that ISO string, and a structured
+/// value is its object unchanged. Mirrors the reference reader's `getValue`.
+pub fn expected_attributes() -> Map<String, Value> {
+	let mut expected = Map::new();
+	for entry in issue_attributes().as_array().into_iter().flatten() {
+		let (Some(name), Some(value)) = (entry.get("name").and_then(Value::as_str), entry.get("value")) else {
+			continue;
+		};
+
+		let projected = match value.get("__date").and_then(Value::as_str) {
+			Some(iso) => Value::String(iso.to_string()),
+			None => value.clone(),
+		};
+		expected.insert(name.to_string(), projected);
+	}
+
+	expected
+}
+
+/// The names of the issued attributes, in order.
+pub fn attribute_names() -> Vec<String> {
+	issue_attributes()
+		.as_array()
+		.into_iter()
+		.flatten()
+		.filter_map(|entry| entry.get("name").and_then(Value::as_str).map(str::to_string))
+		.collect()
+}
+
+/// Reshape a flat binding proof `{ value, salt }` into the reference reader's
+/// nested `{ value, hash: { salt } }`.
+pub fn nest_proof(flat: &Value) -> Value {
+	json!({
+		"value": flat.get("value").cloned().unwrap_or(Value::Null),
+		"hash": { "salt": flat.get("salt").cloned().unwrap_or(Value::Null) },
+	})
+}
+
+/// Reshape a reference reader proof `{ value, hash: { salt } }` into the flat
+/// binding `{ value, salt }`.
+pub fn flatten_proof(nested: &Value) -> Value {
+	json!({
+		"value": nested.get("value").cloned().unwrap_or(Value::Null),
+		"salt": nested.get("hash").and_then(|hash| hash.get("salt")).cloned().unwrap_or(Value::Null),
+	})
+}
+
+/// The value of a `KEY=VALUE` sentinel line in captured stdout, if present.
+pub fn sentinel<'a>(stdout: &'a str, key: &str) -> Option<&'a str> {
+	stdout
+		.lines()
+		.find_map(|line| line.strip_prefix(key).and_then(|rest| rest.strip_prefix('=')))
+}
+
 /// Locate the compiled KYC harness entry (`dist/kyc.js`).
 pub fn harness_path() -> PathBuf {
 	if let Ok(path) = std::env::var("KYC_HARNESS") {
