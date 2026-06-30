@@ -10,6 +10,7 @@ use std::error::Error;
 use std::io::{BufRead, BufReader, Lines, Write};
 use std::path::PathBuf;
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
+use std::sync::Arc;
 
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine as _;
@@ -103,13 +104,13 @@ macro_rules! generic_from_seed {
 
 /// A generic account (with private key) derived from `seed` at index 0 for the
 /// given algorithm, reproducible across runtimes and across calls.
-fn account_from_seed(seed: &str, algorithm: Algorithm) -> Result<GenericAccount, BoxError> {
+fn account_from_seed(seed: &str, algorithm: Algorithm) -> Result<Arc<GenericAccount>, BoxError> {
 	let generic = match algorithm {
 		Algorithm::Secp256k1 => generic_from_seed!(KeyECDSASECP256K1, seed),
 		Algorithm::Ed25519 => generic_from_seed!(KeyED25519, seed),
 		Algorithm::Secp256r1 => generic_from_seed!(KeyECDSASECP256R1, seed),
 	};
-	Ok(generic)
+	Ok(Arc::new(generic))
 }
 
 fn require_bool(value: &Value, field: &str) -> Result<bool, BoxError> {

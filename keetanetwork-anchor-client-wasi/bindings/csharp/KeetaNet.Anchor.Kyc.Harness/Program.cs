@@ -9,6 +9,7 @@ using System.Text.Json;
 using Account = KeetaNet.Anchor.Kyc.Crypto.Account;
 using AttributeProof = KeetaNet.Anchor.Kyc.Crypto.AttributeProof;
 using CryptoCertificate = KeetaNet.Anchor.Kyc.Crypto.Certificate;
+using EncryptedContainer = KeetaNet.Anchor.Kyc.Crypto.EncryptedContainer;
 using KycCertificate = KeetaNet.Anchor.Kyc.Crypto.KycCertificate;
 using KycCertificateBuilder = KeetaNet.Anchor.Kyc.Crypto.KycCertificateBuilder;
 
@@ -37,6 +38,24 @@ if (Environment.GetEnvironmentVariable("KEETA_PROVE_ONLY") is not null)
 {
 	ProveSelfTest(runtime);
 	Console.WriteLine("PROVE_OK");
+	return;
+}
+
+// Offline mode: build, encode, decode, sign, and re-key an encrypted container.
+if (Environment.GetEnvironmentVariable("KEETA_CONTAINER_ONLY") is not null)
+{
+	ContainerSelfTest(runtime);
+	Console.WriteLine("CONTAINER_OK");
+	return;
+}
+
+// Cross-implementation conformance against the reference TypeScript anchor:
+// decode and verify a TS-produced container, then emit a C#-produced one for the
+// TS reader to decode and verify.
+if (Environment.GetEnvironmentVariable("KEETA_CONTAINER_CONFORMANCE") is not null)
+{
+	ContainerConformance(runtime);
+	Console.WriteLine("CONTAINER_CONFORMANCE_OK");
 	return;
 }
 
@@ -388,6 +407,102 @@ static void ProveSelfTest(WasmRuntime runtime)
 
 	AttributeProof other = leaf.Prove("fullName", subject);
 	Require(!leaf.ValidateProof("email", subject, other), "a proof for a different attribute must not validate");
+}
+
+// Exercise the offline encrypted-container surface: a plaintext round-trip
+// through its encoding, an encrypted round-trip opened by a private-keyed
+// principal, a signed container that verifies and recovers its signer, and a
+// grant/revoke cycle over the principal set.
+static void ContainerSelfTest(WasmRuntime runtime)
+{
+	const string ownerSeed = "1111111111111111111111111111111111111111111111111111111111111111";
+	const string signerSeed = "2222222222222222222222222222222222222222222222222222222222222222";
+	const string readerSeed = "3333333333333333333333333333333333333333333333333333333333333333";
+	byte[] payload = Encoding.UTF8.GetBytes("container over p1");
+
+	using (EncryptedContainer plain = EncryptedContainer.FromPlaintext(runtime, payload))
+	{
+		byte[] encoded = plain.Encoded();
+		using EncryptedContainer restored = EncryptedContainer.FromEncoded(runtime, encoded);
+		Require(restored.Plaintext().SequenceEqual(payload), "the plaintext must round-trip through its encoding");
+		Require(!restored.IsEncrypted, "a plaintext container must not report as encrypted");
+	}
+
+	using (Account owner = Account.FromSeed(runtime, ownerSeed, 0, "ecdsa_secp256k1"))
+	{
+		byte[] encoded;
+		using (EncryptedContainer encrypted = EncryptedContainer.FromPlaintext(runtime, payload, new[] { owner }, locked: false))
+		{
+			Require(encrypted.IsEncrypted, "a container with principals must report as encrypted");
+			encoded = encrypted.Encoded();
+		}
+
+		using EncryptedContainer opened = EncryptedContainer.FromEncrypted(runtime, encoded, new[] { owner });
+		Require(opened.Plaintext().SequenceEqual(payload), "the principal must decrypt the sealed payload");
+		Require(opened.IsEncrypted, "a decoded encrypted container must report as encrypted");
+	}
+
+	using (Account signer = Account.FromSeed(runtime, signerSeed, 0, "ed25519"))
+	{
+		byte[] encoded;
+		using (EncryptedContainer signed = EncryptedContainer.FromPlaintext(runtime, payload, locked: false, signer: signer))
+		{
+			encoded = signed.Encoded();
+		}
+
+		using EncryptedContainer restored = EncryptedContainer.FromEncoded(runtime, encoded);
+		Require(restored.IsSigned, "a signed container must report as signed");
+		Require(restored.VerifySignature(), "the detached signature must verify");
+
+		byte[]? recovered = restored.SigningAccount();
+		Require(recovered is not null, "a signed container must recover its signer");
+		Require(
+			Convert.ToHexString(recovered!).Equals(signer.PublicKey, StringComparison.OrdinalIgnoreCase),
+			"the recovered signer key must match the signing account");
+	}
+
+	using (Account owner = Account.FromSeed(runtime, ownerSeed, 0, "ecdsa_secp256k1"))
+	using (Account reader = Account.FromSeed(runtime, readerSeed, 0, "ecdsa_secp256k1"))
+	using (EncryptedContainer container = EncryptedContainer.FromPlaintext(runtime, payload, new[] { owner }, locked: false))
+	{
+		container.GrantAccess(new[] { reader });
+		Require(container.Principals().Count == 2, "granting access must add a principal");
+
+		container.RevokeAccess(Convert.FromHexString(reader.PublicKey));
+		Require(container.Principals().Count == 1, "revoking access must remove a principal");
+	}
+}
+
+// Cross-implementation conformance against the reference TypeScript anchor,
+// both directions, for the encrypted container:
+//  1. TS encrypts and signs -> C# decrypts and verifies (`TS_DECODE/VERIFY/SIGNER`),
+//  2. C# encrypts and signs -> emit the blob for the TS reader to decode and
+//     verify (`CS_CONTAINER`, `CS_PLAINTEXT`, `CS_SIGNER_KEY`).
+static void ContainerConformance(WasmRuntime runtime)
+{
+	const string algorithm = "ecdsa_secp256k1";
+	using Account principal = Account.FromSeed(runtime, RequireEnv("KEETA_PRINCIPAL_SEED"), 0, algorithm);
+	using Account signer = Account.FromSeed(runtime, RequireEnv("KEETA_SIGNER_SEED"), 0, algorithm);
+
+	// 1. Decode and verify the TS-produced encrypted, signed container.
+	byte[] tsContainer = Convert.FromBase64String(RequireEnv("KEETA_TS_CONTAINER"));
+	byte[] expectedPlaintext = Convert.FromBase64String(RequireEnv("KEETA_TS_PLAINTEXT"));
+	using EncryptedContainer decoded = EncryptedContainer.FromEncrypted(runtime, tsContainer, new[] { principal });
+	Console.WriteLine($"TS_DECODE_OK={Bool(decoded.Plaintext().SequenceEqual(expectedPlaintext))}");
+	Console.WriteLine($"TS_VERIFY_OK={Bool(decoded.IsSigned && decoded.VerifySignature())}");
+
+	byte[]? recovered = decoded.SigningAccount();
+	bool signerOk = recovered is not null
+		&& Convert.ToHexString(recovered).Equals(signer.PublicKey, StringComparison.OrdinalIgnoreCase);
+	Console.WriteLine($"TS_SIGNER_OK={Bool(signerOk)}");
+
+	// 2. Produce an encrypted, signed container for the TS reader to read back.
+	byte[] payload = Encoding.UTF8.GetBytes("c-sharp encrypted and signed container");
+	using EncryptedContainer produced =
+		EncryptedContainer.FromPlaintext(runtime, payload, new[] { principal }, locked: false, signer: signer);
+	Console.WriteLine($"CS_CONTAINER={Convert.ToBase64String(produced.Encoded())}");
+	Console.WriteLine($"CS_PLAINTEXT={Convert.ToBase64String(payload)}");
+	Console.WriteLine($"CS_SIGNER_KEY={signer.PublicKey}");
 }
 
 static string RequireEnv(string name) =>

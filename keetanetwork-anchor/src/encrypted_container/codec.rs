@@ -4,6 +4,7 @@
 //! [`EncryptedContainer`]: crate::encrypted_container::EncryptedContainer
 
 use alloc::borrow::Cow;
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use hex::FromHex;
@@ -65,7 +66,7 @@ impl CipherMaterial {
 /// The accounts gated to a container plus the symmetric material used to seal
 /// its body.
 pub(crate) struct Encryption<'a> {
-	pub principals: &'a [GenericAccount],
+	pub principals: &'a [Arc<GenericAccount>],
 	pub material: &'a CipherMaterial,
 }
 
@@ -161,7 +162,7 @@ pub(crate) fn parse(encoded: &[u8]) -> Result<BareContainer> {
 ///
 /// `principals` is consulted only for encrypted bodies; for those, one of the
 /// accounts must both match a key-store entry and hold a private key.
-pub(crate) fn decode_body(body: &ContainerBody, principals: &[GenericAccount]) -> Result<DecodedBody> {
+pub(crate) fn decode_body(body: &ContainerBody, principals: &[Arc<GenericAccount>]) -> Result<DecodedBody> {
 	let compressed = match body {
 		ContainerBody::Plaintext { compressed } => compressed.clone(),
 		ContainerBody::Encrypted(encrypted) => decrypt_body(encrypted, principals)?,
@@ -255,7 +256,7 @@ fn sign_compressed(compressed: &[u8], signer: &GenericAccount) -> Result<SignerI
 	Ok(signer_info)
 }
 
-fn decrypt_body(encrypted: &EncryptedBody, principals: &[GenericAccount]) -> Result<Vec<u8>> {
+fn decrypt_body(encrypted: &EncryptedBody, principals: &[Arc<GenericAccount>]) -> Result<Vec<u8>> {
 	if principals.is_empty() {
 		return Err(EncryptedContainerError::NoKeysProvided);
 	}
@@ -273,7 +274,7 @@ fn decrypt_body(encrypted: &EncryptedBody, principals: &[GenericAccount]) -> Res
 	Ok(compressed)
 }
 
-fn unwrap_symmetric_key(encrypted: &EncryptedBody, principals: &[GenericAccount]) -> Result<Vec<u8>> {
+fn unwrap_symmetric_key(encrypted: &EncryptedBody, principals: &[Arc<GenericAccount>]) -> Result<Vec<u8>> {
 	for store in &encrypted.key_stores {
 		let store_public_key = store.public_key.as_ref();
 		for principal in principals {
@@ -359,13 +360,14 @@ mod tests {
 		let encoded = encode(payload, None, None).expect("encode plaintext");
 		let bare = parse(&encoded).expect("parse plaintext");
 		assert!(!bare.is_encrypted());
+
 		let decoded = decode_body(&bare.body, &[]).expect("decode plaintext");
 		assert_eq!(decoded.plaintext, payload);
 	});
 
 	test_all_key_types!(encrypted_round_trips, |account: Account<_>| {
 		let payload = b"encrypted-roundtrip-payload";
-		let principals = [to_generic(account)];
+		let principals = [Arc::new(to_generic(account))];
 		let material = CipherMaterial::random().expect("material");
 		let encryption = Encryption { principals: &principals, material: &material };
 		let encoded = encode(payload, Some(encryption), None).expect("encode encrypted");
@@ -379,7 +381,7 @@ mod tests {
 
 	test_all_key_types!(decrypt_without_keys_is_rejected, |account: Account<_>| {
 		let payload = b"needs-a-key";
-		let principals = [to_generic(account)];
+		let principals = [Arc::new(to_generic(account))];
 		let material = CipherMaterial::random().expect("material");
 		let encryption = Encryption { principals: &principals, material: &material };
 		let encoded = encode(payload, Some(encryption), None).expect("encode encrypted");
@@ -417,7 +419,7 @@ mod tests {
 
 	test_all_key_types!(tampered_ciphertext_is_a_decryption_failure, |account: Account<_>| {
 		let payload = b"sealed-but-corrupted";
-		let principals = [to_generic(account)];
+		let principals = [Arc::new(to_generic(account))];
 		let material = CipherMaterial::random().expect("material");
 		let encryption = Encryption { principals: &principals, material: &material };
 		let encoded = encode(payload, Some(encryption), None).expect("encode encrypted");
@@ -426,6 +428,7 @@ mod tests {
 		let ContainerBody::Encrypted(mut body) = bare.body else {
 			panic!("expected an encrypted body");
 		};
+
 		let last = body.ciphertext.len() - 1;
 		body.ciphertext[last] ^= 0xFF;
 

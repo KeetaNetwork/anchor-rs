@@ -105,6 +105,67 @@ pub fn harness_path() -> PathBuf {
 	manifest_dir.join("../../keetanetwork-anchor-client/node-harness/dist/kyc.js")
 }
 
+/// Locate the compiled `EncryptedContainer` harness entry (`dist/container.js`).
+pub fn container_harness_path() -> PathBuf {
+	if let Ok(path) = std::env::var("CONTAINER_HARNESS") {
+		return PathBuf::from(path);
+	}
+
+	let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+	manifest_dir.join("../../keetanetwork-anchor-client/node-harness/dist/container.js")
+}
+
+/// Spawn a JSON-lines node harness at `script` and consume its `ready` line.
+fn spawn_harness(script: PathBuf) -> Result<(Child, ChildStdin, Lines<BufReader<ChildStdout>>), BoxError> {
+	if !script.exists() {
+		return Err(format!("harness not found at {} (run `make node-harness`)", script.display()).into());
+	}
+
+	let mut child = Command::new("node")
+		.arg(&script)
+		.stdin(Stdio::piped())
+		.stdout(Stdio::piped())
+		.stderr(Stdio::inherit())
+		.spawn()?;
+
+	let stdin = child.stdin.take().ok_or("harness stdin unavailable")?;
+	let stdout = child.stdout.take().ok_or("harness stdout unavailable")?;
+	let mut lines = BufReader::new(stdout).lines();
+
+	let ready = lines.next().ok_or("harness ended before ready")??;
+	let ready: Value = serde_json::from_str(&ready)?;
+	if ready.get("event").and_then(Value::as_str) != Some("ready") {
+		return Err(format!("harness did not report ready: {ready}").into());
+	}
+
+	Ok((child, stdin, lines))
+}
+
+/// Send a `command` with object `params` over a JSON-lines harness and read the
+/// response, surfacing an `error` field as a failure.
+fn harness_request(
+	stdin: &mut ChildStdin,
+	lines: &mut Lines<BufReader<ChildStdout>>,
+	command: &str,
+	params: Value,
+) -> Result<Value, BoxError> {
+	let mut object = match params {
+		Value::Object(map) => map,
+		_ => Map::new(),
+	};
+	object.insert("cmd".to_string(), Value::String(command.to_string()));
+	writeln!(stdin, "{}", Value::Object(object))?;
+	stdin.flush()?;
+
+	let line = lines.next().ok_or("harness ended before responding")??;
+	let value: Value = serde_json::from_str(&line)?;
+	if let Some(message) = value.get("error").and_then(Value::as_str) {
+		return Err(format!("harness command `{command}` failed: {message}").into());
+	}
+
+	Ok(value)
+}
+
 /// Read a required string field from a harness response.
 pub fn field_str(value: &Value, field: &str) -> Result<String, BoxError> {
 	value
@@ -124,51 +185,13 @@ pub struct KycHarness {
 impl KycHarness {
 	/// Spawn `node dist/kyc.js` and wait for its `ready` line.
 	pub fn start() -> Result<Self, BoxError> {
-		let script = harness_path();
-		if !script.exists() {
-			return Err(format!("KYC harness not found at {} (run `make node-harness`)", script.display()).into());
-		}
-
-		let mut child = Command::new("node")
-			.arg(&script)
-			.stdin(Stdio::piped())
-			.stdout(Stdio::piped())
-			.stderr(Stdio::inherit())
-			.spawn()?;
-
-		let stdin = child.stdin.take().ok_or("harness stdin unavailable")?;
-		let stdout = child.stdout.take().ok_or("harness stdout unavailable")?;
-		let mut lines = BufReader::new(stdout).lines();
-
-		let ready = lines.next().ok_or("harness ended before ready")??;
-		let ready: Value = serde_json::from_str(&ready)?;
-		if ready.get("event").and_then(Value::as_str) != Some("ready") {
-			return Err(format!("harness did not report ready: {ready}").into());
-		}
-
+		let (child, stdin, lines) = spawn_harness(harness_path())?;
 		Ok(Self { child, stdin, lines })
 	}
 
 	/// Send a command with object params and return its response.
 	pub fn request(&mut self, command: &str, params: Value) -> Result<Value, BoxError> {
-		let mut object = match params {
-			Value::Object(map) => map,
-			_ => Map::new(),
-		};
-		object.insert("cmd".to_string(), Value::String(command.to_string()));
-		writeln!(self.stdin, "{}", Value::Object(object))?;
-		self.stdin.flush()?;
-
-		let line = self
-			.lines
-			.next()
-			.ok_or("harness ended before responding")??;
-		let value: Value = serde_json::from_str(&line)?;
-		if let Some(message) = value.get("error").and_then(Value::as_str) {
-			return Err(format!("harness command `{command}` failed: {message}").into());
-		}
-
-		Ok(value)
+		harness_request(&mut self.stdin, &mut self.lines, command, params)
 	}
 
 	/// Stop the harness and wait for it to exit.
@@ -180,6 +203,40 @@ impl KycHarness {
 }
 
 impl Drop for KycHarness {
+	fn drop(&mut self) {
+		let _ = self.child.kill();
+		let _ = self.child.wait();
+	}
+}
+
+/// A live `EncryptedContainer` reference harness driven over JSON lines.
+pub struct ContainerHarness {
+	child: Child,
+	stdin: ChildStdin,
+	lines: Lines<BufReader<ChildStdout>>,
+}
+
+impl ContainerHarness {
+	/// Spawn `node dist/container.js` and wait for its `ready` line.
+	pub fn start() -> Result<Self, BoxError> {
+		let (child, stdin, lines) = spawn_harness(container_harness_path())?;
+		Ok(Self { child, stdin, lines })
+	}
+
+	/// Send a command with object params and return its response.
+	pub fn request(&mut self, command: &str, params: Value) -> Result<Value, BoxError> {
+		harness_request(&mut self.stdin, &mut self.lines, command, params)
+	}
+
+	/// Stop the harness and wait for it to exit.
+	pub fn shutdown(mut self) -> Result<(), BoxError> {
+		self.request("shutdown", Value::Object(Map::new()))?;
+		self.child.wait()?;
+		Ok(())
+	}
+}
+
+impl Drop for ContainerHarness {
 	fn drop(&mut self) {
 		let _ = self.child.kill();
 		let _ = self.child.wait();

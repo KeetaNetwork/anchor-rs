@@ -29,7 +29,7 @@
 //! use keetanetwork_anchor::encrypted_container::EncryptedContainer;
 //!
 //! # let alice = create_secp256k1_generic_account(Some(0));
-//! let mut sealed = EncryptedContainer::from_plaintext(b"secret".to_vec(), Some(vec![alice]), Default::default());
+//! let mut sealed = EncryptedContainer::from_plaintext(b"secret".to_vec(), Some(vec![alice.into()]), Default::default());
 //! let encoded = sealed.get_encoded()?;
 //!
 //! # let alice_again = create_secp256k1_generic_account(Some(0));
@@ -41,6 +41,7 @@
 mod codec;
 pub mod error;
 
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use keetanetwork_account::account::AccountPublicKey;
@@ -62,7 +63,7 @@ pub struct FromPlaintextOptions {
 	pub locked: Option<bool>,
 	/// An account whose detached signature is attached when the container is
 	/// encoded.
-	pub signer: Option<GenericAccount>,
+	pub signer: Option<Arc<GenericAccount>>,
 }
 
 /// A hybrid-encrypted, optionally-signed data container.
@@ -73,16 +74,16 @@ pub struct FromPlaintextOptions {
 #[derive(Debug)]
 pub struct EncryptedContainer {
 	encrypted: bool,
-	principals: Vec<GenericAccount>,
+	principals: Vec<Arc<GenericAccount>>,
 	may_access_plaintext: bool,
-	signer: Option<GenericAccount>,
+	signer: Option<Arc<GenericAccount>>,
 	parsed_signer_info: Option<SignerInfo>,
 	plaintext: Option<Vec<u8>>,
 	encoded: Option<Vec<u8>>,
 }
 
 impl EncryptedContainer {
-	fn new(principals: Option<Vec<GenericAccount>>, signer: Option<GenericAccount>) -> Self {
+	fn new(principals: Option<Vec<Arc<GenericAccount>>>, signer: Option<Arc<GenericAccount>>) -> Self {
 		let encrypted = principals.is_some();
 		Self {
 			encrypted,
@@ -114,7 +115,7 @@ impl EncryptedContainer {
 	/// ```
 	pub fn from_plaintext(
 		data: impl Into<Vec<u8>>,
-		principals: Option<Vec<GenericAccount>>,
+		principals: Option<Vec<Arc<GenericAccount>>>,
 		options: FromPlaintextOptions,
 	) -> Self {
 		let encrypted = principals.is_some();
@@ -155,7 +156,7 @@ impl EncryptedContainer {
 	/// assert_eq!(restored.get_plaintext()?, b"note");
 	/// # Ok::<(), Box<dyn std::error::Error>>(())
 	/// ```
-	pub fn from_encoded(data: impl AsRef<[u8]>, principals: Option<Vec<GenericAccount>>) -> Result<Self> {
+	pub fn from_encoded(data: impl AsRef<[u8]>, principals: Option<Vec<Arc<GenericAccount>>>) -> Result<Self> {
 		let mut container = Self::new(principals, None);
 		container.set_encoded(data);
 		container.compute_and_set_key_info(false)?;
@@ -177,7 +178,7 @@ impl EncryptedContainer {
 	/// use keetanetwork_anchor::encrypted_container::EncryptedContainer;
 	///
 	/// # let principal = create_secp256k1_generic_account(Some(0));
-	/// let mut sealed = EncryptedContainer::from_plaintext(b"secret".to_vec(), Some(vec![principal]), Default::default());
+	/// let mut sealed = EncryptedContainer::from_plaintext(b"secret".to_vec(), Some(vec![principal.into()]), Default::default());
 	/// let encoded = sealed.get_encoded()?;
 	///
 	/// # let principal_again = create_secp256k1_generic_account(Some(0));
@@ -187,7 +188,7 @@ impl EncryptedContainer {
 	/// ```
 	pub fn from_encrypted(
 		data: impl AsRef<[u8]>,
-		principals: impl IntoIterator<Item = impl Into<GenericAccount>>,
+		principals: impl IntoIterator<Item = impl Into<Arc<GenericAccount>>>,
 	) -> Result<Self> {
 		let principals = principals.into_iter().map(Into::into).collect();
 		let mut container = Self::new(Some(principals), None);
@@ -247,7 +248,7 @@ impl EncryptedContainer {
 	/// assert!(!plain.is_encrypted());
 	///
 	/// # let principal = create_secp256k1_generic_account(Some(0));
-	/// let sealed = EncryptedContainer::from_plaintext(b"x".to_vec(), Some(vec![principal]), Default::default());
+	/// let sealed = EncryptedContainer::from_plaintext(b"x".to_vec(), Some(vec![principal.into()]), Default::default());
 	/// assert!(sealed.is_encrypted());
 	/// ```
 	pub fn is_encrypted(&self) -> bool {
@@ -263,7 +264,7 @@ impl EncryptedContainer {
 	/// use keetanetwork_anchor::encrypted_container::{EncryptedContainer, FromPlaintextOptions};
 	///
 	/// # let signer = create_secp256k1_generic_account(Some(0));
-	/// let options = FromPlaintextOptions { locked: None, signer: Some(signer) };
+	/// let options = FromPlaintextOptions { locked: None, signer: Some(signer.into()) };
 	/// let container = EncryptedContainer::from_plaintext(b"x".to_vec(), None, options);
 	/// assert!(container.is_signed());
 	/// ```
@@ -284,11 +285,11 @@ impl EncryptedContainer {
 	/// use keetanetwork_anchor::encrypted_container::EncryptedContainer;
 	///
 	/// let principal = create_secp256k1_generic_account(Some(0));
-	/// let sealed = EncryptedContainer::from_plaintext(b"x".to_vec(), Some(vec![principal]), Default::default());
+	/// let sealed = EncryptedContainer::from_plaintext(b"x".to_vec(), Some(vec![principal.into()]), Default::default());
 	/// assert_eq!(sealed.principals()?.len(), 1);
 	/// # Ok::<(), Box<dyn std::error::Error>>(())
 	/// ```
-	pub fn principals(&self) -> Result<&[GenericAccount]> {
+	pub fn principals(&self) -> Result<&[Arc<GenericAccount>]> {
 		if !self.encrypted {
 			return Err(EncryptedContainerError::AccessManagementNotAllowed);
 		}
@@ -372,14 +373,17 @@ impl EncryptedContainer {
 	///
 	/// # let owner = create_secp256k1_generic_account(Some(0));
 	/// let options = FromPlaintextOptions { locked: Some(false), signer: None };
-	/// let mut container = EncryptedContainer::from_plaintext(b"shared".to_vec(), Some(vec![owner]), options);
+	/// let mut container = EncryptedContainer::from_plaintext(b"shared".to_vec(), Some(vec![owner.into()]), options);
 	///
 	/// # let reader = create_secp256k1_generic_account(Some(1));
 	/// container.grant_access(vec![reader])?;
 	/// assert_eq!(container.principals()?.len(), 2);
 	/// # Ok::<(), Box<dyn std::error::Error>>(())
 	/// ```
-	pub fn grant_access(&mut self, accounts: impl IntoIterator<Item = impl Into<GenericAccount>>) -> Result<&mut Self> {
+	pub fn grant_access(
+		&mut self,
+		accounts: impl IntoIterator<Item = impl Into<Arc<GenericAccount>>>,
+	) -> Result<&mut Self> {
 		self.compute_plaintext()?;
 		self.assert_access_management_allowed()?;
 		self.encoded = None;
@@ -406,7 +410,7 @@ impl EncryptedContainer {
 	/// # let owner = create_secp256k1_generic_account(Some(0));
 	/// # let reader = create_secp256k1_generic_account(Some(1));
 	/// let options = FromPlaintextOptions { locked: Some(false), signer: None };
-	/// let mut container = EncryptedContainer::from_plaintext(b"shared".to_vec(), Some(vec![owner, reader]), options);
+	/// let mut container = EncryptedContainer::from_plaintext(b"shared".to_vec(), Some(vec![owner.into(), reader.into()]), options);
 	///
 	/// let reader_key = create_secp256k1_generic_account(Some(1)).to_public_key_with_type();
 	/// container.revoke_access(&reader_key)?;
@@ -441,7 +445,7 @@ impl EncryptedContainer {
 	/// use keetanetwork_anchor::encrypted_container::{EncryptedContainer, FromPlaintextOptions};
 	///
 	/// # let signer = create_secp256k1_generic_account(Some(0));
-	/// let options = FromPlaintextOptions { locked: None, signer: Some(signer) };
+	/// let options = FromPlaintextOptions { locked: None, signer: Some(signer.into()) };
 	/// let container = EncryptedContainer::from_plaintext(b"x".to_vec(), None, options);
 	/// assert!(container.signing_account()?.is_some());
 	/// # Ok::<(), Box<dyn std::error::Error>>(())
@@ -468,7 +472,7 @@ impl EncryptedContainer {
 	/// `None` when the container carries only a parsed signature, since no
 	/// private key is recoverable from encoded bytes.
 	pub fn signer(&self) -> Option<&GenericAccount> {
-		self.signer.as_ref()
+		self.signer.as_deref()
 	}
 
 	/// Move the attached signer out, downgrading the container to its
@@ -481,14 +485,14 @@ impl EncryptedContainer {
 	/// # Errors
 	///
 	/// - [`EncryptedContainerError::AccountError`] -- the signer's public key is not valid.
-	pub fn take_signing_account(&mut self) -> Result<Option<GenericAccount>> {
+	pub fn take_signing_account(&mut self) -> Result<Option<Arc<GenericAccount>>> {
 		let Some(signer) = self.signer.take() else {
 			return Ok(None);
 		};
 
 		let public_only = codec::account_from_public_key(&signer.to_public_key_with_type())?;
 
-		self.signer = Some(public_only);
+		self.signer = Some(Arc::new(public_only));
 
 		Ok(Some(signer))
 	}
@@ -508,7 +512,7 @@ impl EncryptedContainer {
 	/// use keetanetwork_anchor::encrypted_container::{EncryptedContainer, FromPlaintextOptions};
 	///
 	/// # let signer = create_secp256k1_generic_account(Some(0));
-	/// let options = FromPlaintextOptions { locked: None, signer: Some(signer) };
+	/// let options = FromPlaintextOptions { locked: None, signer: Some(signer.into()) };
 	/// let mut container = EncryptedContainer::from_plaintext(b"authentic".to_vec(), None, options);
 	/// let encoded = container.get_encoded()?;
 	///
@@ -592,7 +596,7 @@ impl EncryptedContainer {
 		}
 
 		let bare = self.compute_and_set_key_info(self.encrypted)?;
-		let principals: &[GenericAccount] = if bare.is_encrypted() {
+		let principals: &[Arc<GenericAccount>] = if bare.is_encrypted() {
 			&self.principals
 		} else {
 			&[]
@@ -621,7 +625,7 @@ impl EncryptedContainer {
 			.plaintext
 			.as_ref()
 			.ok_or(EncryptedContainerError::NoPlaintextAvailable)?;
-		codec::encode(plaintext, None, self.signer.as_ref())
+		codec::encode(plaintext, None, self.signer.as_deref())
 	}
 
 	fn encode_encrypted(&self) -> Result<Vec<u8>> {
@@ -635,7 +639,7 @@ impl EncryptedContainer {
 
 		let material = CipherMaterial::random()?;
 		let encryption = Encryption { principals: &self.principals, material: &material };
-		codec::encode(plaintext, Some(encryption), self.signer.as_ref())
+		codec::encode(plaintext, Some(encryption), self.signer.as_deref())
 	}
 
 	fn ensure_signer_info_parsed(&mut self) -> Result<()> {
@@ -664,8 +668,8 @@ impl EncryptedContainer {
 /// provided account that matches so its private key is retained.
 fn merge_principals(
 	key_stores: &[crate::generated::KeyStore],
-	provided: Vec<GenericAccount>,
-) -> Result<Vec<GenericAccount>> {
+	provided: Vec<Arc<GenericAccount>>,
+) -> Result<Vec<Arc<GenericAccount>>> {
 	let mut remaining = provided;
 	let mut merged = Vec::with_capacity(key_stores.len());
 	for store in key_stores {
@@ -677,7 +681,7 @@ fn merge_principals(
 
 		match matching {
 			Some(index) => merged.push(remaining.swap_remove(index)),
-			None => merged.push(codec::account_from_public_key(store_public_key)?),
+			None => merged.push(Arc::new(codec::account_from_public_key(store_public_key)?)),
 		}
 	}
 
@@ -706,12 +710,12 @@ mod tests {
 
 	/// A secp256k1 generic account derived from the fixed seed at `index`, so the
 	/// same principal is reproducible for sealing and reopening.
-	fn secp256k1(index: u32) -> GenericAccount {
+	fn secp256k1(index: u32) -> Arc<GenericAccount> {
 		let keyable = Keyable::HexSeed((SEED.to_string().into_secret(), index));
 		let accountable = Accountable::KeyAndType(keyable, KeyECDSASECP256K1::KEY_PAIR_TYPE);
 		let account = Account::<KeyECDSASECP256K1>::try_from(accountable).expect("secp256k1 account");
 
-		to_generic(account)
+		Arc::new(to_generic(account))
 	}
 
 	/// A container sealed to principal 0 under the default (locked) policy.

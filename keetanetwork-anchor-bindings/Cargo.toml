@@ -23,6 +23,7 @@ keetanetwork-bindings = { workspace = true }
 keetanetwork-anchor = { path = "../keetanetwork-anchor", default-features = false, features = [
 	"alloc",
 	"x509",
+	"encrypted-container",
 ] }
 keetanetwork-x509 = { workspace = true, default-features = false, features = [
 	"rasn",
