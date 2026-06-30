@@ -29,7 +29,7 @@ pub fn encode_structured(token: &str, json: &[u8]) -> Result<Vec<u8>, AnchorAsn1
 	Ok(der)
 }
 
-/// Decode positional ASN.1 DER into the oracle JSON wire form.
+/// Decode positional ASN.1 DER into the validator JSON form.
 ///
 /// Returns an error for tokens without a mapping, or when the DER is not in the
 /// positional form, so the caller can fall back to the legacy decoder.
@@ -198,7 +198,7 @@ fn identification_entries<'a>(
 	Ok(Some(entries))
 }
 
-/// Convert a decoded `Address` into the oracle JSON object.
+/// Convert a decoded `Address` into the validator JSON object.
 fn address_to_json(address: &Address) -> Value {
 	let mut map = Map::new();
 
@@ -226,7 +226,7 @@ fn address_to_json(address: &Address) -> Value {
 	Value::Object(map)
 }
 
-/// Convert a decoded `EntityType` into the oracle JSON object.
+/// Convert a decoded `EntityType` into the validator JSON object.
 fn entity_type_to_json(entity_type: &EntityType) -> Value {
 	let mut map = Map::new();
 	if let Some(organizations) = &entity_type.organization {

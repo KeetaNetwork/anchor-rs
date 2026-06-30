@@ -15,7 +15,7 @@ use serde_json::{Map, Value};
 
 use crate::asn1::error::AnchorAsn1Error;
 
-/// Decode a structured attribute DER value into the oracle JSON wire form.
+/// Decode a structured attribute DER value into the validator JSON form.
 ///
 /// Returns an error for tokens without a mapping so the caller can fall back to
 /// the raw bytes.
@@ -121,14 +121,14 @@ fn utf8_lines(tlv: &Tlv<'_>) -> Result<Value, AnchorAsn1Error> {
 	Ok(Value::Array(lines))
 }
 
-/// The wire shape of an `Address` component.
+/// The transport shape of an `Address` component.
 enum AddressKind {
 	Scalar,
 	Lines,
 	Choice,
 }
 
-/// An `Address` field with its positional context tag and wire shape.
+/// An `Address` field with its positional context tag and transport shape.
 struct AddressField {
 	name: &'static str,
 	index: u8,
@@ -161,7 +161,7 @@ fn address_field_matches(field: &AddressField, tag: u8) -> bool {
 	}
 }
 
-/// Map an `Address` value to its oracle object by walking fields positionally.
+/// Map an `Address` value to its validator object by walking fields positionally.
 fn address_json(der: &[u8]) -> Result<Value, AnchorAsn1Error> {
 	let parts = sequence_components(der)?;
 	let mut map = Map::new();
@@ -186,7 +186,7 @@ fn address_json(der: &[u8]) -> Result<Value, AnchorAsn1Error> {
 	Ok(Value::Object(map))
 }
 
-/// Map an `EntityType` value to its oracle object.
+/// Map an `EntityType` value to its validator object.
 fn entity_type_json(der: &[u8]) -> Result<Value, AnchorAsn1Error> {
 	let mut map = Map::new();
 	for tlv in sequence_components(der)? {
@@ -254,19 +254,19 @@ mod tests {
 	/// Oracle the reference harness emits for that entity type.
 	const ENTITY_TYPE_ORACLE: &str = r#"{"person":[{"id":"123-45-6789","schemeName":"SSN"}]}"#;
 
-	fn assert_matches_oracle(token: &str, der_hex: &str, oracle: &str) {
+	fn assert_matches_validator(token: &str, der_hex: &str, validator: &str) {
 		let decoded = decode_structured(token, &from_hex(der_hex)).unwrap();
-		assert_json_eq(&decoded, oracle);
+		assert_json_eq(&decoded, validator);
 	}
 
 	#[test]
-	fn address_decodes_to_oracle_shape() {
-		assert_matches_oracle("Address", ADDRESS_DER, ADDRESS_ORACLE);
+	fn address_decodes_to_validator_shape() {
+		assert_matches_validator("Address", ADDRESS_DER, ADDRESS_ORACLE);
 	}
 
 	#[test]
-	fn entity_type_decodes_to_oracle_shape() {
-		assert_matches_oracle("EntityType", ENTITY_TYPE_DER, ENTITY_TYPE_ORACLE);
+	fn entity_type_decodes_to_validator_shape() {
+		assert_matches_validator("EntityType", ENTITY_TYPE_DER, ENTITY_TYPE_ORACLE);
 	}
 
 	#[test]

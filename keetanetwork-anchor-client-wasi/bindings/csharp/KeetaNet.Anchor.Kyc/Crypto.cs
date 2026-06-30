@@ -298,10 +298,9 @@ public sealed class KycCertificate : IDisposable
 }
 
 /// <summary>
-/// A fluent builder for a KYC leaf certificate, mirroring the TypeScript
-/// <c>CertificateBuilder</c> and the Rust <c>KycCertificateBuilder</c>: collect a
-/// subject, issuer, validity window, and attributes, then <see cref="Issue"/> the
-/// signed leaf. Sensitive attributes are encrypted to the subject; the issuer
+/// A fluent builder for a KYC leaf certificate: collect a subject, issuer,
+/// validity window, and attributes, then <see cref="Issue"/> the signed
+/// leaf. Sensitive attributes are encrypted to the subject; the issuer
 /// signs. The subject and issuer may use different signing algorithms.
 /// </summary>
 public sealed class KycCertificateBuilder
@@ -418,7 +417,7 @@ public sealed class KycCertificateBuilder
 		return KycCertificate.Adopt(_runtime, _runtime.KycCertificateIssue(subject.Handle, issuer.Handle, json));
 	}
 
-	// The issuance wire form the P1 core decodes. `value` is a number array (not
+	// The issuance transport form the P1 core decodes. `value` is a number array (not
 	// base64) so it deserializes into the core's `Vec<u8>`.
 	private sealed record IssueAttributeDto(string Name, bool Sensitive, int[] Value);
 

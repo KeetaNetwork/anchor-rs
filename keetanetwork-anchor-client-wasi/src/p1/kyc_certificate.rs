@@ -392,7 +392,7 @@ struct IssueAttributeDto {
 	value: Vec<u8>,
 }
 
-/// A sensitive-attribute proof on the wire: a base64 `value` and `salt`.
+/// A sensitive-attribute proof on transport: a base64 `value` and `salt`.
 #[derive(Serialize, Deserialize)]
 struct AttributeProofDto {
 	value: String,
