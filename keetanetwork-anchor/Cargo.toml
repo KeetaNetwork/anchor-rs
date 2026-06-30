@@ -60,9 +60,6 @@ uuid = { workspace = true, features = ["js"], optional = true }
 [build-dependencies]
 rasn-compiler = { workspace = true }
 serde_json = { workspace = true, features = ["std"] }
-# The build script needs `serde` (for `get_oid_json`); `rasn` must accompany it
-# because published asn1 0.2.3 fails to compile with `serde` but neither `rasn`
-# nor `der`.
 keetanetwork-asn1 = { workspace = true, features = ["rasn", "serde"] }
 keetanetwork-utils = { workspace = true, features = ["build"] }
 
