@@ -178,84 +178,93 @@ mod tests {
 	use crate::kyc_schema::testing::{assert_json_eq, from_hex};
 
 	#[test]
-	fn utf8_attribute_round_trips_through_der() {
+	fn utf8_attribute_round_trips_through_der() -> Result<(), Box<dyn std::error::Error>> {
 		let oid = oids::keeta::EMAIL.to_string();
-		let encoded = encode_value(&oid, b"john@example.com").unwrap();
+		let encoded = encode_value(&oid, b"john@example.com")?;
 		assert_ne!(encoded, b"john@example.com");
-		let decoded = decode_value(&oid, &encoded).unwrap();
+		let decoded = decode_value(&oid, &encoded)?;
 		assert_eq!(decoded, b"john@example.com");
+		Ok(())
 	}
 
 	#[test]
-	fn utf8_encoding_is_der_utf8string() {
+	fn utf8_encoding_is_der_utf8string() -> Result<(), Box<dyn std::error::Error>> {
 		let oid = oids::ADDRESS_POSTAL_CODE.to_string();
-		let encoded = encode_value(&oid, b"12345").unwrap();
+		let encoded = encode_value(&oid, b"12345")?;
 		assert_eq!(encoded, [0x0c, 0x05, b'1', b'2', b'3', b'4', b'5']);
+		Ok(())
 	}
 
 	#[test]
-	fn unknown_oid_passes_through() {
-		let decoded = decode_value("1.2.3.4.5", b"raw").unwrap();
+	fn unknown_oid_passes_through() -> Result<(), Box<dyn std::error::Error>> {
+		let decoded = decode_value("1.2.3.4.5", b"raw")?;
 		assert_eq!(decoded, b"raw");
+		Ok(())
 	}
 
 	#[test]
-	fn malformed_utf8_value_falls_back_to_raw() {
+	fn malformed_utf8_value_falls_back_to_raw() -> Result<(), Box<dyn std::error::Error>> {
 		let oid = oids::keeta::EMAIL.to_string();
-		let decoded = decode_value(&oid, [0xff, 0xfe]).unwrap();
+		let decoded = decode_value(&oid, [0xff, 0xfe])?;
 		assert_eq!(decoded, [0xff, 0xfe]);
+		Ok(())
 	}
 
 	#[cfg(feature = "chrono")]
 	#[test]
-	fn pre_2050_date_encodes_as_generalized_time() {
+	fn pre_2050_date_encodes_as_generalized_time() -> Result<(), Box<dyn std::error::Error>> {
 		let oid = oids::keeta::DATE_OF_BIRTH.to_string();
-		let encoded = encode_value(&oid, b"1990-01-01").unwrap();
+		let encoded = encode_value(&oid, b"1990-01-01")?;
 		assert_eq!(encoded[0], 0x18);
-		let decoded = decode_value(&oid, &encoded).unwrap();
+		let decoded = decode_value(&oid, &encoded)?;
 		assert_eq!(decoded, b"1990-01-01T00:00:00.000Z");
+		Ok(())
 	}
 
 	#[cfg(feature = "chrono")]
 	#[test]
-	fn post_2050_date_encodes_as_generalized_time() {
+	fn post_2050_date_encodes_as_generalized_time() -> Result<(), Box<dyn std::error::Error>> {
 		let oid = oids::keeta::DATE_OF_BIRTH.to_string();
-		let encoded = encode_value(&oid, b"2080-06-15").unwrap();
+		let encoded = encode_value(&oid, b"2080-06-15")?;
 		assert_eq!(encoded[0], 0x18);
-		let decoded = decode_value(&oid, &encoded).unwrap();
+		let decoded = decode_value(&oid, &encoded)?;
 		assert_eq!(decoded, b"2080-06-15T00:00:00.000Z");
+		Ok(())
 	}
 
 	#[cfg(feature = "chrono")]
 	#[test]
-	fn decodes_typescript_utc_time() {
+	fn decodes_typescript_utc_time() -> Result<(), Box<dyn std::error::Error>> {
 		let oid = oids::keeta::DATE_OF_BIRTH.to_string();
 		let body = b"800101000000Z";
 		let mut der = alloc::vec![0x17u8, body.len() as u8];
 		der.extend_from_slice(body);
-		let decoded = decode_value(&oid, &der).unwrap();
+		let decoded = decode_value(&oid, &der)?;
 		assert_eq!(decoded, b"1980-01-01T00:00:00.000Z");
+		Ok(())
 	}
 
 	#[cfg(feature = "serde")]
 	#[test]
-	fn structured_address_round_trips_through_wrapped_der() {
+	fn structured_address_round_trips_through_wrapped_der() -> Result<(), Box<dyn std::error::Error>> {
 		let oid = oids::keeta::ADDRESS.to_string();
 		let json = r#"{"addressType":"HOME","postalCode":"34677","townName":"Oldsmar"}"#;
-		let encoded = encode_value(&oid, json.as_bytes()).unwrap();
+		let encoded = encode_value(&oid, json.as_bytes())?;
 		// CHOICE field carried under its positional [1] wrapper.
 		assert_eq!(encoded[2], 0xa1);
-		let decoded = decode_value(&oid, &encoded).unwrap();
+		let decoded = decode_value(&oid, &encoded)?;
 		assert_json_eq(&decoded, json);
+		Ok(())
 	}
 
 	#[cfg(feature = "serde")]
 	#[test]
-	fn legacy_bare_entity_type_decodes_via_fallback() {
+	fn legacy_bare_entity_type_decodes_via_fallback() -> Result<(), Box<dyn std::error::Error>> {
 		let oid = oids::keeta::ENTITY_TYPE.to_string();
 		let bare = from_hex("301ca11a30183016a00d0c0b3132332d34352d36373839a0050c0353534e");
-		let decoded = decode_value(&oid, &bare).unwrap();
+		let decoded = decode_value(&oid, &bare)?;
 		assert_json_eq(&decoded, r#"{"person":[{"id":"123-45-6789","schemeName":"SSN"}]}"#);
+		Ok(())
 	}
 
 	#[cfg(feature = "chrono")]

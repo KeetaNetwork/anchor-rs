@@ -979,14 +979,14 @@ mod tests {
 	}
 
 	#[test]
-	fn builds_with_distinct_subject_and_issuer_algorithms() {
+	fn builds_with_distinct_subject_and_issuer_algorithms() -> Result<(), Box<dyn std::error::Error>> {
 		use keetanetwork_account::KeyED25519;
 
 		let subject = create_account_from_seed::<KeyED25519>(7);
 		let issuer = create_account_from_seed::<KeyECDSASECP256K1>(8);
-		let subject_dn = keetanetwork_x509::utils::create_dn(&[(keetanetwork_x509::oids::CN, "Subject")]).unwrap();
-		let issuer_dn = keetanetwork_x509::utils::create_dn(&[(keetanetwork_x509::oids::CN, "Issuer")]).unwrap();
-		let subject_public_key = SubjectPublicKeyInfo::try_from(&subject).unwrap();
+		let subject_dn = keetanetwork_x509::utils::create_dn(&[(keetanetwork_x509::oids::CN, "Subject")])?;
+		let issuer_dn = keetanetwork_x509::utils::create_dn(&[(keetanetwork_x509::oids::CN, "Issuer")])?;
+		let subject_public_key = SubjectPublicKeyInfo::try_from(&subject)?;
 
 		let certificate = KycCertificateBuilder::for_end_entity()
 			.with_subject_dn(subject_dn)
@@ -995,13 +995,11 @@ mod tests {
 			.with_validity_days(365)
 			.with_subject_public_key(subject_public_key)
 			.with_sensitive_attribute("email", b"john@example.com".to_vec().into_secret())
-			.build(&subject.keypair, &issuer.keypair)
-			.unwrap();
+			.build(&subject.keypair, &issuer.keypair)?;
 
-		let decrypted = certificate
-			.decrypt_kyc_attribute("email", &subject.keypair)
-			.unwrap();
+		let decrypted = certificate.decrypt_kyc_attribute("email", &subject.keypair)?;
 		assert_eq!(decrypted, b"john@example.com");
+		Ok(())
 	}
 
 	/// Helper function to test conversion from KycAttributeEntry to SensitiveAttribute
@@ -1012,8 +1010,12 @@ mod tests {
 		S: SignatureEncoding,
 	{
 		let builder = SensitiveAttributeBuilder::from(entry);
-		let sensitive_attr = builder.build(&account.keypair).unwrap();
-		let decrypted_value = sensitive_attr.decrypt(&account.keypair).unwrap();
+		let sensitive_attr = builder
+			.build(&account.keypair)
+			.expect("build sensitive attribute");
+		let decrypted_value = sensitive_attr
+			.decrypt(&account.keypair)
+			.expect("decrypt attribute");
 		assert_eq!(decrypted_value.expose_secret(), expected_data);
 	}
 

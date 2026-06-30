@@ -204,11 +204,12 @@ mod tests {
 	});
 
 	#[test]
-	fn test_sensitive_attribute_builder_unsupported_key_type() {
-		let network_account = Account::<KeyNETWORK>::generate_network_address(1).unwrap();
+	fn test_sensitive_attribute_builder_unsupported_key_type() -> core::result::Result<(), Box<dyn std::error::Error>> {
+		let network_account = Account::<KeyNETWORK>::generate_network_address(1)?;
 		let builder = SensitiveAttributeBuilder::new().with_value(b"test value");
 		let result = builder.build(&network_account.keypair);
 		assert!(result.is_err());
 		assert!(matches!(result.unwrap_err(), SensitiveAttributeError::UnsupportedKeyType));
+		Ok(())
 	}
 }

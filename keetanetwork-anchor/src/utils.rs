@@ -187,7 +187,7 @@ mod tests {
 	use super::*;
 
 	#[test]
-	fn test_base64_encode_decode_roundtrip() {
+	fn test_base64_encode_decode_roundtrip() -> Result<(), Box<dyn std::error::Error>> {
 		let test_data = b"Hello, World!.";
 
 		let encoded = base64_encode(test_data);
@@ -196,11 +196,12 @@ mod tests {
 		// Verify roundtrip
 		let decoded = base64_decode(&encoded);
 		assert!(decoded.is_ok());
-		assert_eq!(decoded.unwrap(), test_data);
+		assert_eq!(decoded?, test_data);
 
 		// Test decode with invalid base64
 		let invalid_result = base64_decode("not_valid_base64!");
 		assert!(invalid_result.is_err());
+		Ok(())
 	}
 
 	#[cfg(feature = "serde")]
@@ -213,14 +214,14 @@ mod tests {
 		use crate::utils::serde_helpers::*;
 
 		#[test]
-		fn test_extract_string() {
+		fn test_extract_string() -> Result<(), Box<dyn std::error::Error>> {
 			let mut map = Map::new();
 			map.insert("test_field".to_string(), Value::String("test_value".to_string()));
 
 			// Test successful extraction
 			let result: Result<&str, serde_json::Error> = extract_string(&map, "test_field");
 			assert!(result.is_ok());
-			assert_eq!(result.unwrap(), "test_value");
+			assert_eq!(result?, "test_value");
 
 			// Test missing field
 			let missing_result: Result<&str, serde_json::Error> = extract_string(&map, "missing_field");
@@ -230,10 +231,11 @@ mod tests {
 			map.insert("number_field".to_string(), Value::Number(42.into()));
 			let wrong_type_result: Result<&str, serde_json::Error> = extract_string(&map, "number_field");
 			assert!(wrong_type_result.is_err());
+			Ok(())
 		}
 
 		#[test]
-		fn test_extract_base64() {
+		fn test_extract_base64() -> Result<(), Box<dyn std::error::Error>> {
 			let mut map = Map::new();
 			let test_data = b"hello world";
 			let encoded = base64::prelude::BASE64_STANDARD.encode(test_data);
@@ -242,7 +244,7 @@ mod tests {
 			// Test successful extraction and decoding
 			let result: Result<Vec<u8>, serde_json::Error> = extract_base64(&map, "b64_field");
 			assert!(result.is_ok());
-			assert_eq!(result.unwrap(), test_data);
+			assert_eq!(result?, test_data);
 
 			// Test invalid base64
 			map.insert("invalid_b64".to_string(), Value::String("not_valid_base64!".to_string()));
@@ -252,10 +254,11 @@ mod tests {
 			// Test missing field
 			let missing_result: Result<Vec<u8>, serde_json::Error> = extract_base64(&map, "missing");
 			assert!(missing_result.is_err());
+			Ok(())
 		}
 
 		#[test]
-		fn test_extract_object() {
+		fn test_extract_object() -> Result<(), Box<dyn std::error::Error>> {
 			let mut map = Map::new();
 			let mut nested_map = Map::new();
 			nested_map.insert("nested_key".to_string(), Value::String("nested_value".to_string()));
@@ -264,8 +267,15 @@ mod tests {
 			// Test successful extraction
 			let result: Result<&Map<String, Value>, serde_json::Error> = extract_object(&map, "object_field");
 			assert!(result.is_ok());
-			let extracted = result.unwrap();
-			assert_eq!(extracted.get("nested_key").unwrap().as_str().unwrap(), "nested_value");
+			let extracted = result?;
+			assert_eq!(
+				extracted
+					.get("nested_key")
+					.ok_or("missing nested key")?
+					.as_str()
+					.ok_or("nested key not a string")?,
+				"nested_value"
+			);
 
 			// Test missing field
 			let missing_result: Result<&Map<String, Value>, serde_json::Error> = extract_object(&map, "missing");
@@ -276,40 +286,55 @@ mod tests {
 			let wrong_type_result: Result<&Map<String, Value>, serde_json::Error> =
 				extract_object(&map, "string_field");
 			assert!(wrong_type_result.is_err());
+			Ok(())
 		}
 
 		#[test]
-		fn test_algorithm_to_oid() {
+		fn test_algorithm_to_oid() -> Result<(), Box<dyn std::error::Error>> {
 			// Test known algorithms
 			let aes_result: Result<ObjectIdentifier, serde_json::Error> = algorithm_to_oid("aes-256-gcm");
 			assert!(aes_result.is_ok());
-			assert_eq!(aes_result.unwrap(), oids::AES_256_GCM);
+			assert_eq!(aes_result?, oids::AES_256_GCM);
 
 			let sha_result: Result<ObjectIdentifier, serde_json::Error> = algorithm_to_oid("sha2-256");
 			assert!(sha_result.is_ok());
-			assert_eq!(sha_result.unwrap(), oids::SHA2_256);
+			assert_eq!(sha_result?, oids::SHA2_256);
 
 			// Test unknown algorithm
 			let unknown_result: Result<ObjectIdentifier, serde_json::Error> = algorithm_to_oid("unknown-algorithm");
 			assert!(unknown_result.is_err());
+			Ok(())
 		}
 
 		#[test]
-		fn test_json_object_macro() {
+		fn test_json_object_macro() -> Result<(), Box<dyn std::error::Error>> {
 			// Test the json_object macro
 			let obj = json_object! {
 				"key1" => "value1".to_string(),
 				"key2" => "value2".to_string()
 			};
 
-			let map = obj.as_object().expect("Should be a JSON object");
-			assert_eq!(map.get("key1").unwrap().as_str().unwrap(), "value1");
-			assert_eq!(map.get("key2").unwrap().as_str().unwrap(), "value2");
+			let map = obj.as_object().ok_or("expected a json object")?;
+			assert_eq!(
+				map.get("key1")
+					.ok_or("missing key1")?
+					.as_str()
+					.ok_or("key1 not a string")?,
+				"value1"
+			);
+			assert_eq!(
+				map.get("key2")
+					.ok_or("missing key2")?
+					.as_str()
+					.ok_or("key2 not a string")?,
+				"value2"
+			);
 
 			// Test empty object
 			let empty_obj = json_object! {};
-			let empty_map = empty_obj.as_object().expect("Should be a JSON object");
+			let empty_map = empty_obj.as_object().ok_or("expected a json object")?;
 			assert!(empty_map.is_empty());
+			Ok(())
 		}
 	}
 }

@@ -534,7 +534,7 @@ mod tests {
 	/// Helper function to create a test X.509 certificate.
 	fn create_test_x509_cert() -> X509Certificate {
 		// Create a minimal X.509 certificate for testing
-		let subject_dn = create_dn(&[(keetanetwork_x509::oids::CN, "Test")]).unwrap();
+		let subject_dn = create_dn(&[(keetanetwork_x509::oids::CN, "Test")]).expect("test subject dn");
 		let account = create_account_from_seed::<KeyECDSASECP256K1>(0);
 		let public_key = account.keypair.to_public_key();
 
@@ -545,7 +545,7 @@ mod tests {
 			.with_serial_number(SerialNumber::from(1u64))
 			.with_validity_days(365)
 			.build(&account.keypair)
-			.unwrap()
+			.expect("build x509 certificate")
 	}
 
 	#[test]
@@ -596,7 +596,9 @@ mod tests {
 		}
 
 		// Verify certificate has KYC attributes
-		let certificate = builder.build(&account.keypair, &account.keypair).unwrap();
+		let certificate = builder
+			.build(&account.keypair, &account.keypair)
+			.expect("build certificate");
 		assert!(certificate.has_kyc_attributes());
 		assert_eq!(certificate.kyc_attribute_count(), 3);
 
@@ -609,10 +611,12 @@ mod tests {
 			if *sensitive {
 				let decrypted = certificate
 					.decrypt_kyc_attribute(name, &account.keypair)
-					.unwrap();
+					.expect("decrypt attribute");
 				assert_eq!(decrypted, value.as_bytes());
 			} else {
-				let plain = certificate.get_plain_kyc_attribute(name).unwrap();
+				let plain = certificate
+					.get_plain_kyc_attribute(name)
+					.expect("get plain attribute");
 				assert_eq!(plain, value.as_bytes());
 			}
 		}
@@ -643,7 +647,9 @@ mod tests {
 			.with_sensitive_attribute("email", sensitive_attribute.into_secret());
 
 		// Test trying to decrypt a plain attribute
-		let certificate = builder.build(&account.keypair, &account.keypair).unwrap();
+		let certificate = builder
+			.build(&account.keypair, &account.keypair)
+			.expect("build certificate");
 		let result = certificate.decrypt_kyc_attribute("postalCode", &account.keypair);
 		assert!(result.is_err());
 		assert!(matches!(result.unwrap_err(), KycCertificateError::SensitiveAttributeError { .. }));
@@ -667,23 +673,23 @@ mod tests {
 			.with_sensitive_attribute("email", b"john@example.com".to_vec().into_secret())
 			.with_sensitive_attribute("fullName", b"John Doe".to_vec().into_secret())
 			.build(&account.keypair, &account.keypair)
-			.unwrap();
+			.expect("build certificate");
 
 		// A proof for an attribute validates against that attribute.
 		let email_proof = certificate
 			.prove_kyc_attribute("email", &account.keypair)
-			.unwrap();
+			.expect("prove email");
 		assert!(certificate
 			.validate_kyc_attribute_proof("email", &account.keypair, email_proof)
-			.unwrap());
+			.expect("validate email proof"));
 
 		// A proof for a different attribute does not validate against this one.
 		let name_proof = certificate
 			.prove_kyc_attribute("fullName", &account.keypair)
-			.unwrap();
+			.expect("prove full name");
 		assert!(!certificate
 			.validate_kyc_attribute_proof("email", &account.keypair, name_proof)
-			.unwrap());
+			.expect("validate name proof"));
 
 		// A plain attribute cannot be proven.
 		let plain_result = certificate.prove_kyc_attribute("postalCode", &account.keypair);

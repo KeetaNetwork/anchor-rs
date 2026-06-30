@@ -16,6 +16,8 @@ use keetanetwork_x509::certificates::Certificate as X509Certificate;
 
 use common::load_pem_fixture;
 
+type BoxError = Box<dyn std::error::Error + Send + Sync>;
+
 /// Test case for TypeScript certificate interoperability
 struct InteropTestCase {
 	name: &'static str,
@@ -68,7 +70,7 @@ fn test_typescript_certificate_parsing() {
 }
 
 #[test]
-fn test_typescript_certificate_attribute_decryption() {
+fn test_typescript_certificate_attribute_decryption() -> Result<(), BoxError> {
 	for test_case in TEST_CASES {
 		let certificate = parse_certificate_from_fixture(test_case.pem_fixture);
 		let account = create_account_from_seed_hex::<KeyECDSASECP256K1>(test_case.seed, 0);
@@ -77,7 +79,7 @@ fn test_typescript_certificate_attribute_decryption() {
 		for attr_name in test_case.expected_attributes {
 			let attr = certificate
 				.get_kyc_attribute(attr_name)
-				.unwrap_or_else(|| panic!("{}: Attribute '{}' should exist", test_case.name, attr_name));
+				.ok_or_else(|| format!("{}: Attribute '{}' should exist", test_case.name, attr_name))?;
 
 			if attr.is_sensitive() {
 				let result = certificate.decrypt_kyc_attribute(attr_name, &account.keypair);
@@ -89,7 +91,7 @@ fn test_typescript_certificate_attribute_decryption() {
 					result.err()
 				);
 
-				let decrypted = result.expect("Decryption should succeed");
+				let decrypted = result?;
 				assert!(
 					!decrypted.is_empty(),
 					"{}: Decrypted attribute '{}' should not be empty",
@@ -99,6 +101,8 @@ fn test_typescript_certificate_attribute_decryption() {
 			}
 		}
 	}
+
+	Ok(())
 }
 
 #[test]

@@ -128,20 +128,23 @@ mod tests {
 			.with_value(b"test value");
 
 		if is_sensitive {
-			builder.as_sensitive().build().unwrap()
+			builder
+				.as_sensitive()
+				.build()
+				.expect("build sensitive attribute")
 		} else {
-			builder.as_plain().build().unwrap()
+			builder.as_plain().build().expect("build plain attribute")
 		}
 	}
 
 	#[test]
-	fn test_setup_cipher_for_decryption() {
+	fn test_setup_cipher_for_decryption() -> core::result::Result<(), Box<dyn std::error::Error>> {
 		let account = create_account_from_seed::<KeyECDSASECP256K1>(0);
 
 		// Generate a symmetric key and encrypt it
-		let symmetric_key = generate_random_seed().unwrap();
+		let symmetric_key = generate_random_seed()?;
 		let symmetric_key_bytes = symmetric_key.expose_secret();
-		let encrypted_key = account.keypair.encrypt(symmetric_key_bytes).unwrap();
+		let encrypted_key = account.keypair.encrypt(symmetric_key_bytes)?;
 
 		// Generate a nonce
 		let nonce = Aes256Gcm::generate_nonce();
@@ -151,18 +154,19 @@ mod tests {
 		let result = setup_cipher_for_decryption(&account.keypair, &cipher_info);
 		assert!(result.is_ok());
 
-		let (cipher, decrypted_nonce) = result.unwrap();
+		let (cipher, decrypted_nonce) = result?;
 		assert_eq!(nonce, decrypted_nonce);
 
 		// Verify the cipher works by encrypting/decrypting test data
 		let test_data = b"test encryption data";
-		let encrypted = cipher.encrypt(&nonce, test_data.as_ref()).unwrap();
-		let decrypted = cipher.decrypt(&nonce, encrypted.as_ref()).unwrap();
+		let encrypted = cipher.encrypt(&nonce, test_data.as_ref())?;
+		let decrypted = cipher.decrypt(&nonce, encrypted.as_ref())?;
 		assert_eq!(test_data.as_ref(), decrypted.as_slice());
+		Ok(())
 	}
 
 	#[test]
-	fn test_create_hash_input() {
+	fn test_create_hash_input() -> core::result::Result<(), Box<dyn std::error::Error>> {
 		let salt = b"test_salt_32_bytes_long_for_test";
 		let public_key = b"test_public_key";
 		let encrypted_value = b"encrypted_test_value";
@@ -181,18 +185,19 @@ mod tests {
 
 		// Test with different input types (Vec, &[u8], String, etc.)
 		let salt_vec = salt.to_vec();
-		let public_key_str = String::from_utf8(public_key.to_vec()).unwrap();
+		let public_key_str = String::from_utf8(public_key.to_vec())?;
 		let hash_input2 = create_hash_input(&salt_vec, public_key_str.as_bytes(), encrypted_value, plaintext_value);
 		assert_eq!(hash_input, hash_input2);
+		Ok(())
 	}
 
 	#[test]
-	fn test_validate_version() {
+	fn test_validate_version() -> core::result::Result<(), Box<dyn std::error::Error>> {
 		// Test valid version 0
 		let version_zero: Integer = 0u64.into();
 		let result = assert_valid_version(&version_zero);
 		assert!(result.is_ok());
-		assert_eq!(result.unwrap(), 0);
+		assert_eq!(result?, 0);
 
 		// Test invalid version 1
 		let version_one: Integer = 1u64.into();
@@ -201,6 +206,7 @@ mod tests {
 
 		let error = result.unwrap_err();
 		assert!(matches!(error, SensitiveAttributeError::UnsupportedVersion { version: 1 }));
+		Ok(())
 	}
 
 	/// Macro to test assertion functions with both success and failure cases

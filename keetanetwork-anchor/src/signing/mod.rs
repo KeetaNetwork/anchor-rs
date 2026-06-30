@@ -210,11 +210,10 @@ mod tests {
 	use super::*;
 
 	#[test]
-	fn format_iso8601_uses_milliseconds_and_zulu() {
-		let instant = DateTime::parse_from_rfc3339("2024-01-02T03:04:05.678Z")
-			.unwrap()
-			.with_timezone(&Utc);
+	fn format_iso8601_uses_milliseconds_and_zulu() -> Result<(), Box<dyn std::error::Error>> {
+		let instant = DateTime::parse_from_rfc3339("2024-01-02T03:04:05.678Z")?.with_timezone(&Utc);
 		assert_eq!(format_iso8601(instant), "2024-01-02T03:04:05.678Z");
+		Ok(())
 	}
 
 	#[test]

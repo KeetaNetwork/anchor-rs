@@ -744,31 +744,35 @@ mod tests {
 	}
 
 	#[test]
-	fn from_encoded_rejects_encrypted_blob_without_principals() {
+	fn from_encoded_rejects_encrypted_blob_without_principals() -> core::result::Result<(), Box<dyn std::error::Error>>
+	{
 		let mut container = sealed(b"data");
-		let encoded = container.get_encoded().expect("encode");
+		let encoded = container.get_encoded()?;
 		let outcome = EncryptedContainer::from_encoded(&encoded, None);
 		assert!(matches!(outcome, Err(EncryptedContainerError::InvalidPrincipals)));
+		Ok(())
 	}
 
 	#[test]
-	fn revoked_principal_loses_access_while_remaining_one_keeps_it() {
+	fn revoked_principal_loses_access_while_remaining_one_keeps_it(
+	) -> core::result::Result<(), Box<dyn std::error::Error>> {
 		let mut container = EncryptedContainer::from_plaintext(
 			b"shared".to_vec(),
 			Some(vec![secp256k1(0)]),
 			FromPlaintextOptions { locked: Some(false), signer: None },
 		);
 
-		container.grant_access(vec![secp256k1(1)]).expect("grant");
-		assert_eq!(container.principals().expect("principals").len(), 2);
+		container.grant_access(vec![secp256k1(1)])?;
+		assert_eq!(container.principals()?.len(), 2);
 
 		let revoked_key = secp256k1(1).to_public_key_with_type();
-		container.revoke_access(&revoked_key).expect("revoke");
-		assert_eq!(container.principals().expect("principals").len(), 1);
+		container.revoke_access(&revoked_key)?;
+		assert_eq!(container.principals()?.len(), 1);
 
-		let encoded = container.get_encoded().expect("encode");
-		let mut reopened = EncryptedContainer::from_encrypted(&encoded, vec![secp256k1(0)]).expect("reopen");
-		assert_eq!(reopened.get_plaintext().expect("plaintext"), b"shared");
+		let encoded = container.get_encoded()?;
+		let mut reopened = EncryptedContainer::from_encrypted(&encoded, vec![secp256k1(0)])?;
+		assert_eq!(reopened.get_plaintext()?, b"shared");
+		Ok(())
 	}
 
 	#[test]
@@ -778,45 +782,41 @@ mod tests {
 	}
 
 	#[test]
-	fn parsed_only_container_has_no_borrowable_signer() {
+	fn parsed_only_container_has_no_borrowable_signer() -> core::result::Result<(), Box<dyn std::error::Error>> {
 		let mut container = signed(b"data");
-		let encoded = container.get_encoded().expect("encode");
-		let reopened = EncryptedContainer::from_encoded(&encoded, None).expect("reopen");
+		let encoded = container.get_encoded()?;
+		let reopened = EncryptedContainer::from_encoded(&encoded, None)?;
 		assert!(reopened.signer().is_none());
-		assert!(reopened
-			.signing_account()
-			.expect("signing account")
-			.is_some());
+		assert!(reopened.signing_account()?.is_some());
+		Ok(())
 	}
 
 	#[test]
-	fn take_signing_account_downgrades_container_to_public_only() {
+	fn take_signing_account_downgrades_container_to_public_only() -> core::result::Result<(), Box<dyn std::error::Error>>
+	{
 		let mut container = signed(b"data");
-		container
-			.take_signing_account()
-			.expect("take")
-			.expect("signer present");
+		container.take_signing_account()?.ok_or("signer present")?;
 
 		let outcome = container.get_encoded();
 		assert!(matches!(outcome, Err(EncryptedContainerError::SignerRequiresPrivateKey)));
+		Ok(())
 	}
 
 	#[test]
-	fn take_signing_account_preserves_the_private_key() {
+	fn take_signing_account_preserves_the_private_key() -> core::result::Result<(), Box<dyn std::error::Error>> {
 		let mut container = signed(b"data");
-		let taken = container
-			.take_signing_account()
-			.expect("take")
-			.expect("signer present");
+		let taken = container.take_signing_account()?.ok_or("signer present")?;
 
 		let options = FromPlaintextOptions { locked: Some(false), signer: Some(taken) };
 		let mut resigned = EncryptedContainer::from_plaintext(b"data".to_vec(), None, options);
 		assert!(resigned.get_encoded().is_ok());
+		Ok(())
 	}
 
 	#[test]
-	fn take_signing_account_is_none_without_a_signer() {
+	fn take_signing_account_is_none_without_a_signer() -> core::result::Result<(), Box<dyn std::error::Error>> {
 		let mut container = sealed(b"data");
-		assert!(container.take_signing_account().expect("take").is_none());
+		assert!(container.take_signing_account()?.is_none());
+		Ok(())
 	}
 }

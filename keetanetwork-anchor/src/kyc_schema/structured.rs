@@ -256,7 +256,7 @@ mod tests {
 	const ENTITY_TYPE_ORACLE: &str = r#"{"person":[{"id":"123-45-6789","schemeName":"SSN"}]}"#;
 
 	fn assert_matches_validator(token: &str, der_hex: &str, validator: &str) {
-		let decoded = decode_structured(token, from_hex(der_hex)).unwrap();
+		let decoded = decode_structured(token, from_hex(der_hex)).expect("decode structured");
 		assert_json_eq(&decoded, validator);
 	}
 

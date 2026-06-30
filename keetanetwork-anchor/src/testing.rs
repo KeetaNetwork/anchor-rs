@@ -85,7 +85,7 @@ where
 		.expect("Failed to get public key string");
 	let keyable = Keyable::PublicKeyString(public_key_string);
 	let accountable = Accountable::KeyAndType(keyable, T::KEY_PAIR_TYPE);
-	Account::<T>::try_from(accountable).unwrap()
+	Account::<T>::try_from(accountable).expect("create public-key-only account")
 }
 
 /// Helper function to create a sensitive attribute and proof for testing.
@@ -94,8 +94,12 @@ pub fn create_test_sensitive_attribute_with_proof<T: KeyPair>(
 	test_value: impl AsRef<[u8]>,
 ) -> (SensitiveAttribute, SensitiveAttributeProof) {
 	let builder = SensitiveAttributeBuilder::new().with_value(test_value.as_ref().to_vec());
-	let sensitive_attr = builder.build(&account.keypair).unwrap();
-	let proof = sensitive_attr.to_proof(&account.keypair).unwrap();
+	let sensitive_attr = builder
+		.build(&account.keypair)
+		.expect("build sensitive attribute");
+	let proof = sensitive_attr
+		.to_proof(&account.keypair)
+		.expect("prove sensitive attribute");
 	(sensitive_attr, proof)
 }
 
@@ -105,13 +109,16 @@ pub fn create_test_sensitive_attribute<T: KeyPair>(
 	test_value: impl AsRef<[u8]>,
 ) -> SensitiveAttribute {
 	let builder = SensitiveAttributeBuilder::new().with_value(test_value.as_ref().to_vec());
-	builder.build(&account.keypair).unwrap()
+	builder
+		.build(&account.keypair)
+		.expect("build sensitive attribute")
 }
 
 /// Helper function to create a KycCertificateBuilder with default test data.
 pub fn create_test_certificate_builder<T: KeyPair>(account: &Account<T>) -> KycCertificateBuilder {
-	let subject_dn = keetanetwork_x509::utils::create_dn(&[(keetanetwork_x509::oids::CN, "Test Subject")]).unwrap();
-	let subject_public_key_info = SubjectPublicKeyInfo::try_from(account).unwrap();
+	let subject_dn =
+		keetanetwork_x509::utils::create_dn(&[(keetanetwork_x509::oids::CN, "Test Subject")]).expect("test subject dn");
+	let subject_public_key_info = SubjectPublicKeyInfo::try_from(account).expect("subject public key info");
 
 	KycCertificateBuilder::for_end_entity()
 		.with_subject_dn(subject_dn.clone())
@@ -133,7 +140,7 @@ pub fn create_test_kyc_attributes() -> KycAttributes {
 		}
 	}
 
-	builder.build().unwrap()
+	builder.build().expect("build kyc attributes")
 }
 
 /// Issue a self-signed CA and an end-entity leaf for `subject_seed_hex`, encoding
@@ -207,5 +214,5 @@ pub fn create_test_attribute(oid_str: impl AsRef<str>, value: impl AsRef<[u8]>, 
 		builder = builder.as_plain();
 	}
 
-	builder.build().unwrap()
+	builder.build().expect("build attribute")
 }

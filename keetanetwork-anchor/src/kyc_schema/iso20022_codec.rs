@@ -313,8 +313,8 @@ mod tests {
 	use crate::kyc_schema::testing::{assert_json_eq, from_hex};
 
 	fn round_trip(token: &str, json: &str) {
-		let der = encode_structured(token, json.as_bytes()).unwrap();
-		let decoded = decode_structured(token, &der).unwrap();
+		let der = encode_structured(token, json.as_bytes()).expect("encode structured");
+		let decoded = decode_structured(token, &der).expect("decode structured");
 		assert_json_eq(&decoded, json);
 	}
 
@@ -337,13 +337,14 @@ mod tests {
 	}
 
 	#[test]
-	fn address_choice_is_wrapped_positionally() {
-		let der = encode_structured("Address", br#"{"addressType":"HOME"}"#).unwrap();
+	fn address_choice_is_wrapped_positionally() -> Result<(), Box<dyn std::error::Error>> {
+		let der = encode_structured("Address", br#"{"addressType":"HOME"}"#)?;
 		// SEQUENCE { [1] EXPLICIT { [0] EXPLICIT UTF8String "HOME" } }
 		assert_eq!(der[0], 0x30);
 		assert_eq!(der[2], 0xa1);
 		assert_eq!(der[4], 0xa0);
 		assert_eq!(der[6], 0x0c);
+		Ok(())
 	}
 
 	#[test]

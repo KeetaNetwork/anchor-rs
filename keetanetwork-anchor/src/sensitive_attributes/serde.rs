@@ -144,39 +144,40 @@ mod tests {
 	use crate::testing::{create_account_from_seed, create_test_sensitive_attribute};
 
 	#[test]
-	fn test_sensitive_attribute_serialize() {
+	fn test_sensitive_attribute_serialize() -> Result<(), Box<dyn std::error::Error>> {
 		let account = create_account_from_seed::<KeyECDSASECP256K1>(0);
 		let test_value = b"test value for serialization";
 		let builder = SensitiveAttributeBuilder::new().with_value(test_value);
-		let sensitive_attr = builder.build(&account.keypair).unwrap();
+		let sensitive_attr = builder.build(&account.keypair)?;
 
 		let json_result = serde_json::to_string_pretty(&sensitive_attr);
 		assert!(json_result.is_ok());
 
-		let json_str = json_result.unwrap();
+		let json_str = json_result?;
 		assert!(json_str.contains("version"));
 		assert!(json_str.contains("cipher"));
 		assert!(json_str.contains("hashedValue"));
 		assert!(json_str.contains("encryptedValue"));
+		Ok(())
 	}
 
 	#[test]
-	fn test_sensitive_attribute_proof_serde() {
+	fn test_sensitive_attribute_proof_serde() -> Result<(), Box<dyn std::error::Error>> {
 		let account = create_account_from_seed::<KeyECDSASECP256K1>(0);
 		let test_value = b"test value for proof serde";
 		let builder = SensitiveAttributeBuilder::new().with_value(test_value);
-		let sensitive_attr = builder.build(&account.keypair).unwrap();
-		let original_proof = sensitive_attr.to_proof(&account.keypair).unwrap();
+		let sensitive_attr = builder.build(&account.keypair)?;
+		let original_proof = sensitive_attr.to_proof(&account.keypair)?;
 
 		// Test serialization
-		let json_str = serde_json::to_string(&original_proof).unwrap();
+		let json_str = serde_json::to_string(&original_proof)?;
 		assert!(json_str.contains("value"));
 		assert!(json_str.contains("hash"));
 		assert!(json_str.contains("salt"));
 		assert!(json_str.contains(&base64_encode(test_value)));
 
 		// Test deserialization
-		let deserialized_proof: SensitiveAttributeProof = serde_json::from_str(&json_str).unwrap();
+		let deserialized_proof: SensitiveAttributeProof = serde_json::from_str(&json_str)?;
 
 		// Test roundtrip equivalence
 		assert_eq!(original_proof.value.expose_secret(), deserialized_proof.value.expose_secret());
@@ -184,12 +185,9 @@ mod tests {
 		assert_eq!(original_proof, deserialized_proof);
 
 		// Both proofs should validate
-		assert!(sensitive_attr
-			.validate_proof(&account.keypair, original_proof)
-			.unwrap());
-		assert!(sensitive_attr
-			.validate_proof(&account.keypair, deserialized_proof)
-			.unwrap());
+		assert!(sensitive_attr.validate_proof(&account.keypair, original_proof)?);
+		assert!(sensitive_attr.validate_proof(&account.keypair, deserialized_proof)?);
+		Ok(())
 	}
 
 	test_all_key_types!(test_sensitive_attribute_roundtrip, |account: Account<_>| {
@@ -197,18 +195,26 @@ mod tests {
 		let original_attr = create_test_sensitive_attribute(&account, test_value);
 
 		// Serialize and deserialize
-		let json_str = serde_json::to_string(&original_attr).unwrap();
-		let deserialized_attr: SensitiveAttribute = serde_json::from_str(&json_str).unwrap();
+		let json_str = serde_json::to_string(&original_attr).expect("serialize attribute");
+		let deserialized_attr: SensitiveAttribute = serde_json::from_str(&json_str).expect("deserialize attribute");
 
 		// Verify decryption equivalence
-		let decrypted_original = original_attr.decrypt(&account.keypair).unwrap();
-		let decrypted_deserialized = deserialized_attr.decrypt(&account.keypair).unwrap();
+		let decrypted_original = original_attr
+			.decrypt(&account.keypair)
+			.expect("decrypt original");
+		let decrypted_deserialized = deserialized_attr
+			.decrypt(&account.keypair)
+			.expect("decrypt deserialized");
 		assert_eq!(decrypted_original.expose_secret(), decrypted_deserialized.expose_secret());
 		assert_eq!(decrypted_original.expose_secret(), test_value);
 
 		// Verify proof equivalence
-		let proof_original = original_attr.to_proof(&account.keypair).unwrap();
-		let proof_deserialized = deserialized_attr.to_proof(&account.keypair).unwrap();
+		let proof_original = original_attr
+			.to_proof(&account.keypair)
+			.expect("prove original");
+		let proof_deserialized = deserialized_attr
+			.to_proof(&account.keypair)
+			.expect("prove deserialized");
 		assert_eq!(proof_original.value.expose_secret(), proof_deserialized.value.expose_secret());
 		assert_eq!(proof_original.hash.salt, proof_deserialized.hash.salt);
 	});

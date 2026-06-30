@@ -539,10 +539,11 @@ mod tests {
 	}
 
 	#[test]
-	fn test_der_roundtrip() {
+	fn test_der_roundtrip() -> Result<(), Box<dyn std::error::Error>> {
 		let original = create_test_kyc_attributes();
-		let der_bytes: Vec<u8> = original.clone().try_into().unwrap();
-		let decoded: KycAttributes = der_bytes.try_into().unwrap();
+		let der_bytes: Vec<u8> = original.clone().try_into()?;
+		let decoded: KycAttributes = der_bytes.try_into()?;
 		assert_eq!(decoded.count(), original.count());
+		Ok(())
 	}
 }

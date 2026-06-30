@@ -203,9 +203,10 @@ mod tests {
 	}
 
 	#[test]
-	fn test_different_account_indices() {
+	fn test_different_account_indices() -> Result<(), Box<dyn std::error::Error>> {
 		let account1 = create_secp256k1_test_account(Some(0));
 		let account2 = create_secp256k1_test_account(Some(1));
-		assert_ne!(account1.keypair.to_public_key_string().unwrap(), account2.keypair.to_public_key_string().unwrap());
+		assert_ne!(account1.keypair.to_public_key_string()?, account2.keypair.to_public_key_string()?);
+		Ok(())
 	}
 }

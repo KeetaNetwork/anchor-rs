@@ -182,70 +182,81 @@ mod tests {
 	}
 
 	#[test]
-	fn flat_object_sorts_keys_by_code_unit() {
+	fn flat_object_sorts_keys_by_code_unit() -> Result<(), Box<dyn std::error::Error>> {
 		let value = json!({ "z": 1, "a": "first", "m": "middle" });
-		assert_eq!(canon(&value).unwrap(), r#"{"a":"first","m":"middle","z":1}"#);
+		assert_eq!(canon(&value)?, r#"{"a":"first","m":"middle","z":1}"#);
+		Ok(())
 	}
 
 	#[test]
-	fn nested_object_preserves_structure() {
+	fn nested_object_preserves_structure() -> Result<(), Box<dyn std::error::Error>> {
 		let value = json!({ "outer": { "inner": "v" }, "top": "t" });
-		assert_eq!(canon(&value).unwrap(), r#"{"outer":{"inner":"v"},"top":"t"}"#);
+		assert_eq!(canon(&value)?, r#"{"outer":{"inner":"v"},"top":"t"}"#);
+		Ok(())
 	}
 
 	#[test]
-	fn arrays_preserve_index_order() {
+	fn arrays_preserve_index_order() -> Result<(), Box<dyn std::error::Error>> {
 		let value = json!({ "items": ["a", "b", "c"] });
-		assert_eq!(canon(&value).unwrap(), r#"{"items":["a","b","c"]}"#);
+		assert_eq!(canon(&value)?, r#"{"items":["a","b","c"]}"#);
+		Ok(())
 	}
 
 	#[test]
-	fn null_values_are_kept() {
+	fn null_values_are_kept() -> Result<(), Box<dyn std::error::Error>> {
 		let value = json!({ "a": "kept", "c": null });
-		assert_eq!(canon(&value).unwrap(), r#"{"a":"kept","c":null}"#);
+		assert_eq!(canon(&value)?, r#"{"a":"kept","c":null}"#);
+		Ok(())
 	}
 
 	#[test]
-	fn booleans_serialize_as_json_literals() {
+	fn booleans_serialize_as_json_literals() -> Result<(), Box<dyn std::error::Error>> {
 		let value = json!({ "yes": true, "no": false });
-		assert_eq!(canon(&value).unwrap(), r#"{"no":false,"yes":true}"#);
+		assert_eq!(canon(&value)?, r#"{"no":false,"yes":true}"#);
+		Ok(())
 	}
 
 	#[test]
-	fn top_level_scalar_emits_json_string_literal() {
+	fn top_level_scalar_emits_json_string_literal() -> Result<(), Box<dyn std::error::Error>> {
 		let value = json!("lonely");
-		assert_eq!(canon(&value).unwrap(), r#""lonely""#);
+		assert_eq!(canon(&value)?, r#""lonely""#);
+		Ok(())
 	}
 
 	#[test]
-	fn top_level_array_preserves_order() {
+	fn top_level_array_preserves_order() -> Result<(), Box<dyn std::error::Error>> {
 		let value = json!(["x", "y"]);
-		assert_eq!(canon(&value).unwrap(), r#"["x","y"]"#);
+		assert_eq!(canon(&value)?, r#"["x","y"]"#);
+		Ok(())
 	}
 
 	#[test]
-	fn array_null_entries_serialize_as_json_null() {
+	fn array_null_entries_serialize_as_json_null() -> Result<(), Box<dyn std::error::Error>> {
 		let value = json!(["x", null, null, "y"]);
-		assert_eq!(canon(&value).unwrap(), r#"["x",null,null,"y"]"#);
+		assert_eq!(canon(&value)?, r#"["x",null,null,"y"]"#);
+		Ok(())
 	}
 
 	#[test]
-	fn marker_characters_as_keys_are_escaped() {
+	fn marker_characters_as_keys_are_escaped() -> Result<(), Box<dyn std::error::Error>> {
 		let value = json!({ "a": "first", "m": "middle", "{": "a", "}": "{" });
-		assert_eq!(canon(&value).unwrap(), r#"{"a":"first","m":"middle","{":"a","}":"{"}"#);
+		assert_eq!(canon(&value)?, r#"{"a":"first","m":"middle","{":"a","}":"{"}"#);
+		Ok(())
 	}
 
 	#[test]
-	fn rfc8785_sort_vector_orders_keys_by_code_unit() {
+	fn rfc8785_sort_vector_orders_keys_by_code_unit() -> Result<(), Box<dyn std::error::Error>> {
 		let value = json!({ "\u{20ac}": "Euro Sign", "\r": "Carriage Return", "1": "One" });
-		assert_eq!(canon(&value).unwrap(), "{\"\\r\":\"Carriage Return\",\"1\":\"One\",\"\u{20ac}\":\"Euro Sign\"}");
+		assert_eq!(canon(&value)?, "{\"\\r\":\"Carriage Return\",\"1\":\"One\",\"\u{20ac}\":\"Euro Sign\"}");
+		Ok(())
 	}
 
 	#[test]
-	fn object_key_insertion_order_does_not_matter() {
-		let first = canon(&json!({ "b": 2, "a": 1 })).unwrap();
-		let second = canon(&json!({ "a": 1, "b": 2 })).unwrap();
+	fn object_key_insertion_order_does_not_matter() -> Result<(), Box<dyn std::error::Error>> {
+		let first = canon(&json!({ "b": 2, "a": 1 }))?;
+		let second = canon(&json!({ "a": 1, "b": 2 }))?;
 		assert_eq!(first, second);
+		Ok(())
 	}
 
 	#[test]
@@ -278,9 +289,10 @@ mod tests {
 	}
 
 	#[test]
-	fn equivalent_objects_canonicalize_identically() {
-		let first = object_to_signable(&json!({ "a": 1, "b": { "c": "x", "d": "y" } })).unwrap();
-		let second = object_to_signable(&json!({ "b": { "d": "y", "c": "x" }, "a": 1 })).unwrap();
+	fn equivalent_objects_canonicalize_identically() -> Result<(), Box<dyn std::error::Error>> {
+		let first = object_to_signable(&json!({ "a": 1, "b": { "c": "x", "d": "y" } }))?;
+		let second = object_to_signable(&json!({ "b": { "d": "y", "c": "x" }, "a": 1 }))?;
 		assert_eq!(first, second);
+		Ok(())
 	}
 }

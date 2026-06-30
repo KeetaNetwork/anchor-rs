@@ -115,11 +115,11 @@ mod tests {
 		} else {
 			builder.as_plain().build()
 		}
-		.unwrap()
+		.expect("build attribute")
 	}
 
 	#[test]
-	fn test_json_serialization() {
+	fn test_json_serialization() -> Result<(), Box<dyn std::error::Error>> {
 		let mut attributes = KycAttributes::new();
 
 		// Add test attributes
@@ -129,18 +129,21 @@ mod tests {
 		}
 
 		// Serialize to JSON
-		let json = serde_json::to_string(&attributes).unwrap();
+		let json = serde_json::to_string(&attributes)?;
 		assert!(!json.is_empty());
 
 		// Deserialize from JSON
-		let deserialized: KycAttributes = serde_json::from_str(&json).unwrap();
+		let deserialized: KycAttributes = serde_json::from_str(&json)?;
 		assert_eq!(deserialized.count(), TEST_ATTRIBUTES.len());
 
 		// Verify all attributes match
 		for test_attr in &TEST_ATTRIBUTES {
-			let attr = deserialized.find_by_oid(test_attr.oid.to_string()).unwrap();
+			let attr = deserialized
+				.find_by_oid(test_attr.oid.to_string())
+				.ok_or("attribute not found")?;
 			assert_eq!(attr.as_ref(), test_attr.value);
 			assert_eq!(attr.is_sensitive(), test_attr.is_sensitive);
 		}
+		Ok(())
 	}
 }
