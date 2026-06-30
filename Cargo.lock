@@ -1174,6 +1174,8 @@ dependencies = [
 [[package]]
 name = "keetanetwork-account"
 version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "814deaf79405345862613ea01b0b755ac080242f20190e76ff674f5f5517c974"
 dependencies = [
  "base32",
  "bip39-dict",
@@ -1282,6 +1284,8 @@ dependencies = [
 [[package]]
 name = "keetanetwork-asn1"
 version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5176629ce57df966871edc526c80ac855645f2120ee59910e85adcb30b9836f7"
 dependencies = [
  "chrono",
  "const-oid",
@@ -1389,6 +1393,8 @@ dependencies = [
 [[package]]
 name = "keetanetwork-crypto"
 version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fe6b08f067d923e0689eb0a4f20925499a2adc3f2a19fe36470c57f058ba48d3"
 dependencies = [
  "aead",
  "aes",
@@ -1428,6 +1434,8 @@ dependencies = [
 [[package]]
 name = "keetanetwork-error"
 version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "092b9facf797f97681b8de13ef648d8b070861eb114ccd8df2a18d40bbfb8464"
 dependencies = [
  "snafu",
 ]
@@ -1435,6 +1443,8 @@ dependencies = [
 [[package]]
 name = "keetanetwork-utils"
 version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "38ea8c67441a70e53f28dd203326b6834b2663dd352a3f5aa9b09344efabd216"
 dependencies = [
  "rasn-compiler",
  "snafu",
@@ -1483,6 +1493,8 @@ dependencies = [
 [[package]]
 name = "keetanetwork-x509"
 version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "45768d59a39cfc644a584ace1b17c8590926f94fb88ce39e23c6eccb8e8f4229"
 dependencies = [
  "base64",
  "chrono",
@@ -1490,7 +1502,7 @@ dependencies = [
  "getrandom 0.2.17",
  "getrandom 0.3.4",
  "hex",
- "keetanetwork-account 0.3.0",
+ "keetanetwork-account 0.2.0",
  "keetanetwork-asn1",
  "keetanetwork-crypto",
  "keetanetwork-error",
