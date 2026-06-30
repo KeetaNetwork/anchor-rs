@@ -1172,6 +1172,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "keetanetwork-account"
+version = "0.3.0"
+dependencies = [
+ "base32",
+ "bip39-dict",
+ "hex",
+ "keetanetwork-asn1",
+ "keetanetwork-crypto",
+ "keetanetwork-error",
+ "keetanetwork-utils",
+ "rand_core 0.9.5",
+ "snafu",
+ "strum 0.27.2",
+ "strum_macros 0.27.2",
+ "zeroize",
+]
+
+[[package]]
 name = "keetanetwork-anchor"
 version = "0.1.0"
 dependencies = [
@@ -1180,12 +1198,14 @@ dependencies = [
  "getrandom 0.2.17",
  "getrandom 0.3.4",
  "hex",
- "keetanetwork-account",
+ "keetanetwork-account 0.3.0",
  "keetanetwork-asn1",
  "keetanetwork-crypto",
  "keetanetwork-utils",
  "keetanetwork-x509",
  "lazy_static",
+ "miniz_oxide 0.9.1",
+ "num-bigint",
  "rasn",
  "rasn-compiler",
  "rasn-derive",
@@ -1202,9 +1222,9 @@ name = "keetanetwork-anchor-bindings"
 version = "0.1.0"
 dependencies = [
  "chrono",
- "keetanetwork-account",
+ "keetanetwork-account 0.3.0",
  "keetanetwork-anchor",
- "keetanetwork-bindings",
+ "keetanetwork-bindings 0.3.0",
  "keetanetwork-crypto",
  "keetanetwork-x509",
 ]
@@ -1219,7 +1239,7 @@ dependencies = [
  "gloo-timers",
  "hex",
  "js-sys",
- "keetanetwork-account",
+ "keetanetwork-account 0.3.0",
  "keetanetwork-anchor",
  "keetanetwork-crypto",
  "keetanetwork-utils",
@@ -1245,11 +1265,11 @@ dependencies = [
  "base64",
  "chrono",
  "hex",
- "keetanetwork-account",
+ "keetanetwork-account 0.3.0",
  "keetanetwork-anchor",
  "keetanetwork-anchor-bindings",
  "keetanetwork-anchor-client",
- "keetanetwork-bindings",
+ "keetanetwork-bindings 0.3.0",
  "keetanetwork-client-wasi",
  "keetanetwork-crypto",
  "keetanetwork-x509",
@@ -1262,8 +1282,6 @@ dependencies = [
 [[package]]
 name = "keetanetwork-asn1"
 version = "0.2.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5176629ce57df966871edc526c80ac855645f2120ee59910e85adcb30b9836f7"
 dependencies = [
  "chrono",
  "const-oid",
@@ -1288,11 +1306,28 @@ checksum = "faf04a1394c58365873fa5947ed79a871640a2587403f704442e0049700fd089"
 dependencies = [
  "chrono",
  "hex",
- "keetanetwork-account",
+ "keetanetwork-account 0.2.0",
  "keetanetwork-asn1",
- "keetanetwork-block",
+ "keetanetwork-block 0.2.0",
  "keetanetwork-crypto",
- "keetanetwork-vote",
+ "keetanetwork-vote 0.2.1",
+ "keetanetwork-x509",
+ "num-bigint",
+]
+
+[[package]]
+name = "keetanetwork-bindings"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "43294dab3f8b02db684d394498cb7f42bbca9d312dd78a1bdd1a638a5a55e0e6"
+dependencies = [
+ "chrono",
+ "hex",
+ "keetanetwork-account 0.3.0",
+ "keetanetwork-asn1",
+ "keetanetwork-block 0.3.0",
+ "keetanetwork-crypto",
+ "keetanetwork-vote 0.3.0",
  "keetanetwork-x509",
  "num-bigint",
 ]
@@ -1305,7 +1340,26 @@ checksum = "b555b132afbbd1fc27d2210335bd2820ac0d3ecd2228680aa32caa19df311d1c"
 dependencies = [
  "chrono",
  "hex",
- "keetanetwork-account",
+ "keetanetwork-account 0.2.0",
+ "keetanetwork-asn1",
+ "keetanetwork-crypto",
+ "keetanetwork-error",
+ "keetanetwork-utils",
+ "keetanetwork-x509",
+ "num-bigint",
+ "num-traits",
+ "snafu",
+]
+
+[[package]]
+name = "keetanetwork-block"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dfa7b7bd7ccdb87d0ae958dadbc55314eeb94e3b0c2a650c391c6eb1768f3ebf"
+dependencies = [
+ "chrono",
+ "hex",
+ "keetanetwork-account 0.3.0",
  "keetanetwork-asn1",
  "keetanetwork-crypto",
  "keetanetwork-error",
@@ -1323,11 +1377,11 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "88065928b6a68d1b9fda84b35584d955e1dbf14bf3ef479c6690ef016fd45a0d"
 dependencies = [
  "hex",
- "keetanetwork-account",
- "keetanetwork-bindings",
- "keetanetwork-block",
+ "keetanetwork-account 0.2.0",
+ "keetanetwork-bindings 0.2.2",
+ "keetanetwork-block 0.2.0",
  "keetanetwork-crypto",
- "keetanetwork-vote",
+ "keetanetwork-vote 0.2.1",
  "keetanetwork-x509",
  "num-bigint",
 ]
@@ -1335,8 +1389,6 @@ dependencies = [
 [[package]]
 name = "keetanetwork-crypto"
 version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fe6b08f067d923e0689eb0a4f20925499a2adc3f2a19fe36470c57f058ba48d3"
 dependencies = [
  "aead",
  "aes",
@@ -1376,8 +1428,6 @@ dependencies = [
 [[package]]
 name = "keetanetwork-error"
 version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "092b9facf797f97681b8de13ef648d8b070861eb114ccd8df2a18d40bbfb8464"
 dependencies = [
  "snafu",
 ]
@@ -1385,8 +1435,6 @@ dependencies = [
 [[package]]
 name = "keetanetwork-utils"
 version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "38ea8c67441a70e53f28dd203326b6834b2663dd352a3f5aa9b09344efabd216"
 dependencies = [
  "rasn-compiler",
  "snafu",
@@ -1400,9 +1448,29 @@ checksum = "1af4761dfe6ce30198fedd0a1bff6ca4d6f1a12e28dd8c167a8be867b0093163"
 dependencies = [
  "chrono",
  "hex",
- "keetanetwork-account",
+ "keetanetwork-account 0.2.0",
  "keetanetwork-asn1",
- "keetanetwork-block",
+ "keetanetwork-block 0.2.0",
+ "keetanetwork-crypto",
+ "keetanetwork-error",
+ "keetanetwork-utils",
+ "miniz_oxide 0.8.9",
+ "num-bigint",
+ "num-traits",
+ "snafu",
+]
+
+[[package]]
+name = "keetanetwork-vote"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "73fa523808e3b18213a0d1dd3f938bf7cbf1da9d232e5194de085a80c3e01600"
+dependencies = [
+ "chrono",
+ "hex",
+ "keetanetwork-account 0.3.0",
+ "keetanetwork-asn1",
+ "keetanetwork-block 0.3.0",
  "keetanetwork-crypto",
  "keetanetwork-error",
  "keetanetwork-utils",
@@ -1415,8 +1483,6 @@ dependencies = [
 [[package]]
 name = "keetanetwork-x509"
 version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "45768d59a39cfc644a584ace1b17c8590926f94fb88ce39e23c6eccb8e8f4229"
 dependencies = [
  "base64",
  "chrono",
@@ -1424,7 +1490,7 @@ dependencies = [
  "getrandom 0.2.17",
  "getrandom 0.3.4",
  "hex",
- "keetanetwork-account",
+ "keetanetwork-account 0.3.0",
  "keetanetwork-asn1",
  "keetanetwork-crypto",
  "keetanetwork-error",

@@ -26,7 +26,7 @@ const SIGNED_PARAMS: [&str; 3] = [PARAM_NONCE, PARAM_TIMESTAMP, PARAM_SIGNATURE]
 ///
 /// Fails with [`RequestError::DuplicateParameter`] if `base` already carries a
 /// `signed.*` key, so an existing signature is never silently overwritten.
-pub fn add_signature_to_url(base: &Url, account: &str, signed: &Signed) -> Result<Url, RequestError> {
+pub fn add_signature_to_url(base: &Url, account: impl AsRef<str>, signed: &Signed) -> Result<Url, RequestError> {
 	for name in SIGNED_PARAMS {
 		let already_present = base.query_pairs().any(|(key, _)| key == name);
 		if already_present {
@@ -40,7 +40,7 @@ pub fn add_signature_to_url(base: &Url, account: &str, signed: &Signed) -> Resul
 		pairs.append_pair(PARAM_NONCE, &signed.nonce);
 		pairs.append_pair(PARAM_TIMESTAMP, &signed.timestamp);
 		pairs.append_pair(PARAM_SIGNATURE, &signed.signature);
-		pairs.append_pair(PARAM_ACCOUNT, account);
+		pairs.append_pair(PARAM_ACCOUNT, account.as_ref());
 	}
 
 	Ok(url)

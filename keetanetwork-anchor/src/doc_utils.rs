@@ -54,6 +54,17 @@ pub fn create_ed25519_test_account(index: Option<u32>) -> Account<KeyED25519> {
 	Account::<KeyED25519>::try_from(accountable).expect("Failed to create Ed25519 test account")
 }
 
+/// Create a secp256k1 [`GenericAccount`](keetanetwork_account::GenericAccount)
+/// (with its private key) for documentation examples.
+pub fn create_secp256k1_generic_account(index: Option<u32>) -> keetanetwork_account::GenericAccount {
+	let account = create_secp256k1_test_account(index);
+	let private_key = account
+		.keypair
+		.take_private_key()
+		.expect("test account holds a private key");
+	keetanetwork_account::GenericAccount::try_from(private_key).expect("generic account from private key")
+}
+
 /// Create a network identifier account for documentation examples.
 pub fn create_network_test_account(network_id: Option<u64>) -> Account<KeyNETWORK> {
 	let id = network_id.unwrap_or(12345);

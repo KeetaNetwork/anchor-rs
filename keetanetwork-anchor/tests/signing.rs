@@ -4,7 +4,7 @@ use std::borrow::Cow;
 use std::error::Error;
 
 use chrono::{DateTime, Duration, Utc};
-use keetanetwork_account::{Account, Accountable, KeyECDSASECP256K1, KeyPair, Keyable};
+use keetanetwork_account::{Account, AccountPublicKey, Accountable, KeyECDSASECP256K1, KeyPair, Keyable};
 use keetanetwork_anchor::signing::{
 	object_to_signable, sign, sign_with, verify, SignParams, Signable, Signed, SigningError, ToSignable, VerifyError,
 	VerifyOptions,

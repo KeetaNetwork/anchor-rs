@@ -19,8 +19,9 @@ use crate::asn1::error::AnchorAsn1Error;
 ///
 /// Returns an error for tokens without a mapping so the caller can fall back to
 /// the raw bytes.
-pub fn decode_structured(token: &str, der: &[u8]) -> Result<Vec<u8>, AnchorAsn1Error> {
-	let value = match token {
+pub fn decode_structured(token: impl AsRef<str>, der: impl AsRef<[u8]>) -> Result<Vec<u8>, AnchorAsn1Error> {
+	let der = der.as_ref();
+	let value = match token.as_ref() {
 		"Address" => address_json(der)?,
 		"EntityType" => entity_type_json(der)?,
 		_ => return Err(AnchorAsn1Error::Asn1DecodeError { reason: "unmapped structured attribute".to_string() }),
@@ -255,7 +256,7 @@ mod tests {
 	const ENTITY_TYPE_ORACLE: &str = r#"{"person":[{"id":"123-45-6789","schemeName":"SSN"}]}"#;
 
 	fn assert_matches_validator(token: &str, der_hex: &str, validator: &str) {
-		let decoded = decode_structured(token, &from_hex(der_hex)).unwrap();
+		let decoded = decode_structured(token, from_hex(der_hex)).unwrap();
 		assert_json_eq(&decoded, validator);
 	}
 
@@ -271,7 +272,7 @@ mod tests {
 
 	#[test]
 	fn unmapped_token_errors_for_raw_fallback() {
-		let result = decode_structured("Document", &[0x30, 0x00]);
+		let result = decode_structured("Document", [0x30, 0x00]);
 		assert!(result.is_err());
 	}
 

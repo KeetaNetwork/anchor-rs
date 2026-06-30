@@ -29,11 +29,11 @@ pub fn invalid_algorithm() -> CodedError {
 ///
 /// Returns [`INVALID_SEED`] when `seed` is not a 32-byte hex string or the key
 /// cannot be derived.
-pub fn account_from_seed<K>(seed: &str, index: u32) -> Result<Account<K>, CodedError>
+pub fn account_from_seed<K>(seed: impl AsRef<str>, index: u32) -> Result<Account<K>, CodedError>
 where
 	K: KeyPair,
 {
-	let keyable = Keyable::from((seed, index));
+	let keyable = Keyable::from((seed.as_ref(), index));
 	let accountable = Accountable::KeyAndType(keyable, K::KEY_PAIR_TYPE);
 	let account =
 		Account::<K>::try_from(accountable).map_err(|_| CodedError::new(INVALID_SEED, "seed must be 32-byte hex"))?;

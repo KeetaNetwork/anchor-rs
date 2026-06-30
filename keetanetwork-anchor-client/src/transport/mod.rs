@@ -30,8 +30,8 @@ pub struct HttpResponse {
 
 impl HttpResponse {
 	/// A response carrying `status` and `body` with no `Retry-After` hint.
-	pub fn new(status: u16, body: Vec<u8>) -> Self {
-		Self { status, body, retry_after: None }
+	pub fn new(status: u16, body: impl Into<Vec<u8>>) -> Self {
+		Self { status, body: body.into(), retry_after: None }
 	}
 
 	/// Set the `Retry-After` hint.

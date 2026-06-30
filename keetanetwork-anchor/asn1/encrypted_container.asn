@@ -1,0 +1,45 @@
+EncryptedContainer DEFINITIONS ::= BEGIN
+
+    -- A self-describing encrypted (or plaintext) blob. The value is always
+    -- zlib-compressed; when encrypted, a per-principal asymmetrically-wrapped
+    -- symmetric key gates an AES-256-CBC body. An optional SignerInfo carries an
+    -- RFC 5652-style detached signature over the compressed bytes.
+    ContainerPackage ::= SEQUENCE {
+        version     INTEGER,
+        container   ContainerBox,
+        signerInfo  [2] EXPLICIT SignerInfo OPTIONAL
+    }
+
+    ContainerBox ::= CHOICE {
+        encrypted   [0] EXPLICIT EncryptedBox,
+        plaintext   [1] EXPLICIT PlaintextBox
+    }
+
+    EncryptedBox ::= SEQUENCE {
+        keys                  SEQUENCE OF KeyStore,
+        encryptionAlgorithm   OBJECT IDENTIFIER,
+        initializationVector  OCTET STRING,
+        encryptedValue        OCTET STRING
+    }
+
+    KeyStore ::= SEQUENCE {
+        publicKey             OCTET STRING,
+        encryptedSymmetricKey OCTET STRING
+    }
+
+    PlaintextBox ::= SEQUENCE {
+        plainValue            OCTET STRING
+    }
+
+    -- RFC 5652 Section 5.3 SignerInfo, adapted: sid carries the signer's
+    -- type-prefixed public key, the digest is SHA3-256 over the compressed
+    -- value, and the signature is the raw fixed-width form for the key type.
+    SignerInfo ::= SEQUENCE {
+        version             INTEGER,
+        sid                 [0] IMPLICIT OCTET STRING,
+        digestAlgorithm     OBJECT IDENTIFIER,
+        signatureAlgorithm  OBJECT IDENTIFIER,
+        signature           OCTET STRING
+    }
+
+END

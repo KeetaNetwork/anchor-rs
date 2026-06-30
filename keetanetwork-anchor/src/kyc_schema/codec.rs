@@ -9,7 +9,8 @@ use crate::asn1::error::AnchorAsn1Error;
 use crate::generated::attribute_types::{attribute_value_type, AttributeValueType};
 
 /// Encode a semantic attribute value into its schema ASN.1 DER.
-pub fn encode_value<O: AsRef<str>>(oid: O, semantic: &[u8]) -> Result<Vec<u8>, AnchorAsn1Error> {
+pub fn encode_value(oid: impl AsRef<str>, semantic: impl AsRef<[u8]>) -> Result<Vec<u8>, AnchorAsn1Error> {
+	let semantic = semantic.as_ref();
 	match attribute_value_type(oid.as_ref()) {
 		Some(AttributeValueType::Utf8String) => Ok(rasn::der::encode(&Utf8String::from(as_utf8(semantic)?))?),
 		#[cfg(feature = "chrono")]
@@ -26,7 +27,8 @@ pub fn encode_value<O: AsRef<str>>(oid: O, semantic: &[u8]) -> Result<Vec<u8>, A
 }
 
 /// Decode a schema ASN.1 DER attribute value back to its semantic form.
-pub fn decode_value<O: AsRef<str>>(oid: O, der: &[u8]) -> Result<Vec<u8>, AnchorAsn1Error> {
+pub fn decode_value(oid: impl AsRef<str>, der: impl AsRef<[u8]>) -> Result<Vec<u8>, AnchorAsn1Error> {
+	let der = der.as_ref();
 	let decoded = match attribute_value_type(oid.as_ref()) {
 		Some(AttributeValueType::Utf8String) => decode_utf8(der),
 		#[cfg(feature = "chrono")]
@@ -200,7 +202,7 @@ mod tests {
 	#[test]
 	fn malformed_utf8_value_falls_back_to_raw() {
 		let oid = oids::keeta::EMAIL.to_string();
-		let decoded = decode_value(&oid, &[0xff, 0xfe]).unwrap();
+		let decoded = decode_value(&oid, [0xff, 0xfe]).unwrap();
 		assert_eq!(decoded, [0xff, 0xfe]);
 	}
 

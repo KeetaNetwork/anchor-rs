@@ -26,8 +26,8 @@ const EXTERNAL_URL_MARKER: &str = "2b828e33-2692-46e9-817e-9b93d63f28fd";
 /// assert_eq!(raw, b"hi");
 /// # Ok::<(), keetanetwork_anchor_client::ResolverError>(())
 /// ```
-pub fn decode_base64(blob: &str) -> Result<Vec<u8>, ResolverError> {
-	let trimmed = blob.trim();
+pub fn decode_base64(blob: impl AsRef<str>) -> Result<Vec<u8>, ResolverError> {
+	let trimmed = blob.as_ref().trim();
 	let raw = STANDARD.decode(trimmed)?;
 	Ok(raw)
 }
@@ -51,7 +51,8 @@ pub fn decode_base64(blob: &str) -> Result<Vec<u8>, ResolverError> {
 /// assert_eq!(value["version"], 1);
 /// # Ok::<(), keetanetwork_anchor_client::ResolverError>(())
 /// ```
-pub fn parse_metadata(raw: &[u8]) -> Result<Value, ResolverError> {
+pub fn parse_metadata(raw: impl AsRef<[u8]>) -> Result<Value, ResolverError> {
+	let raw = raw.as_ref();
 	let inflated = miniz_oxide::inflate::decompress_to_vec_zlib(raw).ok();
 	let bytes: &[u8] = match inflated {
 		Some(ref decompressed) => decompressed.as_slice(),

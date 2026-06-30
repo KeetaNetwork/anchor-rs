@@ -14,6 +14,8 @@ pub mod kyc_schema;
 pub mod sensitive_attributes;
 pub mod utils;
 
+#[cfg(feature = "encrypted-container")]
+pub mod encrypted_container;
 #[cfg(feature = "signing")]
 pub mod signing;
 

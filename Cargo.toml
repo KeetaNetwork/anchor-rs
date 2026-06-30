@@ -34,7 +34,7 @@ version = "0.2.3"
 default-features = false
 
 [workspace.dependencies.keetanetwork-account]
-version = "0.2.0"
+version = "0.3.0"
 default-features = false
 
 [workspace.dependencies.keetanetwork-utils]
@@ -42,13 +42,13 @@ version = "0.2.1"
 default-features = false
 
 [workspace.dependencies.keetanetwork-block]
-version = "0.2.0"
+version = "0.3.0"
 
 [workspace.dependencies.keetanetwork-vote]
-version = "0.2.1"
+version = "0.3.0"
 
 [workspace.dependencies.keetanetwork-bindings]
-version = "0.2.2"
+version = "0.3.0"
 default-features = false
 
 [workspace.dependencies.keetanetwork-client-wasi]
@@ -152,6 +152,17 @@ version = "0.6.7"
 
 [workspace.dependencies.wit-bindgen]
 version = "0.58"
+
+# Local node-rs override while iterating on account trait surface
+# (AccountPublicKey / AccountVerifier for GenericAccount). Patch the full node-rs
+# set anchor consumes so every crate resolves to one consistent source.
+[patch.crates-io]
+keetanetwork-error = { path = "../node-rs/keetanetwork-error" }
+keetanetwork-utils = { path = "../node-rs/keetanetwork-utils" }
+keetanetwork-crypto = { path = "../node-rs/keetanetwork-crypto" }
+keetanetwork-asn1 = { path = "../node-rs/keetanetwork-asn1" }
+keetanetwork-account = { path = "../node-rs/keetanetwork-account" }
+keetanetwork-x509 = { path = "../node-rs/keetanetwork-x509" }
 
 [profile.dev]
 opt-level = 0

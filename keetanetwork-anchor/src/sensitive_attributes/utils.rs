@@ -63,15 +63,16 @@ pub(crate) fn assert_valid_version(version: &Integer) -> Result<u64> {
 /// Private helper function to validate attribute sensitivity
 fn validate_attribute_sensitivity(
 	attribute: &crate::kyc_schema::Attribute,
-	name: &str,
+	name: impl AsRef<str>,
 	expected_sensitive: bool,
 ) -> Result<()> {
 	let is_sensitive = attribute.is_sensitive();
 	if is_sensitive != expected_sensitive {
+		let name = name.as_ref().to_string();
 		return if expected_sensitive {
-			Err(SensitiveAttributeError::InvalidAttributeIsPlain { name: name.to_string() })
+			Err(SensitiveAttributeError::InvalidAttributeIsPlain { name })
 		} else {
-			Err(SensitiveAttributeError::InvalidAttributeIsSensitive { name: name.to_string() })
+			Err(SensitiveAttributeError::InvalidAttributeIsSensitive { name })
 		};
 	}
 
@@ -87,7 +88,7 @@ fn validate_attribute_sensitivity(
 /// # Returns
 /// - `Ok(_)` if the attribute is sensitive
 /// - `Err(_)` if the attribute is not sensitive
-pub fn assert_attribute_is_sensitive(attribute: &crate::kyc_schema::Attribute, name: &str) -> Result<()> {
+pub fn assert_attribute_is_sensitive(attribute: &crate::kyc_schema::Attribute, name: impl AsRef<str>) -> Result<()> {
 	validate_attribute_sensitivity(attribute, name, true)
 }
 
@@ -100,7 +101,7 @@ pub fn assert_attribute_is_sensitive(attribute: &crate::kyc_schema::Attribute, n
 /// # Returns
 /// - `Ok(_)` if the attribute is plain text
 /// - `Err(_)` if the attribute is sensitive
-pub fn assert_attribute_is_plain(attribute: &crate::kyc_schema::Attribute, name: &str) -> Result<()> {
+pub fn assert_attribute_is_plain(attribute: &crate::kyc_schema::Attribute, name: impl AsRef<str>) -> Result<()> {
 	validate_attribute_sensitivity(attribute, name, false)
 }
 

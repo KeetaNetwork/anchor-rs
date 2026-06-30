@@ -18,9 +18,9 @@ use crate::iso20022::{
 ///
 /// Returns an error for tokens without a mapping so the caller can fall back to
 /// the raw bytes.
-pub fn encode_structured(token: &str, json: &[u8]) -> Result<Vec<u8>, AnchorAsn1Error> {
-	let value: Value = serde_json::from_slice(json).map_err(encode_error)?;
-	let der = match token {
+pub fn encode_structured(token: impl AsRef<str>, json: impl AsRef<[u8]>) -> Result<Vec<u8>, AnchorAsn1Error> {
+	let value: Value = serde_json::from_slice(json.as_ref()).map_err(encode_error)?;
+	let der = match token.as_ref() {
 		"Address" => rasn::der::encode(&address_from_json(&value)?)?,
 		"EntityType" => rasn::der::encode(&entity_type_from_json(&value)?)?,
 		_ => return Err(encode_error("unmapped structured attribute")),
@@ -33,8 +33,9 @@ pub fn encode_structured(token: &str, json: &[u8]) -> Result<Vec<u8>, AnchorAsn1
 ///
 /// Returns an error for tokens without a mapping, or when the DER is not in the
 /// positional form, so the caller can fall back to the legacy decoder.
-pub fn decode_structured(token: &str, der: &[u8]) -> Result<Vec<u8>, AnchorAsn1Error> {
-	let value = match token {
+pub fn decode_structured(token: impl AsRef<str>, der: impl AsRef<[u8]>) -> Result<Vec<u8>, AnchorAsn1Error> {
+	let der = der.as_ref();
+	let value = match token.as_ref() {
 		"Address" => address_to_json(&decode_canonical::<Address>(der)?),
 		"EntityType" => entity_type_to_json(&decode_canonical::<EntityType>(der)?),
 		_ => return Err(decode_error("unmapped structured attribute")),
@@ -348,7 +349,7 @@ mod tests {
 	#[test]
 	fn unmapped_token_errors_for_raw_fallback() {
 		assert!(matches!(encode_structured("Document", b"{}"), Err(AnchorAsn1Error::Asn1EncodeError { .. })));
-		assert!(matches!(decode_structured("Document", &[0x30, 0x00]), Err(AnchorAsn1Error::Asn1DecodeError { .. })));
+		assert!(matches!(decode_structured("Document", [0x30, 0x00]), Err(AnchorAsn1Error::Asn1DecodeError { .. })));
 	}
 
 	#[test]

@@ -1,7 +1,9 @@
-//! TypeScript Interoperability Tests
+//! Decoding of reference-generated certificate fixtures.
 //!
-//! This module tests that Rust can parse and process certificates generated
-//! by the TypeScript implementation, ensuring cross-platform compatibility.
+//! These tests confirm the Rust core parses, inspects, and decrypts KYC
+//! certificates produced by the reference implementation (stored as PEM
+//! fixtures), guaranteeing cross-language compatibility for both legacy and
+//! context-tagged encodings.
 
 mod common;
 

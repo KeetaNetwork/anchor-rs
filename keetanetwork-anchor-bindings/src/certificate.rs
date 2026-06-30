@@ -39,13 +39,13 @@ pub const INVALID_DATE: &str = "INVALID_DATE";
 pub const UNSUPPORTED_KEY_TYPE: &str = "UNSUPPORTED_KEY_TYPE";
 
 /// Parse a PEM-encoded KYC certificate, reusing the base certificate codec.
-pub fn from_pem(certificate: &str) -> Result<KycCertificate, CodedError> {
-	Ok(KycCertificate::new(certificate_from_pem(certificate)?))
+pub fn from_pem(certificate: impl AsRef<str>) -> Result<KycCertificate, CodedError> {
+	Ok(KycCertificate::new(certificate_from_pem(certificate.as_ref())?))
 }
 
 /// Parse a DER-encoded KYC certificate, reusing the base certificate codec.
-pub fn from_der(certificate: &[u8]) -> Result<KycCertificate, CodedError> {
-	Ok(KycCertificate::new(certificate_from_der(certificate)?))
+pub fn from_der(certificate: impl AsRef<[u8]>) -> Result<KycCertificate, CodedError> {
+	Ok(KycCertificate::new(certificate_from_der(certificate.as_ref())?))
 }
 
 /// The PEM encoding of `certificate`.
@@ -136,7 +136,7 @@ where
 	}
 }
 
-/// A proof attesting to a sensitive attribute's committed value, validatable
+/// A proof attesting to a sensitive attribute's committed value, validated
 /// against the certificate with only the subject's public key. `value` is the
 /// base64 attribute value the proof reveals; `salt` is its base64 commitment
 /// salt. Both cross binding boundaries as opaque strings.

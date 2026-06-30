@@ -52,12 +52,12 @@ macro_rules! test_all_key_types {
 }
 
 /// Helper function to create an account from a hex seed string for different key types.
-pub fn create_account_from_seed_hex<T>(hex_seed: &str, index: u32) -> Account<T>
+pub fn create_account_from_seed_hex<T>(hex_seed: impl AsRef<str>, index: u32) -> Account<T>
 where
 	T: KeyPair,
 	Account<T>: TryFrom<Accountable<T>, Error = AccountError>,
 {
-	let seed_bytes = hex::decode(hex_seed).expect("Invalid hex seed");
+	let seed_bytes = hex::decode(hex_seed.as_ref()).expect("Invalid hex seed");
 	let seed_array: [u8; 32] = seed_bytes.try_into().expect("Seed must be 32 bytes");
 	let seed = Keyable::Seed((seed_array.into_secret(), index));
 	let accountable = Accountable::KeyAndType(seed, T::KEY_PAIR_TYPE);
@@ -91,17 +91,20 @@ where
 /// Helper function to create a sensitive attribute and proof for testing.
 pub fn create_test_sensitive_attribute_with_proof<T: KeyPair>(
 	account: &Account<T>,
-	test_value: &[u8],
+	test_value: impl AsRef<[u8]>,
 ) -> (SensitiveAttribute, SensitiveAttributeProof) {
-	let builder = SensitiveAttributeBuilder::new().with_value(test_value);
+	let builder = SensitiveAttributeBuilder::new().with_value(test_value.as_ref().to_vec());
 	let sensitive_attr = builder.build(&account.keypair).unwrap();
 	let proof = sensitive_attr.to_proof(&account.keypair).unwrap();
 	(sensitive_attr, proof)
 }
 
 /// Helper function to create just a sensitive attribute for testing.
-pub fn create_test_sensitive_attribute<T: KeyPair>(account: &Account<T>, test_value: &[u8]) -> SensitiveAttribute {
-	let builder = SensitiveAttributeBuilder::new().with_value(test_value);
+pub fn create_test_sensitive_attribute<T: KeyPair>(
+	account: &Account<T>,
+	test_value: impl AsRef<[u8]>,
+) -> SensitiveAttribute {
+	let builder = SensitiveAttributeBuilder::new().with_value(test_value.as_ref().to_vec());
 	builder.build(&account.keypair).unwrap()
 }
 
@@ -136,7 +139,7 @@ pub fn create_test_kyc_attributes() -> KycAttributes {
 /// Issue a self-signed CA and an end-entity leaf for `subject_seed_hex`, encoding
 /// each `(name, semantic, sensitive)` attribute through the production codec and
 /// encrypting the sensitive ones to the subject.
-pub fn issue_leaf_pem(subject_seed_hex: &str, attributes: &[(&str, &[u8], bool)]) -> (String, String) {
+pub fn issue_leaf_pem(subject_seed_hex: impl AsRef<str>, attributes: &[(&str, &[u8], bool)]) -> (String, String) {
 	let subject = create_account_from_seed_hex::<KeyECDSASECP256K1>(subject_seed_hex, 0);
 	let issuer = create_account_from_seed::<KeyECDSASECP256K1>(1);
 
@@ -179,9 +182,13 @@ pub fn issue_leaf_pem(subject_seed_hex: &str, attributes: &[(&str, &[u8], bool)]
 /// Parse a leaf PEM and decrypt the sensitive attribute `name` with the key for
 /// `subject_seed_hex`, returning the decoded semantic bytes. The inverse of
 /// [`issue_leaf_pem`] for reading an externally issued leaf through the core.
-pub fn read_sensitive_attribute(leaf_pem: &str, subject_seed_hex: &str, name: &str) -> Vec<u8> {
+pub fn read_sensitive_attribute(
+	leaf_pem: impl AsRef<str>,
+	subject_seed_hex: impl AsRef<str>,
+	name: impl AsRef<str>,
+) -> Vec<u8> {
 	let subject = create_account_from_seed_hex::<KeyECDSASECP256K1>(subject_seed_hex, 0);
-	let x509 = X509Certificate::from_str(leaf_pem).expect("leaf PEM parses");
+	let x509 = X509Certificate::from_str(leaf_pem.as_ref()).expect("leaf PEM parses");
 	let certificate = KycCertificate::new(x509);
 	certificate
 		.decrypt_kyc_attribute(name, &subject.keypair)
@@ -189,8 +196,10 @@ pub fn read_sensitive_attribute(leaf_pem: &str, subject_seed_hex: &str, name: &s
 }
 
 /// Helper to create individual test attributes
-pub fn create_test_attribute(oid_str: &str, value: &[u8], is_sensitive: bool) -> Attribute {
-	let mut builder = AttributeBuilder::new().with_oid(oid_str).with_value(value);
+pub fn create_test_attribute(oid_str: impl AsRef<str>, value: impl AsRef<[u8]>, is_sensitive: bool) -> Attribute {
+	let mut builder = AttributeBuilder::new()
+		.with_oid(oid_str.as_ref())
+		.with_value(value);
 
 	if is_sensitive {
 		builder = builder.as_sensitive();
