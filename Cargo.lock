@@ -1226,7 +1226,7 @@ dependencies = [
  "chrono",
  "keetanetwork-account 0.3.0",
  "keetanetwork-anchor",
- "keetanetwork-bindings 0.3.0",
+ "keetanetwork-bindings",
  "keetanetwork-crypto",
  "keetanetwork-x509",
 ]
@@ -1271,7 +1271,7 @@ dependencies = [
  "keetanetwork-anchor",
  "keetanetwork-anchor-bindings",
  "keetanetwork-anchor-client",
- "keetanetwork-bindings 0.3.0",
+ "keetanetwork-bindings",
  "keetanetwork-client-wasi",
  "keetanetwork-crypto",
  "keetanetwork-x509",
@@ -1304,23 +1304,6 @@ dependencies = [
 
 [[package]]
 name = "keetanetwork-bindings"
-version = "0.2.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "faf04a1394c58365873fa5947ed79a871640a2587403f704442e0049700fd089"
-dependencies = [
- "chrono",
- "hex",
- "keetanetwork-account 0.2.0",
- "keetanetwork-asn1",
- "keetanetwork-block 0.2.0",
- "keetanetwork-crypto",
- "keetanetwork-vote 0.2.1",
- "keetanetwork-x509",
- "num-bigint",
-]
-
-[[package]]
-name = "keetanetwork-bindings"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "43294dab3f8b02db684d394498cb7f42bbca9d312dd78a1bdd1a638a5a55e0e6"
@@ -1329,30 +1312,11 @@ dependencies = [
  "hex",
  "keetanetwork-account 0.3.0",
  "keetanetwork-asn1",
- "keetanetwork-block 0.3.0",
+ "keetanetwork-block",
  "keetanetwork-crypto",
- "keetanetwork-vote 0.3.0",
+ "keetanetwork-vote",
  "keetanetwork-x509",
  "num-bigint",
-]
-
-[[package]]
-name = "keetanetwork-block"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b555b132afbbd1fc27d2210335bd2820ac0d3ecd2228680aa32caa19df311d1c"
-dependencies = [
- "chrono",
- "hex",
- "keetanetwork-account 0.2.0",
- "keetanetwork-asn1",
- "keetanetwork-crypto",
- "keetanetwork-error",
- "keetanetwork-utils",
- "keetanetwork-x509",
- "num-bigint",
- "num-traits",
- "snafu",
 ]
 
 [[package]]
@@ -1376,16 +1340,16 @@ dependencies = [
 
 [[package]]
 name = "keetanetwork-client-wasi"
-version = "0.2.2"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "88065928b6a68d1b9fda84b35584d955e1dbf14bf3ef479c6690ef016fd45a0d"
+checksum = "f9bf82ec3ea5622a335e07f083c875b7bcee87296d190b6247ebed8bffc22575"
 dependencies = [
  "hex",
- "keetanetwork-account 0.2.0",
- "keetanetwork-bindings 0.2.2",
- "keetanetwork-block 0.2.0",
+ "keetanetwork-account 0.3.0",
+ "keetanetwork-bindings",
+ "keetanetwork-block",
  "keetanetwork-crypto",
- "keetanetwork-vote 0.2.1",
+ "keetanetwork-vote",
  "keetanetwork-x509",
  "num-bigint",
 ]
@@ -1452,26 +1416,6 @@ dependencies = [
 
 [[package]]
 name = "keetanetwork-vote"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1af4761dfe6ce30198fedd0a1bff6ca4d6f1a12e28dd8c167a8be867b0093163"
-dependencies = [
- "chrono",
- "hex",
- "keetanetwork-account 0.2.0",
- "keetanetwork-asn1",
- "keetanetwork-block 0.2.0",
- "keetanetwork-crypto",
- "keetanetwork-error",
- "keetanetwork-utils",
- "miniz_oxide 0.8.9",
- "num-bigint",
- "num-traits",
- "snafu",
-]
-
-[[package]]
-name = "keetanetwork-vote"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "73fa523808e3b18213a0d1dd3f938bf7cbf1da9d232e5194de085a80c3e01600"
@@ -1480,7 +1424,7 @@ dependencies = [
  "hex",
  "keetanetwork-account 0.3.0",
  "keetanetwork-asn1",
- "keetanetwork-block 0.3.0",
+ "keetanetwork-block",
  "keetanetwork-crypto",
  "keetanetwork-error",
  "keetanetwork-utils",
