@@ -48,11 +48,11 @@ version = "0.2.0"
 version = "0.2.1"
 
 [workspace.dependencies.keetanetwork-bindings]
-version = "0.2.1"
+version = "0.2.2"
 default-features = false
 
 [workspace.dependencies.keetanetwork-client-wasi]
-version = "0.2.1"
+version = "0.2.2"
 default-features = false
 
 [workspace.dependencies.rasn]

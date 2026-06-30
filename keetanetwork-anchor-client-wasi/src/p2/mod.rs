@@ -161,6 +161,30 @@ impl GuestCertificate for CertificateResource {
 			.and_then(|millis| x509_ops::certificate_valid_at(&self.certificate, millis).ok())
 			.unwrap_or(false)
 	}
+
+	fn subject(&self) -> String {
+		x509_ops::certificate_subject(&self.certificate)
+	}
+
+	fn issuer(&self) -> String {
+		x509_ops::certificate_issuer(&self.certificate)
+	}
+
+	fn serial(&self) -> String {
+		x509_ops::certificate_serial(&self.certificate)
+	}
+
+	fn not_before(&self) -> i64 {
+		x509_ops::certificate_not_before(&self.certificate)
+	}
+
+	fn not_after(&self) -> i64 {
+		x509_ops::certificate_not_after(&self.certificate)
+	}
+
+	fn subject_public_key(&self) -> Result<String, CodedError> {
+		Ok(x509_ops::certificate_subject_public_key(&self.certificate)?)
+	}
 }
 
 // ---------------------------------------------------------------------------

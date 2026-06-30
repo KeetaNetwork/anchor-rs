@@ -175,6 +175,24 @@ public sealed partial class WasmRuntime
 	internal bool CertificateValidAt(int handle, long unixMillis) =>
 		TakeFlag(Invoke<int, long, int>("keeta_certificate_valid_at", handle, unixMillis));
 
+	internal string CertificateSubject(int handle) =>
+		Text(Invoke<int, int>("keeta_certificate_subject", handle));
+
+	internal string CertificateIssuer(int handle) =>
+		Text(Invoke<int, int>("keeta_certificate_issuer", handle));
+
+	internal string CertificateSerial(int handle) =>
+		Text(Invoke<int, int>("keeta_certificate_serial", handle));
+
+	internal long CertificateNotBefore(int handle) =>
+		InvokeLong("keeta_certificate_not_before", handle);
+
+	internal long CertificateNotAfter(int handle) =>
+		InvokeLong("keeta_certificate_not_after", handle);
+
+	internal string CertificateSubjectPublicKey(int handle) =>
+		Text(Invoke<int, int>("keeta_certificate_subject_public_key", handle));
+
 	internal void CertificateFree(int handle) => Free("keeta_certificate_free", handle);
 
 	// -----------------------------------------------------------------------
@@ -379,6 +397,9 @@ public sealed partial class WasmRuntime
 
 	private int Invoke<T1, TResult>(string export, T1 arg1) =>
 		(int)(object)Required(export, _instance.GetFunction<T1, TResult>(export))(arg1)!;
+
+	private long InvokeLong<T1>(string export, T1 arg1) =>
+		Required(export, _instance.GetFunction<T1, long>(export))(arg1);
 
 	private int Invoke<T1, T2, TResult>(string export, T1 arg1, T2 arg2) =>
 		(int)(object)Required(export, _instance.GetFunction<T1, T2, TResult>(export))(arg1, arg2)!;

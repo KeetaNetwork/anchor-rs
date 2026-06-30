@@ -142,6 +142,53 @@ async fn certificate_round_trips_pem_and_reports_validity() -> Result<(), BoxErr
 }
 
 #[tokio::test]
+async fn certificate_reports_metadata() -> Result<(), BoxError> {
+	require_component!();
+	let (mut store, bindings) = instantiate().await?;
+	let crypto = bindings.keeta_client_crypto();
+
+	let certificate = crypto
+		.certificate()
+		.call_parse(&mut store, FIXTURE_PEM)
+		.await?
+		.map_err(coded)?;
+
+	let subject = crypto.certificate().call_subject(&mut store, certificate).await?;
+	assert!(subject.contains("Test Subject"), "the subject DN must name the fixture subject");
+
+	let issuer = crypto.certificate().call_issuer(&mut store, certificate).await?;
+	assert!(issuer.contains("Test Issuer"), "the issuer DN must name the fixture issuer");
+
+	let serial = crypto.certificate().call_serial(&mut store, certificate).await?;
+	assert_eq!(serial, "12345", "the serial must decode to its base-10 form");
+
+	let not_before = crypto.certificate().call_not_before(&mut store, certificate).await?;
+	let not_after = crypto.certificate().call_not_after(&mut store, certificate).await?;
+	assert!(not_before < not_after, "the validity window must be ordered");
+	assert!(
+		not_before <= VALID_AT && VALID_AT <= not_after,
+		"the in-window moment must fall inside the reported validity window"
+	);
+
+	// The subject public key must equal the public key of the account derived
+	// from the same seed, so a holder can match a certificate to its account.
+	let account = crypto
+		.account()
+		.call_from_seed(&mut store, SUBJECT_SEED, 0, ALGORITHM)
+		.await?
+		.map_err(coded)?;
+	let account_key = crypto.account().call_public_key(&mut store, account).await?;
+	let subject_key = crypto
+		.certificate()
+		.call_subject_public_key(&mut store, certificate)
+		.await?
+		.map_err(coded)?;
+	assert_eq!(subject_key, account_key, "the subject public key must equal the subject account's public key");
+
+	Ok(())
+}
+
+#[tokio::test]
 async fn kyc_certificate_reads_chains_and_decrypts() -> Result<(), BoxError> {
 	require_component!();
 	let (mut store, bindings) = instantiate().await?;

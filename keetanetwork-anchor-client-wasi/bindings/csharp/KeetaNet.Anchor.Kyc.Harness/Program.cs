@@ -287,6 +287,17 @@ static void CryptoSelfTest(WasmRuntime runtime)
 	Require(certificate.ValidAt(validAt), "the certificate must be valid inside its window");
 	Require(!certificate.ValidAt(beforeValidity), "the certificate must be invalid before its window");
 
+	Require(certificate.Subject.Contains("Test Subject"), "the subject DN must name the fixture subject");
+	Require(certificate.Issuer.Contains("Test Issuer"), "the issuer DN must name the fixture issuer");
+	Require(certificate.Serial == "12345", "the serial must decode to its base-10 form");
+	Require(certificate.NotBefore < certificate.NotAfter, "the validity window must be ordered");
+	Require(
+		certificate.NotBefore <= validAt && validAt <= certificate.NotAfter,
+		"the in-window moment must fall inside the reported validity window");
+	Require(
+		certificate.SubjectPublicKey == account.PublicKey,
+		"the subject public key must equal the subject account's public key");
+
 	using KycCertificate kyc = KycCertificate.Parse(runtime, pem);
 	IReadOnlyList<KeetaNet.Anchor.Kyc.Crypto.KycAttribute> attributes = kyc.Attributes();
 	Require(attributes.Count == 3, "the fixture carries three KYC attributes");

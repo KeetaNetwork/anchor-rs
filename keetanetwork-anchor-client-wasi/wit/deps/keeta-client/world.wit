@@ -171,6 +171,19 @@ interface crypto {
 		pem: func() -> result<string, coded-error>;
 		/// Whether the certificate is valid at `unix-seconds` (Unix time).
 		valid-at: func(unix-seconds: s64) -> bool;
+		/// The subject distinguished name as an RFC 4514 string.
+		subject: func() -> string;
+		/// The issuer distinguished name as an RFC 4514 string.
+		issuer: func() -> string;
+		/// The serial number as a base-10 string.
+		serial: func() -> string;
+		/// The start of the validity window, Unix seconds.
+		not-before: func() -> s64;
+		/// The end of the validity window, Unix seconds.
+		not-after: func() -> s64;
+		/// The subject public key, type-prefixed and hex-encoded (matching
+		/// `account.public-key`), so a subject can be matched to an account.
+		subject-public-key: func() -> result<string, coded-error>;
 	}
 }
 

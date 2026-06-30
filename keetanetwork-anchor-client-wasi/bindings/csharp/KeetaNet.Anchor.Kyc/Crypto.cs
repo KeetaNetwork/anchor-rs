@@ -119,6 +119,27 @@ public sealed class Certificate : IDisposable
 	/// <summary>Whether the certificate is valid at <paramref name="moment"/>.</summary>
 	public bool ValidAt(DateTimeOffset moment) => _runtime.CertificateValidAt(Handle, moment.ToUnixTimeMilliseconds());
 
+	/// <summary>The subject distinguished name as an RFC 4514 string.</summary>
+	public string Subject => _runtime.CertificateSubject(Handle);
+
+	/// <summary>The issuer distinguished name as an RFC 4514 string.</summary>
+	public string Issuer => _runtime.CertificateIssuer(Handle);
+
+	/// <summary>The serial number as a base-10 string.</summary>
+	public string Serial => _runtime.CertificateSerial(Handle);
+
+	/// <summary>The start of the validity window.</summary>
+	public DateTimeOffset NotBefore => DateTimeOffset.FromUnixTimeSeconds(_runtime.CertificateNotBefore(Handle));
+
+	/// <summary>The end of the validity window.</summary>
+	public DateTimeOffset NotAfter => DateTimeOffset.FromUnixTimeSeconds(_runtime.CertificateNotAfter(Handle));
+
+	/// <summary>
+	/// The subject public key, type-prefixed and hex-encoded to match
+	/// <see cref="Account.PublicKey"/>, so a subject can be matched to an account.
+	/// </summary>
+	public string SubjectPublicKey => _runtime.CertificateSubjectPublicKey(Handle);
+
 	public void Dispose()
 	{
 		if (_disposed)
