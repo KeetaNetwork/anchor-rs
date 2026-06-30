@@ -243,6 +243,7 @@ fn identification_json(sequence: &Tlv<'_>) -> Result<Value, AnchorAsn1Error> {
 #[cfg(test)]
 mod tests {
 	use super::*;
+	use crate::kyc_schema::testing::{assert_json_eq, from_hex};
 
 	/// Live `Address` attribute DER issued by the reference TypeScript harness.
 	const ADDRESS_DER: &str = "304aa01730150c133130302042656c677261766520537472656574a4040c02464ca6070c053334363737a7150c133130302042656c677261766520537472656574a9090c074f6c64736d6172";
@@ -253,18 +254,9 @@ mod tests {
 	/// Oracle the reference harness emits for that entity type.
 	const ENTITY_TYPE_ORACLE: &str = r#"{"person":[{"id":"123-45-6789","schemeName":"SSN"}]}"#;
 
-	fn from_hex(hex: &str) -> Vec<u8> {
-		(0..hex.len())
-			.step_by(2)
-			.map(|index| u8::from_str_radix(&hex[index..index + 2], 16).unwrap())
-			.collect()
-	}
-
 	fn assert_matches_oracle(token: &str, der_hex: &str, oracle: &str) {
 		let decoded = decode_structured(token, &from_hex(der_hex)).unwrap();
-		let actual: Value = serde_json::from_slice(&decoded).unwrap();
-		let expected: Value = serde_json::from_str(oracle).unwrap();
-		assert_eq!(actual, expected);
+		assert_json_eq(&decoded, oracle);
 	}
 
 	#[test]

@@ -36,20 +36,20 @@ fn csharp_sdk_signs_against_live_anchor() -> Result<(), BoxError> {
 	let root = field_str(&started, "root")?;
 	let provider_id = field_str(&started, "providerId")?;
 
-	// Issue a populated leaf for our subject and capture the reference oracle the
+	// Issue a populated leaf for our subject and capture the reference values the
 	// anchor reads back, so the C# SDK can prove its attribute decode (scalars,
 	// date, and structured `Address`/`EntityType`) matches the TS `getValue()`.
-	let issued = harness.request(
-		"issueCertificate",
-		json!({ "subjectSeed": SUBJECT_SEED, "attributes": issue_attributes() }),
-	)?;
+	let issued = harness
+		.request("issueCertificate", json!({ "subjectSeed": SUBJECT_SEED, "attributes": issue_attributes() }))?;
 	let leaf_pem = field_str(&issued, "leaf")?;
-	let oracle = issued.get("oracle").ok_or("issued certificate is missing its oracle")?;
-	let oracle_json = serde_json::to_string(oracle)?;
+	let attributes = issued
+		.get("attributes")
+		.ok_or("issued certificate is missing its attributes")?;
+	let attributes_json = serde_json::to_string(attributes)?;
 
 	// Run the C# example end-to-end. It drives discovery, SignedBody (create),
 	// and SignedUrl (status, certificates) for every signing algorithm, printing
-	// `KYC_OK`, then decodes the issued leaf and prints `ORACLE_OK` on full parity.
+	// `KYC_OK`, then decodes the issued leaf and prints `ATTRIBUTES_OK` on a match.
 	let output = Command::new("dotnet")
 		.args(["run", "--project"])
 		.arg(example_dir())
@@ -59,7 +59,7 @@ fn csharp_sdk_signs_against_live_anchor() -> Result<(), BoxError> {
 		.env("KEETA_ROOT", &root)
 		.env("KEETA_PROVIDER_ID", &provider_id)
 		.env("KEETA_LEAF_PEM", &leaf_pem)
-		.env("KEETA_ORACLE_JSON", &oracle_json)
+		.env("KEETA_ATTRIBUTES_JSON", &attributes_json)
 		.env("KEETA_SUBJECT_SEED", SUBJECT_SEED)
 		.output()?;
 
@@ -71,8 +71,8 @@ fn csharp_sdk_signs_against_live_anchor() -> Result<(), BoxError> {
 		"the C# example must confirm the KYC round-trip\nSTDOUT:\n{stdout}\nSTDERR:\n{stderr}"
 	);
 	assert!(
-		stdout.contains("ORACLE_OK"),
-		"the C# example must decode the issued leaf to the reference oracle\nSTDOUT:\n{stdout}\nSTDERR:\n{stderr}"
+		stdout.contains("ATTRIBUTES_OK"),
+		"the C# example must decode the issued leaf to the reference values\nSTDOUT:\n{stdout}\nSTDERR:\n{stderr}"
 	);
 
 	harness.shutdown()?;

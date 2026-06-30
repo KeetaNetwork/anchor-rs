@@ -2,13 +2,16 @@
 #![allow(dead_code)]
 
 use std::convert::TryFrom;
+use std::str::FromStr;
 
-use keetanetwork_account::{Account, AccountError, Accountable, KeyPair, Keyable};
+use keetanetwork_account::{Account, AccountError, Accountable, KeyECDSASECP256K1, KeyPair, Keyable};
 use keetanetwork_asn1::SubjectPublicKeyInfo;
 use keetanetwork_crypto::prelude::IntoSecret;
+use keetanetwork_x509::certificates::Certificate as X509Certificate;
+use keetanetwork_x509::utils::create_dn;
 use keetanetwork_x509::SerialNumber;
 
-use crate::certificates::KycCertificateBuilder;
+use crate::certificates::{KycCertificate, KycCertificateBuilder};
 use crate::kyc_schema::builder::AttributeBuilderLike;
 use crate::kyc_schema::{Attribute, AttributeBuilder, KycAttributes, KycAttributesBuilder};
 use crate::sensitive_attributes::{SensitiveAttribute, SensitiveAttributeBuilder, SensitiveAttributeProof};
@@ -128,6 +131,61 @@ pub fn create_test_kyc_attributes() -> KycAttributes {
 	}
 
 	builder.build().unwrap()
+}
+
+/// Issue a self-signed CA and an end-entity leaf for `subject_seed_hex`, encoding
+/// each `(name, semantic, sensitive)` attribute through the production codec and
+/// encrypting the sensitive ones to the subject.
+pub fn issue_leaf_pem(subject_seed_hex: &str, attributes: &[(&str, &[u8], bool)]) -> (String, String) {
+	let subject = create_account_from_seed_hex::<KeyECDSASECP256K1>(subject_seed_hex, 0);
+	let issuer = create_account_from_seed::<KeyECDSASECP256K1>(1);
+
+	let ca_dn = create_dn(&[(keetanetwork_x509::oids::CN, "Test CA Root")]).expect("CA distinguished name");
+	let ca = KycCertificateBuilder::for_ca()
+		.with_subject_dn(ca_dn.clone())
+		.with_issuer_dn(ca_dn.clone())
+		.with_serial_number(SerialNumber::from(1u64))
+		.with_validity_days(3650)
+		.with_subject_public_key(SubjectPublicKeyInfo::try_from(&issuer).expect("CA public key info"))
+		.with_basic_constraints(true, Some(5))
+		.build(&issuer.keypair, &issuer.keypair)
+		.expect("CA certificate");
+
+	let subject_dn = create_dn(&[(keetanetwork_x509::oids::CN, "Test Subject")]).expect("subject DN");
+	let mut builder = KycCertificateBuilder::for_end_entity()
+		.with_subject_dn(subject_dn)
+		.with_issuer_dn(ca_dn)
+		.with_serial_number(SerialNumber::from(4u64))
+		.with_validity_days(365)
+		.with_subject_public_key(SubjectPublicKeyInfo::try_from(&subject).expect("subject public key info"));
+
+	for (name, value, sensitive) in attributes {
+		builder = if *sensitive {
+			builder.with_sensitive_attribute(*name, value.to_vec().into_secret())
+		} else {
+			builder.with_plain_attribute(*name, value)
+		};
+	}
+
+	let leaf = builder
+		.build(&subject.keypair, &issuer.keypair)
+		.expect("leaf certificate");
+
+	let leaf_pem = leaf.to_x509().to_pem().expect("leaf PEM");
+	let ca_pem = ca.to_x509().to_pem().expect("CA PEM");
+	(leaf_pem, ca_pem)
+}
+
+/// Parse a leaf PEM and decrypt the sensitive attribute `name` with the key for
+/// `subject_seed_hex`, returning the decoded semantic bytes. The inverse of
+/// [`issue_leaf_pem`] for reading an externally issued leaf through the core.
+pub fn read_sensitive_attribute(leaf_pem: &str, subject_seed_hex: &str, name: &str) -> Vec<u8> {
+	let subject = create_account_from_seed_hex::<KeyECDSASECP256K1>(subject_seed_hex, 0);
+	let x509 = X509Certificate::from_str(leaf_pem).expect("leaf PEM parses");
+	let certificate = KycCertificate::new(x509);
+	certificate
+		.decrypt_kyc_attribute(name, &subject.keypair)
+		.expect("sensitive attribute decrypts")
 }
 
 /// Helper to create individual test attributes

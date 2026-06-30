@@ -36,7 +36,7 @@ use exports::keeta::client::crypto::{
 	GuestAccount, GuestCertificate,
 };
 use keeta::anchor::types::{
-	CertificateGroup, CertificatesOutcome, ExpectedCost as WitExpectedCost, KycAttribute,
+	CertificateGroup, CertificatesOutcome, ExpectedCost as WitExpectedCost, IssueAttribute, KycAttribute,
 	KycOperations as WitOperations, KycProvider as WitProvider, StatusOutcome, Verification as WitVerification,
 	VerificationOutcome, VerificationStatus as WitVerificationStatus,
 };
@@ -178,8 +178,50 @@ impl GuestKycCertificate for KycCertificateResource {
 		Ok(WitKycCertificate::new(Self { certificate }))
 	}
 
+	#[allow(clippy::too_many_arguments)]
+	fn issue(
+		subject: AccountBorrow<'_>,
+		issuer: AccountBorrow<'_>,
+		subject_dn: String,
+		issuer_dn: String,
+		serial: u64,
+		not_before: i64,
+		not_after: i64,
+		is_ca: bool,
+		attributes: Vec<IssueAttribute>,
+	) -> Result<WitKycCertificate, CodedError> {
+		let subject_account = &subject.get::<AccountResource>().account;
+		let issuer_account = &issuer.get::<AccountResource>().account;
+		let issue_attributes: Vec<kyc_cert_ops::IssueAttribute> = attributes
+			.into_iter()
+			.map(|attribute| kyc_cert_ops::IssueAttribute {
+				name: attribute.name,
+				sensitive: attribute.sensitive,
+				value: attribute.value,
+			})
+			.collect();
+
+		let certificate = kyc_cert_ops::issue(
+			subject_account.as_ref(),
+			issuer_account.as_ref(),
+			&subject_dn,
+			&issuer_dn,
+			serial,
+			not_before,
+			not_after,
+			is_ca,
+			&issue_attributes,
+		)?;
+
+		Ok(WitKycCertificate::new(Self { certificate }))
+	}
+
 	fn base(&self) -> WitCertificate {
 		WitCertificate::new(CertificateResource { certificate: self.certificate.to_x509().clone() })
+	}
+
+	fn pem(&self) -> Result<String, CodedError> {
+		Ok(kyc_cert_ops::pem(&self.certificate)?)
 	}
 
 	fn valid_at(&self, unix_seconds: i64) -> bool {

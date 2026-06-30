@@ -28,6 +28,7 @@ pub fn issue_attributes() -> Value {
 		{ "name": "dateOfBirth", "sensitive": true, "value": { "__date": "1980-01-01T00:00:00.000Z" } },
 		{ "name": "address", "sensitive": true, "value": {
 			"addressLines": ["100 Belgrave Street"],
+			"addressType": "HOME",
 			"streetName": "100 Belgrave Street",
 			"townName": "Oldsmar",
 			"countrySubDivision": "FL",

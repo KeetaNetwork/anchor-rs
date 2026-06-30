@@ -3,8 +3,7 @@
 //! Account and base-certificate handles are reused from the node core module's
 //! `keeta_account_*` / `keeta_certificate_*` registries (resolved here through
 //! its public [`account`]/[`certificate`] resolvers and produced through
-//! [`store_certificate`]). This module keeps only the KYC leaf registry and
-//! exposes `keeta_kyc_certificate_*` on the shared `handle + last_error` ABI.
+//! [`store_certificate`]).
 
 use core::cell::RefCell;
 
@@ -15,7 +14,7 @@ use keetanetwork_anchor_bindings::certificate as cert_ops;
 use keetanetwork_anchor_bindings::error::CodedError;
 use keetanetwork_client_wasi::{account, bytes_in, bytes_result, certificate, fail, store_certificate, string_in};
 use keetanetwork_x509::certificates::Certificate as X509Certificate;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 thread_local! {
 	static LEAVES: RefCell<Leaves> = RefCell::new(Leaves::default());
@@ -192,6 +191,72 @@ pub unsafe extern "C" fn keeta_kyc_certificate_decrypt_attribute(
 	bytes_result(cert_ops::decrypt_attribute_with_account(&certificate, &name, &account))
 }
 
+/// Issue a leaf signed by the account `issuer_handle` for the account
+/// `subject_handle`, configured by a JSON `IssueParams` buffer; returns a leaf
+/// handle (`0` on error). Sensitive attributes are encrypted to the subject.
+///
+/// # Safety
+///
+/// `(params_ptr, params_len)` MUST describe an initialized, readable guest
+/// buffer.
+#[no_mangle]
+pub unsafe extern "C" fn keeta_kyc_certificate_issue(
+	subject_handle: i32,
+	issuer_handle: i32,
+	params_ptr: i32,
+	params_len: i32,
+) -> i32 {
+	let Some(subject) = account(subject_handle) else {
+		return 0;
+	};
+	let Some(issuer) = account(issuer_handle) else {
+		return 0;
+	};
+
+	let bytes = unsafe { bytes_in(params_ptr, params_len) };
+	let params: IssueParams = match serde_json::from_slice(&bytes) {
+		Ok(params) => params,
+		Err(error) => return fail(CodedError::new("DECODE", error.to_string())),
+	};
+
+	let attributes: Vec<cert_ops::IssueAttribute> = params
+		.attributes
+		.into_iter()
+		.map(|attribute| cert_ops::IssueAttribute {
+			name: attribute.name,
+			sensitive: attribute.sensitive,
+			value: attribute.value,
+		})
+		.collect();
+
+	let issued = cert_ops::issue(
+		subject.as_ref(),
+		issuer.as_ref(),
+		&params.subject_dn,
+		&params.issuer_dn,
+		params.serial,
+		params.not_before,
+		params.not_after,
+		params.is_ca,
+		&attributes,
+	);
+
+	match issued {
+		Ok(certificate) => store_leaf(certificate),
+		Err(error) => fail(error),
+	}
+}
+
+/// The leaf's PEM encoding as a bytes handle (`0` on error).
+#[no_mangle]
+pub extern "C" fn keeta_kyc_certificate_pem(handle: i32) -> i32 {
+	let Some(certificate) = leaf(handle) else {
+		return 0;
+	};
+
+	bytes_result(cert_ops::pem(&certificate).map(String::into_bytes))
+}
+
 /// Release a KYC leaf handle, ignoring an unknown one.
 #[no_mangle]
 pub extern "C" fn keeta_kyc_certificate_free(handle: i32) {
@@ -223,4 +288,27 @@ unsafe fn resolve_certificates(ptr: i32, len: i32) -> Option<Vec<X509Certificate
 struct AttributeDto {
 	name: String,
 	sensitive: bool,
+}
+
+/// Issuance parameters decoded from the JSON buffer passed to
+/// [`keeta_kyc_certificate_issue`]. `not_before`/`not_after` are Unix seconds.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct IssueParams {
+	subject_dn: String,
+	issuer_dn: String,
+	serial: u64,
+	not_before: i64,
+	not_after: i64,
+	is_ca: bool,
+	attributes: Vec<IssueAttributeDto>,
+}
+
+/// One attribute to embed: OID `name`, `sensitive` flag, and semantic `value`.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct IssueAttributeDto {
+	name: String,
+	sensitive: bool,
+	value: Vec<u8>,
 }

@@ -12,6 +12,15 @@ interface types {
 		sensitive: bool,
 	}
 
+	/// An attribute to embed when issuing a leaf: its `name` (the attribute
+	/// OID), whether its `value` is `sensitive` (encrypted to the subject)
+	/// rather than plain, and the semantic `value` bytes.
+	record issue-attribute {
+		name: string,
+		sensitive: bool,
+		value: list<u8>,
+	}
+
 	/// The KYC operation endpoint templates a provider advertises. An absent
 	/// field means the provider does not offer that operation.
 	record kyc-operations {
@@ -86,14 +95,22 @@ interface types {
 interface certificates {
 	use keeta:client/types@0.1.0.{coded-error};
 	use keeta:client/crypto@0.1.0.{account, certificate};
-	use types.{kyc-attribute};
+	use types.{kyc-attribute, issue-attribute};
 
 	/// A KYC leaf certificate.
 	resource kyc-certificate {
 		/// Parse a KYC certificate from its PEM encoding.
 		parse: static func(pem: string) -> result<kyc-certificate, coded-error>;
+		/// Issue a leaf signed by `issuer` for `subject`, embedding
+		/// `attributes` (sensitive ones encrypted to the subject). `subject`
+		/// and `issuer` may use different signing algorithms. `not-before` and
+		/// `not-after` are Unix seconds, supplied by the caller since the
+		/// component has no clock.
+		issue: static func(subject: borrow<account>, issuer: borrow<account>, subject-dn: string, issuer-dn: string, serial: u64, not-before: s64, not-after: s64, is-ca: bool, attributes: list<issue-attribute>) -> result<kyc-certificate, coded-error>;
 		/// The underlying base certificate.
 		base: func() -> certificate;
+		/// The leaf's PEM encoding.
+		pem: func() -> result<string, coded-error>;
 		/// Whether the leaf is valid at `unix-seconds` (Unix time).
 		valid-at: func(unix-seconds: s64) -> bool;
 		/// Whether the leaf chains to one of `trusted-roots` at `unix-seconds`,

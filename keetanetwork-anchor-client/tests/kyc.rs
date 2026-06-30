@@ -3,15 +3,15 @@
 //! [`KycClient`], exercising each auth mode end to end.
 
 mod common;
-mod support;
+mod harness;
 
 use std::error::Error;
 use std::sync::Arc;
 
 use common::account_from_seed;
+use harness::{HarnessError, KycHarness};
 use keetanetwork_account::GenericAccount;
 use keetanetwork_anchor_client::{AnchorContext, AnchorOutcome, CountryCode, KycClient, ReqwestTransport, Resolver};
-use support::{HarnessError, KycHarness};
 
 type TestResult = Result<(), Box<dyn Error>>;
 

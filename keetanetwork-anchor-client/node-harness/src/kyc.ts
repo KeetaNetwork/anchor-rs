@@ -127,12 +127,25 @@ interface IssueCertificateRequest {
 	verificationID?: string;
 }
 
+/**
+ * Decode an externally issued leaf with the reference reader. `leaf` is the
+ * PEM-encoded certificate, `subjectSeed` the seed whose key decrypts sensitive
+ * attributes, and `attributes` the names to read back as reference values.
+ */
+interface DecodeCertificateRequest {
+	cmd: 'decodeCertificate';
+	leaf: string;
+	subjectSeed: string;
+	attributes: string[];
+}
+
 type KycRequest =
 	StartKycAnchorRequest |
 	StopKycAnchorRequest |
 	BuildMetadataRequest |
 	PublishMetadataRequest |
 	IssueCertificateRequest |
+	DecodeCertificateRequest |
 	ShutdownRequest;
 
 /**
@@ -391,7 +404,7 @@ function reviveValue(value: unknown): unknown {
 /**
  * Issue a populated KYC leaf for a subject under the running anchor's CA, then
  * read every attribute back through the reference `Certificate` to produce the
- * `getValue()` oracle.
+ * `getValue()` reference values.
  */
 async function handleIssueCertificate(request: IssueCertificateRequest): Promise<HarnessResponse> {
 	const current = kycAnchor;
@@ -422,16 +435,16 @@ async function handleIssueCertificate(request: IssueCertificateRequest): Promise
 	const caPEM = current.ca.toPEM();
 
 	const reader = new certificates.Certificate(leaf, { subjectKey: subjectAccount, moment: null });
-	const oracle: { [name: string]: unknown } = {};
+	const attributes: { [name: string]: unknown } = {};
 	for (const attribute of request.attributes) {
 		// eslint-disable-next-line @typescript-eslint/consistent-type-assertions
 		const name = attribute.name as CertificatesModule.CertificateAttributeNames;
 		const value = await reader.getAttributeValue(name);
 		/*
-		 * Round-trip through JSON so the oracle is the exact form a binding
+		 * Round-trip through JSON so each value is the exact form a binding
 		 * compares against (e.g. `Date` becomes its ISO string).
 		 */
-		oracle[attribute.name] = JSON.parse(JSON.stringify(value));
+		attributes[attribute.name] = JSON.parse(JSON.stringify(value));
 	}
 
 	const verificationID = request.verificationID ?? subjectAccount.publicKeyString.get();
@@ -444,8 +457,29 @@ async function handleIssueCertificate(request: IssueCertificateRequest): Promise
 		subject: subjectAccount.publicKeyString.get(),
 		leaf: leafPEM,
 		ca: caPEM,
-		oracle
+		attributes
 	});
+}
+
+/**
+ * Read the named attributes from a leaf issued elsewhere (e.g. by the Rust core)
+ * through the reference `Certificate`. No running anchor is required: the subject
+ * key alone decrypts the sensitive attributes.
+ */
+async function handleDecodeCertificate(request: DecodeCertificateRequest): Promise<HarnessResponse> {
+	const subjectAccount = Account.fromSeed(request.subjectSeed, 0);
+	const reader = new certificates.Certificate(request.leaf, { subjectKey: subjectAccount, moment: null });
+	const attributes: { [name: string]: unknown } = {};
+	for (const name of request.attributes) {
+		// eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+		const attributeName = name as CertificatesModule.CertificateAttributeNames;
+		const value = await reader.getAttributeValue(attributeName);
+
+		/* Round-trip through JSON so a `Date` becomes its ISO string, etc. */
+		attributes[name] = JSON.parse(JSON.stringify(value));
+	}
+
+	return({ event: 'certificate-decoded', attributes });
 }
 
 async function handle(request: KycRequest): Promise<HarnessResponse> {
@@ -455,6 +489,7 @@ async function handle(request: KycRequest): Promise<HarnessResponse> {
 		case 'buildMetadata': return(handleBuildMetadata(request));
 		case 'publishMetadata': return(await handlePublishMetadata(request));
 		case 'issueCertificate': return(await handleIssueCertificate(request));
+		case 'decodeCertificate': return(await handleDecodeCertificate(request));
 		case 'shutdown': return({ event: 'shutdown' });
 	}
 }

@@ -62,29 +62,27 @@ Console.WriteLine("KYC_OK");
 
 if (Environment.GetEnvironmentVariable("KEETA_LEAF_PEM") is { } leafPem)
 {
-	OracleCheck(runtime, leafPem, RequireEnv("KEETA_ORACLE_JSON"), RequireEnv("KEETA_SUBJECT_SEED"));
-	Console.WriteLine("ORACLE_OK");
+	CheckAttributes(runtime, leafPem, RequireEnv("KEETA_ATTRIBUTES_JSON"), RequireEnv("KEETA_SUBJECT_SEED"));
+	Console.WriteLine("ATTRIBUTES_OK");
 }
 
 // Decrypt and decode every attribute of an issued leaf, asserting each matches
-// the reference oracle. The issued leaf is sensitive throughout, so every value
-// is decrypted with the subject's key; scalars (and dates) compare as text,
-// structured types as order-insensitive JSON.
-static void OracleCheck(WasmRuntime runtime, string leafPem, string oracleJson, string subjectSeed)
+// the reference values.
+static void CheckAttributes(WasmRuntime runtime, string leafPem, string attributesJson, string subjectSeed)
 {
 	using Account subject = Account.FromSeed(runtime, subjectSeed, 0, "ecdsa_secp256k1");
 	using KycCertificate leaf = KycCertificate.Parse(runtime, leafPem);
 
-	using JsonDocument oracle = JsonDocument.Parse(oracleJson);
-	foreach (JsonProperty entry in oracle.RootElement.EnumerateObject())
+	using JsonDocument attributes = JsonDocument.Parse(attributesJson);
+	foreach (JsonProperty entry in attributes.RootElement.EnumerateObject())
 	{
 		if (entry.Value.ValueKind == JsonValueKind.String)
 		{
-			Require(leaf.GetText(entry.Name, subject) == entry.Value.GetString(), $"scalar attribute `{entry.Name}` must match the oracle");
+			Require(leaf.GetText(entry.Name, subject) == entry.Value.GetString(), $"scalar attribute `{entry.Name}` must match the reference value");
 			continue;
 		}
 
-		Require(JsonEqual(leaf.GetJson(entry.Name, subject), entry.Value), $"structured attribute `{entry.Name}` must match the oracle");
+		Require(JsonEqual(leaf.GetJson(entry.Name, subject), entry.Value), $"structured attribute `{entry.Name}` must match the reference value");
 	}
 }
 

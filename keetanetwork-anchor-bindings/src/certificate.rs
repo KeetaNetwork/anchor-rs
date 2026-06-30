@@ -6,13 +6,17 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use chrono::{DateTime, Utc};
-use keetanetwork_account::{GenericAccount, KeyPair};
-use keetanetwork_anchor::certificates::{KycCertificate, KycCertificateError};
+use keetanetwork_account::{Account, AccountError, Accountable, GenericAccount, KeyPair};
+use keetanetwork_anchor::certificates::{KycCertificate, KycCertificateBuilder, KycCertificateError};
 use keetanetwork_anchor::trust::{evaluate_certificate_chain, CertificateChainStatus, CertificateRecord};
 use keetanetwork_bindings::x509::{
 	certificate_der, certificate_from_der, certificate_from_pem, certificate_pem, certificate_valid_at,
+	subject_public_key,
 };
+use keetanetwork_crypto::prelude::{CryptoSignerWithOptions, IntoSecret, SignatureEncoding};
 use keetanetwork_x509::certificates::Certificate;
+use keetanetwork_x509::utils::create_dn;
+use keetanetwork_x509::{oids, SerialNumber};
 
 use crate::error::CodedError;
 
@@ -131,6 +135,122 @@ where
 	}
 }
 
+/// One attribute to embed at issuance: its OID `name`, whether its value is
+/// `sensitive` (encrypted to the subject) rather than plain, and the semantic
+/// `value` bytes the KYC codec encodes.
+pub struct IssueAttribute {
+	pub name: String,
+	pub sensitive: bool,
+	pub value: Vec<u8>,
+}
+
+/// Issue a KYC leaf signed by `issuer` for `subject`, embedding `attributes`
+/// (sensitive ones encrypted to the subject). `subject` and `issuer` may use
+/// different signing algorithms. Validity bounds are Unix seconds; the caller
+/// supplies them since a component has no clock.
+#[allow(clippy::too_many_arguments)]
+pub fn issue(
+	subject: &GenericAccount,
+	issuer: &GenericAccount,
+	subject_dn: &str,
+	issuer_dn: &str,
+	serial: u64,
+	not_before_secs: i64,
+	not_after_secs: i64,
+	is_ca: bool,
+	attributes: &[IssueAttribute],
+) -> Result<KycCertificate, CodedError> {
+	let not_before = timestamp(not_before_secs)?;
+	let not_after = timestamp(not_after_secs)?;
+	let builder = configure(subject, subject_dn, issuer_dn, serial, not_before, not_after, is_ca, attributes)?;
+
+	dispatch_build(builder, subject, issuer)
+}
+
+/// A Unix-second timestamp as a UTC moment, or a stable code when out of range.
+fn timestamp(seconds: i64) -> Result<DateTime<Utc>, CodedError> {
+	DateTime::<Utc>::from_timestamp(seconds, 0)
+		.ok_or_else(|| CodedError::new(INVALID_DATE, "unix seconds out of range"))
+}
+
+/// Configure the leaf builder with names, serial, validity, subject key, and
+/// attributes; the caller signs it through [`dispatch_build`].
+#[allow(clippy::too_many_arguments)]
+fn configure(
+	subject: &GenericAccount,
+	subject_dn: &str,
+	issuer_dn: &str,
+	serial: u64,
+	not_before: DateTime<Utc>,
+	not_after: DateTime<Utc>,
+	is_ca: bool,
+	attributes: &[IssueAttribute],
+) -> Result<KycCertificateBuilder, CodedError> {
+	let public_key = subject_public_key(subject)?;
+	let subject_name = create_dn(&[(oids::CN, subject_dn)])?;
+	let issuer_name = create_dn(&[(oids::CN, issuer_dn)])?;
+	let base = if is_ca {
+		KycCertificateBuilder::for_ca()
+	} else {
+		KycCertificateBuilder::for_end_entity()
+	};
+	let mut builder = base
+		.with_subject_dn(subject_name)
+		.with_issuer_dn(issuer_name)
+		.with_serial_number(SerialNumber::from(serial))
+		.with_validity(not_before, not_after)
+		.with_subject_public_key(public_key);
+
+	for attribute in attributes {
+		builder = if attribute.sensitive {
+			builder.with_sensitive_attribute(&attribute.name, attribute.value.clone().into_secret())
+		} else {
+			builder.with_plain_attribute(&attribute.name, &attribute.value)
+		};
+	}
+
+	Ok(builder)
+}
+
+/// Resolve the erased subject and issuer to their concrete key types, then
+/// build: the subject key encrypts sensitive attributes, the issuer key signs.
+fn dispatch_build(
+	builder: KycCertificateBuilder,
+	subject: &GenericAccount,
+	issuer: &GenericAccount,
+) -> Result<KycCertificate, CodedError> {
+	match (subject, issuer) {
+		(GenericAccount::Ed25519(sub), GenericAccount::Ed25519(iss)) => build_typed(builder, sub, iss),
+		(GenericAccount::Ed25519(sub), GenericAccount::EcdsaSecp256k1(iss)) => build_typed(builder, sub, iss),
+		(GenericAccount::Ed25519(sub), GenericAccount::EcdsaSecp256r1(iss)) => build_typed(builder, sub, iss),
+		(GenericAccount::EcdsaSecp256k1(sub), GenericAccount::Ed25519(iss)) => build_typed(builder, sub, iss),
+		(GenericAccount::EcdsaSecp256k1(sub), GenericAccount::EcdsaSecp256k1(iss)) => build_typed(builder, sub, iss),
+		(GenericAccount::EcdsaSecp256k1(sub), GenericAccount::EcdsaSecp256r1(iss)) => build_typed(builder, sub, iss),
+		(GenericAccount::EcdsaSecp256r1(sub), GenericAccount::Ed25519(iss)) => build_typed(builder, sub, iss),
+		(GenericAccount::EcdsaSecp256r1(sub), GenericAccount::EcdsaSecp256k1(iss)) => build_typed(builder, sub, iss),
+		(GenericAccount::EcdsaSecp256r1(sub), GenericAccount::EcdsaSecp256r1(iss)) => build_typed(builder, sub, iss),
+		_ => Err(CodedError::new(UNSUPPORTED_KEY_TYPE, "issuance requires signing accounts for subject and issuer")),
+	}
+}
+
+/// Build the leaf with a typed subject (encryption) and issuer (signature).
+fn build_typed<TSubject, TSigning, S>(
+	builder: KycCertificateBuilder,
+	subject: &Account<TSubject>,
+	signer: &Account<TSigning>,
+) -> Result<KycCertificate, CodedError>
+where
+	Account<TSubject>: TryFrom<Accountable<TSubject>, Error = AccountError>,
+	Account<TSigning>: TryFrom<Accountable<TSigning>, Error = AccountError>,
+	TSubject: KeyPair,
+	TSigning: KeyPair + CryptoSignerWithOptions<S> + 'static,
+	S: SignatureEncoding,
+{
+	builder
+		.build(&subject.keypair, &signer.keypair)
+		.map_err(coded)
+}
+
 /// Reduce a KYC certificate error to a stable boundary code, deferring the
 /// X.509 case to the base certificate mapping so granular codes survive.
 fn coded(error: KycCertificateError) -> CodedError {
@@ -151,7 +271,9 @@ mod tests {
 	use std::time::{SystemTime, UNIX_EPOCH};
 
 	use keetanetwork_account::{Account, KeyECDSASECP256K1};
-	use keetanetwork_anchor::doc_utils::{create_secp256k1_test_account, create_test_certificate_builder};
+	use keetanetwork_anchor::doc_utils::{
+		create_ed25519_test_account, create_secp256k1_test_account, create_test_certificate_builder,
+	};
 	use keetanetwork_crypto::prelude::IntoSecret;
 
 	use super::*;
@@ -298,6 +420,38 @@ mod tests {
 		let (certificate, _) = fixture();
 		let root = certificate.to_x509().clone();
 		let error = verify(&certificate, &[root], &[], i64::MAX).unwrap_err();
+		assert_eq!(error.code, INVALID_DATE);
+	}
+
+	#[test]
+	fn issues_across_algorithms_and_reads_back() {
+		let subject = Arc::new(GenericAccount::Ed25519(create_ed25519_test_account(Some(0))));
+		let issuer = Arc::new(GenericAccount::EcdsaSecp256k1(create_secp256k1_test_account(Some(1))));
+		let attributes = [
+			IssueAttribute { name: "postalCode".to_string(), sensitive: false, value: b"12345".to_vec() },
+			IssueAttribute { name: "email".to_string(), sensitive: true, value: b"john@example.com".to_vec() },
+		];
+		let not_before = now_millis() / 1000;
+		let not_after = not_before + 31_536_000;
+
+		let certificate =
+			issue(subject.as_ref(), issuer.as_ref(), "Subject", "Issuer", 7, not_before, not_after, false, &attributes)
+				.unwrap();
+
+		assert_eq!(plain_attribute(&certificate, "postalCode").unwrap(), b"12345".to_vec());
+		assert_eq!(
+			decrypt_attribute_with_account(&certificate, "email", &subject).unwrap(),
+			b"john@example.com".to_vec()
+		);
+	}
+
+	#[test]
+	fn issuing_with_an_out_of_range_validity_is_rejected() {
+		let subject = Arc::new(GenericAccount::EcdsaSecp256k1(create_secp256k1_test_account(Some(0))));
+		let issuer = Arc::new(GenericAccount::EcdsaSecp256k1(create_secp256k1_test_account(Some(1))));
+
+		let error = issue(subject.as_ref(), issuer.as_ref(), "Subject", "Issuer", 1, i64::MAX, i64::MAX, false, &[])
+			.unwrap_err();
 		assert_eq!(error.code, INVALID_DATE);
 	}
 }
