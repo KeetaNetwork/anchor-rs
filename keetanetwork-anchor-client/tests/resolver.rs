@@ -1,14 +1,14 @@
 //! Service-metadata resolution and KYC provider lookup, driven against a live
 //! anchor whose signed KYC entry is published on-chain and read back.
 
-mod support;
+mod harness;
 
 use std::error::Error;
 use std::sync::Arc;
 
+use harness::{HarnessError, KycHarness};
 use keetanetwork_anchor_client::{decode_base64, parse_metadata, CountryCode, KycQuery, ReqwestTransport, Resolver};
 use serde_json::{json, Value};
-use support::{HarnessError, KycHarness};
 
 type TestResult = Result<(), Box<dyn Error>>;
 

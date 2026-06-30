@@ -1,8 +1,4 @@
-//! wasmtime P2 KYC component end-to-end test.
-//!
-//! Boots the `KeetaNetKYCAnchorHTTPServer` via the TypeScript KYC harness, which
-//! initializes a chain and publishes the service metadata on-chain, then drives
-//! the exported `client` resource over `wasi:http`.
+//! wasmtime P2 KYC component end-to-end test
 
 use serde_json::{json, Value};
 
@@ -10,19 +6,21 @@ mod common;
 mod wasmtime_p2;
 
 use common::{field_str, issue_attributes, BoxError, KycHarness, SUBJECT_SEED};
+use wasmtime_p2::bindings::exports::keeta::anchor::certificates::IssueAttribute;
 use wasmtime_p2::bindings::exports::keeta::anchor::kyc::{
 	CertificatesOutcome, KycProvider, StatusOutcome, VerificationOutcome,
 };
 use wasmtime_p2::{coded, instantiate};
 
-/// Project a decrypted attribute's bytes into the JSON value the oracle holds: a
-/// scalar attribute is its UTF-8 text; a structured attribute is its JSON object.
+/// Project a decrypted attribute's bytes into the JSON value the reference holds:
+/// a scalar attribute is its UTF-8 text; a structured attribute is its JSON object.
 fn decoded_to_value(expected: &Value, bytes: Vec<u8>) -> Result<Value, BoxError> {
 	let text = String::from_utf8(bytes)?;
 	let value = match expected {
 		Value::String(_) => Value::String(text),
 		_ => serde_json::from_str(&text)?,
 	};
+
 	Ok(value)
 }
 
@@ -117,22 +115,107 @@ async fn p2_kyc_signs_against_live_anchor() -> Result<(), BoxError> {
 }
 
 #[tokio::test]
+#[ignore = "requires the built wasm32-wasip2 component"]
+async fn p2_kyc_issues_a_leaf_across_algorithms() -> Result<(), BoxError> {
+	let (mut store, bindings) = instantiate().await?;
+	let crypto = bindings.keeta_client_crypto();
+	let certificates = bindings.keeta_anchor_certificates();
+
+	// Subject and issuer deliberately use different algorithms: the component
+	// must encrypt sensitive attributes to the ed25519 subject while signing the
+	// leaf with the secp256k1 issuer.
+	let subject = crypto
+		.account()
+		.call_from_seed(&mut store, SUBJECT_SEED, 0, "ed25519")
+		.await?
+		.map_err(coded)?;
+	let issuer = crypto
+		.account()
+		.call_from_seed(&mut store, &"22".repeat(32), 0, "ecdsa_secp256k1")
+		.await?
+		.map_err(coded)?;
+
+	let attributes = vec![
+		IssueAttribute { name: "postalCode".to_string(), sensitive: false, value: b"12345".to_vec() },
+		IssueAttribute { name: "email".to_string(), sensitive: true, value: b"john@example.com".to_vec() },
+	];
+
+	let leaf = certificates
+		.kyc_certificate()
+		.call_issue(
+			&mut store,
+			subject,
+			issuer,
+			"Subject",
+			"Issuer",
+			7,
+			1_700_000_000,
+			1_731_536_000,
+			false,
+			&attributes,
+		)
+		.await?
+		.map_err(coded)?;
+
+	// The issued leaf must survive a PEM round-trip, proving the encoding is the
+	// unambiguous form the reference reader accepts.
+	let pem = certificates
+		.kyc_certificate()
+		.call_pem(&mut store, leaf)
+		.await?
+		.map_err(coded)?;
+	let re_parsed = certificates
+		.kyc_certificate()
+		.call_parse(&mut store, &pem)
+		.await?
+		.map_err(coded)?;
+
+	let plain = certificates
+		.kyc_certificate()
+		.call_plain_attribute(&mut store, re_parsed, "postalCode")
+		.await?
+		.map_err(coded)?;
+	assert_eq!(plain, b"12345".to_vec(), "the plain attribute must round-trip through issuance and pem");
+
+	let decrypted = certificates
+		.kyc_certificate()
+		.call_decrypt_attribute(&mut store, re_parsed, "email", subject)
+		.await?
+		.map_err(coded)?;
+	assert_eq!(decrypted, b"john@example.com".to_vec(), "the sensitive attribute must decrypt to the issued value");
+
+	// The subject can prove the sensitive attribute, and the proof validates back
+	// against the leaf with the subject's public key alone.
+	let proof = certificates
+		.kyc_certificate()
+		.call_prove(&mut store, re_parsed, "email", subject)
+		.await?
+		.map_err(coded)?;
+	let valid = certificates
+		.kyc_certificate()
+		.call_validate_proof(&mut store, re_parsed, "email", subject, &proof)
+		.await?
+		.map_err(coded)?;
+	assert!(valid, "the sensitive attribute proof must validate against the issued leaf");
+
+	Ok(())
+}
+
+#[tokio::test]
 #[ignore = "requires `make node-harness` and the built wasm32-wasip2 component"]
-async fn p2_kyc_decrypts_issued_leaf_to_oracle() -> Result<(), BoxError> {
+async fn p2_kyc_decrypts_issued_leaf_to_reference_values() -> Result<(), BoxError> {
 	let mut harness = KycHarness::start()?;
 	harness.request("startKycAnchor", json!({ "sign": true, "countryCodes": ["US"] }))?;
 
 	// The reference anchor issues a populated leaf for our subject and returns the
-	// `getValue()` oracle it reads back, the ground truth for the binding decode.
-	let issued = harness.request(
-		"issueCertificate",
-		json!({ "subjectSeed": SUBJECT_SEED, "attributes": issue_attributes() }),
-	)?;
+	// `getValue()` values it reads back, the ground truth for the binding decode.
+	let issued = harness
+		.request("issueCertificate", json!({ "subjectSeed": SUBJECT_SEED, "attributes": issue_attributes() }))?;
 	let leaf_pem = field_str(&issued, "leaf")?;
-	let oracle = issued
-		.get("oracle")
+	let attributes = issued
+		.get("attributes")
 		.and_then(Value::as_object)
-		.ok_or("issued certificate is missing its oracle")?;
+		.ok_or("issued certificate is missing its attributes")?;
 
 	let (mut store, bindings) = instantiate().await?;
 	let crypto = bindings.keeta_client_crypto();
@@ -152,15 +235,15 @@ async fn p2_kyc_decrypts_issued_leaf_to_oracle() -> Result<(), BoxError> {
 		.map_err(coded)?;
 
 	// Every attribute the binding decodes through the shared core must equal the
-	// reference oracle: scalars by value, structured types field-for-field.
-	for (name, expected) in oracle {
+	// reference value: scalars by value, structured types field-for-field.
+	for (name, expected) in attributes {
 		let bytes = certificates
 			.kyc_certificate()
 			.call_decrypt_attribute(&mut store, leaf, name, account)
 			.await?
 			.map_err(coded)?;
 		let actual = decoded_to_value(expected, bytes)?;
-		assert_eq!(&actual, expected, "decoded attribute `{name}` must match the reference oracle");
+		assert_eq!(&actual, expected, "decoded attribute `{name}` must match the reference value");
 	}
 
 	harness.shutdown()?;

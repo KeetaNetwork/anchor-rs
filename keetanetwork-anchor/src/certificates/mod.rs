@@ -123,7 +123,7 @@ use crate::generated::KycAttributes;
 use crate::kyc_schema::codec::decode_value;
 use crate::kyc_schema::Attribute;
 use crate::sensitive_attributes::utils::{assert_attribute_is_plain, assert_attribute_is_sensitive};
-use crate::sensitive_attributes::SensitiveAttribute;
+use crate::sensitive_attributes::{SensitiveAttribute, SensitiveAttributeProof};
 
 // Re-export commonly used types
 pub use builder::KycCertificateBuilder;
@@ -339,6 +339,77 @@ impl KycCertificate {
 		let sensitive_attr: SensitiveAttribute = rasn::der::decode(attribute.as_ref())?;
 		let decrypted = sensitive_attr.decrypt(keypair)?;
 		Ok(decode_value(attribute.name.to_string(), decrypted.expose_secret())?)
+	}
+
+	/// Generate a proof for the sensitive KYC attribute `name`, decrypting it
+	/// with `keypair`. The proof attests to the attribute's committed value and
+	/// validates against this certificate with only the subject's public key, so
+	/// it can be shared without revealing the private key.
+	///
+	/// # Arguments
+	///
+	/// - `name` - The name of the sensitive attribute to prove
+	/// - `keypair` - The subject keypair the attribute was encrypted to
+	///
+	/// # Returns
+	///
+	/// - `Ok(_)` - The proof for the attribute
+	/// - `Err(_)` - If the attribute is not found, not sensitive, or decryption fails
+	pub fn prove_kyc_attribute<K, N>(
+		&self,
+		name: N,
+		keypair: &K,
+	) -> Result<SensitiveAttributeProof, KycCertificateError>
+	where
+		K: KeyPair,
+		N: AsRef<str>,
+	{
+		let name_str = name.as_ref();
+		let attribute = self
+			.get_kyc_attribute(name_str)
+			.ok_or_else(|| KycCertificateError::AttributeNotFound { name: name_str.to_string() })?;
+
+		assert_attribute_is_sensitive(attribute, name_str)?;
+
+		let sensitive_attr: SensitiveAttribute = rasn::der::decode(attribute.as_ref())?;
+		Ok(sensitive_attr.to_proof(keypair)?)
+	}
+
+	/// Validate a `proof` for the sensitive KYC attribute `name` against this
+	/// certificate, using `keypair`'s public key. A holder generates the proof
+	/// via [`prove_kyc_attribute`](Self::prove_kyc_attribute); any verifier with
+	/// the subject's public key can validate it here.
+	///
+	/// # Arguments
+	///
+	/// - `name` - The name of the sensitive attribute the proof concerns
+	/// - `keypair` - The subject account (its public key is used for validation)
+	/// - `proof` - The proof to validate against this certificate
+	///
+	/// # Returns
+	///
+	/// - `Ok(true)` - The proof attests to the attribute's committed value
+	/// - `Ok(false)` - The proof does not match
+	/// - `Err(_)` - If the attribute is not found, not sensitive, or validation fails
+	pub fn validate_kyc_attribute_proof<K, N>(
+		&self,
+		name: N,
+		keypair: &K,
+		proof: SensitiveAttributeProof,
+	) -> Result<bool, KycCertificateError>
+	where
+		K: KeyPair,
+		N: AsRef<str>,
+	{
+		let name_str = name.as_ref();
+		let attribute = self
+			.get_kyc_attribute(name_str)
+			.ok_or_else(|| KycCertificateError::AttributeNotFound { name: name_str.to_string() })?;
+
+		assert_attribute_is_sensitive(attribute, name_str)?;
+
+		let sensitive_attr: SensitiveAttribute = rasn::der::decode(attribute.as_ref())?;
+		Ok(sensitive_attr.validate_proof(keypair, proof)?)
 	}
 
 	/// Get a plain text KYC attribute value
@@ -584,4 +655,44 @@ mod tests {
 	}
 
 	crate::test_all_key_types!(test_certificate_type_errors, test_certificate_attribute_type_errors);
+
+	fn test_certificate_proof_functionality<T, S>(account: Account<T>)
+	where
+		Account<T>: TryFrom<Accountable<T>, Error = AccountError>,
+		T: KeyPair + CryptoSignerWithOptions<S> + 'static,
+		S: SignatureEncoding,
+	{
+		let certificate = create_test_certificate_builder(&account)
+			.with_plain_attribute("postalCode", "12345")
+			.with_sensitive_attribute("email", b"john@example.com".to_vec().into_secret())
+			.with_sensitive_attribute("fullName", b"John Doe".to_vec().into_secret())
+			.build(&account.keypair, &account.keypair)
+			.unwrap();
+
+		// A proof for an attribute validates against that attribute.
+		let email_proof = certificate
+			.prove_kyc_attribute("email", &account.keypair)
+			.unwrap();
+		assert!(certificate
+			.validate_kyc_attribute_proof("email", &account.keypair, email_proof)
+			.unwrap());
+
+		// A proof for a different attribute does not validate against this one.
+		let name_proof = certificate
+			.prove_kyc_attribute("fullName", &account.keypair)
+			.unwrap();
+		assert!(!certificate
+			.validate_kyc_attribute_proof("email", &account.keypair, name_proof)
+			.unwrap());
+
+		// A plain attribute cannot be proven.
+		let plain_result = certificate.prove_kyc_attribute("postalCode", &account.keypair);
+		assert!(matches!(plain_result.unwrap_err(), KycCertificateError::SensitiveAttributeError { .. }));
+
+		// An absent attribute has no proof.
+		let missing_result = certificate.prove_kyc_attribute("nonExistent", &account.keypair);
+		assert!(matches!(missing_result.unwrap_err(), KycCertificateError::AttributeNotFound { .. }));
+	}
+
+	crate::test_all_key_types!(test_certificate_proof, test_certificate_proof_functionality);
 }

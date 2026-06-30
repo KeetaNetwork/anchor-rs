@@ -36,9 +36,9 @@ use exports::keeta::client::crypto::{
 	GuestAccount, GuestCertificate,
 };
 use keeta::anchor::types::{
-	CertificateGroup, CertificatesOutcome, ExpectedCost as WitExpectedCost, KycAttribute,
-	KycOperations as WitOperations, KycProvider as WitProvider, StatusOutcome, Verification as WitVerification,
-	VerificationOutcome, VerificationStatus as WitVerificationStatus,
+	AttributeProof as WitAttributeProof, CertificateGroup, CertificatesOutcome, ExpectedCost as WitExpectedCost,
+	IssueAttribute, KycAttribute, KycOperations as WitOperations, KycProvider as WitProvider, StatusOutcome,
+	Verification as WitVerification, VerificationOutcome, VerificationStatus as WitVerificationStatus,
 };
 use keeta::client::types::CodedError;
 
@@ -161,6 +161,30 @@ impl GuestCertificate for CertificateResource {
 			.and_then(|millis| x509_ops::certificate_valid_at(&self.certificate, millis).ok())
 			.unwrap_or(false)
 	}
+
+	fn subject(&self) -> String {
+		x509_ops::certificate_subject(&self.certificate)
+	}
+
+	fn issuer(&self) -> String {
+		x509_ops::certificate_issuer(&self.certificate)
+	}
+
+	fn serial(&self) -> String {
+		x509_ops::certificate_serial(&self.certificate)
+	}
+
+	fn not_before(&self) -> i64 {
+		x509_ops::certificate_not_before(&self.certificate)
+	}
+
+	fn not_after(&self) -> i64 {
+		x509_ops::certificate_not_after(&self.certificate)
+	}
+
+	fn subject_public_key(&self) -> Result<String, CodedError> {
+		Ok(x509_ops::certificate_subject_public_key(&self.certificate)?)
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -178,8 +202,50 @@ impl GuestKycCertificate for KycCertificateResource {
 		Ok(WitKycCertificate::new(Self { certificate }))
 	}
 
+	#[allow(clippy::too_many_arguments)]
+	fn issue(
+		subject: AccountBorrow<'_>,
+		issuer: AccountBorrow<'_>,
+		subject_dn: String,
+		issuer_dn: String,
+		serial: u64,
+		not_before: i64,
+		not_after: i64,
+		is_ca: bool,
+		attributes: Vec<IssueAttribute>,
+	) -> Result<WitKycCertificate, CodedError> {
+		let subject_account = &subject.get::<AccountResource>().account;
+		let issuer_account = &issuer.get::<AccountResource>().account;
+		let issue_attributes: Vec<kyc_cert_ops::IssueAttribute> = attributes
+			.into_iter()
+			.map(|attribute| kyc_cert_ops::IssueAttribute {
+				name: attribute.name,
+				sensitive: attribute.sensitive,
+				value: attribute.value,
+			})
+			.collect();
+
+		let certificate = kyc_cert_ops::issue(
+			subject_account.as_ref(),
+			issuer_account.as_ref(),
+			&subject_dn,
+			&issuer_dn,
+			serial,
+			not_before,
+			not_after,
+			is_ca,
+			&issue_attributes,
+		)?;
+
+		Ok(WitKycCertificate::new(Self { certificate }))
+	}
+
 	fn base(&self) -> WitCertificate {
 		WitCertificate::new(CertificateResource { certificate: self.certificate.to_x509().clone() })
+	}
+
+	fn pem(&self) -> Result<String, CodedError> {
+		Ok(kyc_cert_ops::pem(&self.certificate)?)
 	}
 
 	fn valid_at(&self, unix_seconds: i64) -> bool {
@@ -216,6 +282,23 @@ impl GuestKycCertificate for KycCertificateResource {
 	fn decrypt_attribute(&self, name: String, subject: AccountBorrow<'_>) -> Result<Vec<u8>, CodedError> {
 		let account = &subject.get::<AccountResource>().account;
 		Ok(kyc_cert_ops::decrypt_attribute_with_account(&self.certificate, &name, account)?)
+	}
+
+	fn prove(&self, name: String, subject: AccountBorrow<'_>) -> Result<WitAttributeProof, CodedError> {
+		let account = &subject.get::<AccountResource>().account;
+		let proof = kyc_cert_ops::prove_attribute_with_account(&self.certificate, &name, account)?;
+		Ok(WitAttributeProof { value: proof.value, salt: proof.salt })
+	}
+
+	fn validate_proof(
+		&self,
+		name: String,
+		subject: AccountBorrow<'_>,
+		proof: WitAttributeProof,
+	) -> Result<bool, CodedError> {
+		let account = &subject.get::<AccountResource>().account;
+		let proof = kyc_cert_ops::AttributeProof { value: proof.value, salt: proof.salt };
+		Ok(kyc_cert_ops::validate_attribute_proof_with_account(&self.certificate, &name, account, proof)?)
 	}
 }
 

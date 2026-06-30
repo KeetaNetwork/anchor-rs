@@ -6,6 +6,93 @@ use serde_json::{json, Map, Value};
 
 use super::driver::{field_str, optional_string_array, HarnessDriver, HarnessError};
 
+/// The subject seed shared by the issuer and the reader across the round-trip
+/// between the Rust core and the reference anchor.
+pub const SUBJECT_SEED: &str = "1111111111111111111111111111111111111111111111111111111111111111";
+
+/// The attributes exercised by the round-trip, spanning a plain string scalar, a
+/// date (`UTCTime`/`GeneralizedTime`), and two structured types whose CHOICE
+/// fields carry the positional wrapper.
+pub fn issue_attributes() -> Value {
+	json!([
+		{ "name": "fullName", "sensitive": true, "value": "Test User" },
+		{ "name": "email", "sensitive": true, "value": "user@example.com" },
+		{ "name": "dateOfBirth", "sensitive": true, "value": { "__date": "1980-01-01T00:00:00.000Z" } },
+		{ "name": "address", "sensitive": true, "value": {
+			"addressLines": ["100 Belgrave Street"],
+			"addressType": "HOME",
+			"streetName": "100 Belgrave Street",
+			"townName": "Oldsmar",
+			"countrySubDivision": "FL",
+			"postalCode": "34677"
+		} },
+		{ "name": "entityType", "sensitive": true, "value": {
+			"person": [{ "id": "123-45-6789", "schemeName": "SSN" }]
+		} }
+	])
+}
+
+/// One issue attribute projected for both directions of the round-trip: its
+/// `name`, the `semantic` bytes the core codec encodes, whether it is
+/// `sensitive`, and the `expected` value a reader recovers.
+pub struct AttributeCase {
+	/// The attribute name.
+	pub name: String,
+	/// The semantic bytes the core codec encodes for it.
+	pub semantic: Vec<u8>,
+	/// Whether the attribute is encrypted.
+	pub sensitive: bool,
+	/// The value a reader recovers for it.
+	pub expected: Value,
+}
+
+/// Project [`issue_attributes`] into the encode/compare cases shared by both
+/// directions. The input is a fixed literal, so a malformed shape is a test bug.
+pub fn attribute_cases() -> Vec<AttributeCase> {
+	let attributes = issue_attributes();
+	let entries = attributes.as_array().expect("issue attributes is an array");
+
+	entries
+		.iter()
+		.map(|entry| {
+			let name = entry
+				.get("name")
+				.and_then(Value::as_str)
+				.expect("attribute name");
+			let sensitive = entry
+				.get("sensitive")
+				.and_then(Value::as_bool)
+				.expect("attribute sensitive flag");
+			let value = entry.get("value").expect("attribute value");
+			let (semantic, expected) = semantic_and_expected(value);
+			AttributeCase { name: name.to_string(), semantic, sensitive, expected }
+		})
+		.collect()
+}
+
+/// Project an issue attribute's JSON value into the bytes the core codec encodes
+/// and the value a reader emits for it.
+fn semantic_and_expected(value: &Value) -> (Vec<u8>, Value) {
+	match value {
+		Value::String(text) => (text.clone().into_bytes(), value.clone()),
+		Value::Object(map) => match map.get("__date") {
+			Some(Value::String(iso)) => (iso.clone().into_bytes(), Value::String(iso.clone())),
+			_ => (serde_json::to_vec(value).expect("structured attribute serializes"), value.clone()),
+		},
+		_ => panic!("issue attribute value must be a string or object"),
+	}
+}
+
+/// Project decoded attribute bytes into the value to compare: a scalar is its
+/// UTF-8 text, a structured attribute is its JSON object.
+pub fn decoded_to_value(expected: &Value, bytes: Vec<u8>) -> Value {
+	let text = String::from_utf8(bytes).expect("decoded attribute is UTF-8");
+	match expected {
+		Value::String(_) => Value::String(text),
+		_ => serde_json::from_str(&text).expect("decoded structured attribute is JSON"),
+	}
+}
+
 /// A live KYC anchor HTTP server started by the harness, with its service
 /// metadata published on-chain to a root account.
 pub struct KycAnchor {
@@ -164,6 +251,29 @@ impl KycHarness {
 			.driver
 			.request("buildMetadata", json!({ "metadata": metadata }))?;
 		Ok(field_str(&response, "blob")?.to_string())
+	}
+
+	/// Issue a populated leaf for `subject_seed` under the running anchor's CA,
+	/// returning the response (`leaf` PEM, `ca`, and the read-back values).
+	/// Requires a running anchor (started via [`start_kyc_anchor`]).
+	pub fn issue_certificate(&mut self, subject_seed: &str, attributes: &Value) -> Result<Value, HarnessError> {
+		self.driver
+			.request("issueCertificate", json!({ "subjectSeed": subject_seed, "attributes": attributes }))
+	}
+
+	/// Read `attributes` back from an externally issued `leaf` (e.g. one built by
+	/// the Rust core) using `subject_seed` to decrypt the sensitive ones. No
+	/// running anchor is required.
+	pub fn decode_certificate(
+		&mut self,
+		leaf: &str,
+		subject_seed: &str,
+		attributes: &[&str],
+	) -> Result<Value, HarnessError> {
+		self.driver.request(
+			"decodeCertificate",
+			json!({ "leaf": leaf, "subjectSeed": subject_seed, "attributes": attributes }),
+		)
 	}
 
 	/// Stop the harness and wait for it to exit.

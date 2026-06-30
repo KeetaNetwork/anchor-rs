@@ -2,7 +2,7 @@
 //! DER bytes agree in both directions.
 
 mod common;
-mod support;
+mod harness;
 
 use std::borrow::Cow;
 use std::error::Error;
@@ -10,6 +10,7 @@ use std::error::Error;
 use common::{
 	account_from_seed, decode_account, harness_data, options_at_signed_time, rust_data, vectors, NONCE, TIMESTAMP,
 };
+use harness::SigningHarness;
 use hex::FromHex;
 use keetanetwork_account::{Account, KeyECDSASECP256K1};
 use keetanetwork_anchor::signing::{
@@ -17,7 +18,6 @@ use keetanetwork_anchor::signing::{
 	verify_body, verify_url, RequestError, SignParams, Signable, Signed, Url, VerifyOptions,
 };
 use serde_json::{json, Value};
-use support::SigningHarness;
 
 type TestResult = Result<(), Box<dyn Error>>;
 

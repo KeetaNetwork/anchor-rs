@@ -127,12 +127,55 @@ interface IssueCertificateRequest {
 	verificationID?: string;
 }
 
+/**
+ * Decode an externally issued leaf with the reference reader. `leaf` is the
+ * PEM-encoded certificate, `subjectSeed` the seed whose key decrypts sensitive
+ * attributes, and `attributes` the names to read back as reference values.
+ */
+interface DecodeCertificateRequest {
+	cmd: 'decodeCertificate';
+	leaf: string;
+	subjectSeed: string;
+	attributes: string[];
+}
+
+/** The reference `SensitiveAttribute` and the proof shape its `getProof` emits. */
+type SensitiveAttribute = InstanceType<typeof certificates.SensitiveAttribute>;
+type AttributeProof = Awaited<ReturnType<SensitiveAttribute['getProof']>>;
+
+/**
+ * Generate a proof for the sensitive attribute `name` on an externally issued
+ * `leaf`, decrypting with `subjectSeed`. The proof validates against the same
+ * leaf without the subject's private key.
+ */
+interface ProveAttributeRequest {
+	cmd: 'proveAttribute';
+	leaf: string;
+	subjectSeed: string;
+	name: string;
+}
+
+/**
+ * Validate `proof` for the sensitive attribute `name` against an externally
+ * issued `leaf`, using the subject public key derived from `subjectSeed`.
+ */
+interface ValidateProofRequest {
+	cmd: 'validateProof';
+	leaf: string;
+	subjectSeed: string;
+	name: string;
+	proof: AttributeProof;
+}
+
 type KycRequest =
 	StartKycAnchorRequest |
 	StopKycAnchorRequest |
 	BuildMetadataRequest |
 	PublishMetadataRequest |
 	IssueCertificateRequest |
+	DecodeCertificateRequest |
+	ProveAttributeRequest |
+	ValidateProofRequest |
 	ShutdownRequest;
 
 /**
@@ -391,7 +434,7 @@ function reviveValue(value: unknown): unknown {
 /**
  * Issue a populated KYC leaf for a subject under the running anchor's CA, then
  * read every attribute back through the reference `Certificate` to produce the
- * `getValue()` oracle.
+ * `getValue()` reference values.
  */
 async function handleIssueCertificate(request: IssueCertificateRequest): Promise<HarnessResponse> {
 	const current = kycAnchor;
@@ -422,16 +465,16 @@ async function handleIssueCertificate(request: IssueCertificateRequest): Promise
 	const caPEM = current.ca.toPEM();
 
 	const reader = new certificates.Certificate(leaf, { subjectKey: subjectAccount, moment: null });
-	const oracle: { [name: string]: unknown } = {};
+	const attributes: { [name: string]: unknown } = {};
 	for (const attribute of request.attributes) {
 		// eslint-disable-next-line @typescript-eslint/consistent-type-assertions
 		const name = attribute.name as CertificatesModule.CertificateAttributeNames;
 		const value = await reader.getAttributeValue(name);
 		/*
-		 * Round-trip through JSON so the oracle is the exact form a binding
+		 * Round-trip through JSON so each value is the exact form a binding
 		 * compares against (e.g. `Date` becomes its ISO string).
 		 */
-		oracle[attribute.name] = JSON.parse(JSON.stringify(value));
+		attributes[attribute.name] = JSON.parse(JSON.stringify(value));
 	}
 
 	const verificationID = request.verificationID ?? subjectAccount.publicKeyString.get();
@@ -444,8 +487,67 @@ async function handleIssueCertificate(request: IssueCertificateRequest): Promise
 		subject: subjectAccount.publicKeyString.get(),
 		leaf: leafPEM,
 		ca: caPEM,
-		oracle
+		attributes
 	});
+}
+
+/**
+ * Read the named attributes from a leaf issued elsewhere (e.g. by the Rust core)
+ * through the reference `Certificate`. No running anchor is required: the subject
+ * key alone decrypts the sensitive attributes.
+ */
+async function handleDecodeCertificate(request: DecodeCertificateRequest): Promise<HarnessResponse> {
+	const subjectAccount = Account.fromSeed(request.subjectSeed, 0);
+	const reader = new certificates.Certificate(request.leaf, { subjectKey: subjectAccount, moment: null });
+	const attributes: { [name: string]: unknown } = {};
+	for (const name of request.attributes) {
+		// eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+		const attributeName = name as CertificatesModule.CertificateAttributeNames;
+		const value = await reader.getAttributeValue(attributeName);
+
+		/* Round-trip through JSON so a `Date` becomes its ISO string, etc. */
+		attributes[name] = JSON.parse(JSON.stringify(value));
+	}
+
+	return({ event: 'certificate-decoded', attributes });
+}
+
+/**
+ * Resolve the live `SensitiveAttribute` for `name` on an externally issued
+ * `leaf`, constructed with the subject key derived from `subjectSeed` so it can
+ * decrypt and prove. Throws if the attribute is absent or not sensitive.
+ */
+function sensitiveAttribute(leaf: string, subjectSeed: string, name: string): SensitiveAttribute {
+	const subjectAccount = Account.fromSeed(subjectSeed, 0);
+	const reader = new certificates.Certificate(leaf, { subjectKey: subjectAccount, moment: null });
+
+	// eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+	const entry = reader.attributes[name as CertificatesModule.CertificateAttributeNames];
+	if (!entry?.sensitive) {
+		throw(new Error(`attribute ${name} is not a sensitive attribute on the certificate`));
+	}
+
+	return(entry.value);
+}
+
+/**
+ * Prove the sensitive attribute `name` on an externally issued leaf, producing
+ * the proof a third party validates with `validateProof`.
+ */
+async function handleProveAttribute(request: ProveAttributeRequest): Promise<HarnessResponse> {
+	const attribute = sensitiveAttribute(request.leaf, request.subjectSeed, request.name);
+	const proof = await attribute.getProof();
+	return({ event: 'attribute-proved', proof });
+}
+
+/**
+ * Validate a proof for the sensitive attribute `name` against an externally
+ * issued leaf using the reference reader.
+ */
+async function handleValidateProof(request: ValidateProofRequest): Promise<HarnessResponse> {
+	const attribute = sensitiveAttribute(request.leaf, request.subjectSeed, request.name);
+	const valid = await attribute.validateProof(request.proof);
+	return({ event: 'proof-validated', valid });
 }
 
 async function handle(request: KycRequest): Promise<HarnessResponse> {
@@ -455,6 +557,9 @@ async function handle(request: KycRequest): Promise<HarnessResponse> {
 		case 'buildMetadata': return(handleBuildMetadata(request));
 		case 'publishMetadata': return(await handlePublishMetadata(request));
 		case 'issueCertificate': return(await handleIssueCertificate(request));
+		case 'decodeCertificate': return(await handleDecodeCertificate(request));
+		case 'proveAttribute': return(await handleProveAttribute(request));
+		case 'validateProof': return(await handleValidateProof(request));
 		case 'shutdown': return({ event: 'shutdown' });
 	}
 }

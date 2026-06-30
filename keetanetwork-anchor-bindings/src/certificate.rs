@@ -6,13 +6,18 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use chrono::{DateTime, Utc};
-use keetanetwork_account::{GenericAccount, KeyPair};
-use keetanetwork_anchor::certificates::{KycCertificate, KycCertificateError};
+use keetanetwork_account::{Account, AccountError, Accountable, GenericAccount, KeyPair};
+use keetanetwork_anchor::certificates::{KycCertificate, KycCertificateBuilder, KycCertificateError};
+use keetanetwork_anchor::sensitive_attributes::{SensitiveAttributeProof, SensitiveAttributeProofHash};
 use keetanetwork_anchor::trust::{evaluate_certificate_chain, CertificateChainStatus, CertificateRecord};
 use keetanetwork_bindings::x509::{
 	certificate_der, certificate_from_der, certificate_from_pem, certificate_pem, certificate_valid_at,
+	subject_public_key,
 };
+use keetanetwork_crypto::prelude::{CryptoSignerWithOptions, ExposeSecret, IntoSecret, SignatureEncoding};
 use keetanetwork_x509::certificates::Certificate;
+use keetanetwork_x509::utils::create_dn;
+use keetanetwork_x509::{oids, SerialNumber};
 
 use crate::error::CodedError;
 
@@ -131,6 +136,211 @@ where
 	}
 }
 
+/// A proof attesting to a sensitive attribute's committed value, validatable
+/// against the certificate with only the subject's public key. `value` is the
+/// base64 attribute value the proof reveals; `salt` is its base64 commitment
+/// salt. Both cross binding boundaries as opaque strings.
+pub struct AttributeProof {
+	pub value: String,
+	pub salt: String,
+}
+
+impl From<SensitiveAttributeProof> for AttributeProof {
+	fn from(proof: SensitiveAttributeProof) -> Self {
+		Self { value: proof.value.expose_secret().clone(), salt: proof.hash.salt }
+	}
+}
+
+impl From<AttributeProof> for SensitiveAttributeProof {
+	fn from(proof: AttributeProof) -> Self {
+		Self { value: proof.value.into_secret(), hash: SensitiveAttributeProofHash { salt: proof.salt } }
+	}
+}
+
+/// Prove the sensitive attribute `name`, decrypting it with the subject's
+/// `keypair`. The proof validates against this certificate without the private
+/// key, so it can be shared for selective disclosure.
+pub fn prove_attribute<K, N>(certificate: &KycCertificate, name: N, keypair: &K) -> Result<AttributeProof, CodedError>
+where
+	K: KeyPair,
+	N: AsRef<str>,
+{
+	certificate
+		.prove_kyc_attribute(name, keypair)
+		.map(AttributeProof::from)
+		.map_err(coded)
+}
+
+/// Prove a sensitive attribute for an erased account, dispatching on its signing
+/// algorithm. Mirrors [`decrypt_attribute_with_account`] for the proof path.
+pub fn prove_attribute_with_account<N>(
+	certificate: &KycCertificate,
+	name: N,
+	account: &Arc<GenericAccount>,
+) -> Result<AttributeProof, CodedError>
+where
+	N: AsRef<str>,
+{
+	match account.as_ref() {
+		GenericAccount::Ed25519(inner) => prove_attribute(certificate, name, &inner.keypair),
+		GenericAccount::EcdsaSecp256k1(inner) => prove_attribute(certificate, name, &inner.keypair),
+		GenericAccount::EcdsaSecp256r1(inner) => prove_attribute(certificate, name, &inner.keypair),
+		_ => Err(CodedError::new(UNSUPPORTED_KEY_TYPE, "attribute proof requires a signing account")),
+	}
+}
+
+/// Validate a `proof` for the sensitive attribute `name` against this
+/// certificate, using `keypair`'s public key.
+pub fn validate_attribute_proof<K, N>(
+	certificate: &KycCertificate,
+	name: N,
+	keypair: &K,
+	proof: AttributeProof,
+) -> Result<bool, CodedError>
+where
+	K: KeyPair,
+	N: AsRef<str>,
+{
+	certificate
+		.validate_kyc_attribute_proof(name, keypair, proof.into())
+		.map_err(coded)
+}
+
+/// Validate an attribute `proof` for an erased account, dispatching on its
+/// signing algorithm.
+pub fn validate_attribute_proof_with_account<N>(
+	certificate: &KycCertificate,
+	name: N,
+	account: &Arc<GenericAccount>,
+	proof: AttributeProof,
+) -> Result<bool, CodedError>
+where
+	N: AsRef<str>,
+{
+	match account.as_ref() {
+		GenericAccount::Ed25519(inner) => validate_attribute_proof(certificate, name, &inner.keypair, proof),
+		GenericAccount::EcdsaSecp256k1(inner) => validate_attribute_proof(certificate, name, &inner.keypair, proof),
+		GenericAccount::EcdsaSecp256r1(inner) => validate_attribute_proof(certificate, name, &inner.keypair, proof),
+		_ => Err(CodedError::new(UNSUPPORTED_KEY_TYPE, "attribute proof requires a signing account")),
+	}
+}
+
+/// One attribute to embed at issuance: its OID `name`, whether its value is
+/// `sensitive` (encrypted to the subject) rather than plain, and the semantic
+/// `value` bytes the KYC codec encodes.
+pub struct IssueAttribute {
+	pub name: String,
+	pub sensitive: bool,
+	pub value: Vec<u8>,
+}
+
+/// Issue a KYC leaf signed by `issuer` for `subject`, embedding `attributes`
+/// (sensitive ones encrypted to the subject). `subject` and `issuer` may use
+/// different signing algorithms. Validity bounds are Unix seconds; the caller
+/// supplies them since a component has no clock.
+#[allow(clippy::too_many_arguments)]
+pub fn issue(
+	subject: &GenericAccount,
+	issuer: &GenericAccount,
+	subject_dn: &str,
+	issuer_dn: &str,
+	serial: u64,
+	not_before_secs: i64,
+	not_after_secs: i64,
+	is_ca: bool,
+	attributes: &[IssueAttribute],
+) -> Result<KycCertificate, CodedError> {
+	let not_before = timestamp(not_before_secs)?;
+	let not_after = timestamp(not_after_secs)?;
+	let builder = configure(subject, subject_dn, issuer_dn, serial, not_before, not_after, is_ca, attributes)?;
+
+	dispatch_build(builder, subject, issuer)
+}
+
+/// A Unix-second timestamp as a UTC moment, or a stable code when out of range.
+fn timestamp(seconds: i64) -> Result<DateTime<Utc>, CodedError> {
+	DateTime::<Utc>::from_timestamp(seconds, 0)
+		.ok_or_else(|| CodedError::new(INVALID_DATE, "unix seconds out of range"))
+}
+
+/// Configure the leaf builder with names, serial, validity, subject key, and
+/// attributes; the caller signs it through [`dispatch_build`].
+#[allow(clippy::too_many_arguments)]
+fn configure(
+	subject: &GenericAccount,
+	subject_dn: &str,
+	issuer_dn: &str,
+	serial: u64,
+	not_before: DateTime<Utc>,
+	not_after: DateTime<Utc>,
+	is_ca: bool,
+	attributes: &[IssueAttribute],
+) -> Result<KycCertificateBuilder, CodedError> {
+	let public_key = subject_public_key(subject)?;
+	let subject_name = create_dn(&[(oids::CN, subject_dn)])?;
+	let issuer_name = create_dn(&[(oids::CN, issuer_dn)])?;
+	let base = if is_ca {
+		KycCertificateBuilder::for_ca()
+	} else {
+		KycCertificateBuilder::for_end_entity()
+	};
+	let mut builder = base
+		.with_subject_dn(subject_name)
+		.with_issuer_dn(issuer_name)
+		.with_serial_number(SerialNumber::from(serial))
+		.with_validity(not_before, not_after)
+		.with_subject_public_key(public_key);
+
+	for attribute in attributes {
+		builder = if attribute.sensitive {
+			builder.with_sensitive_attribute(&attribute.name, attribute.value.clone().into_secret())
+		} else {
+			builder.with_plain_attribute(&attribute.name, &attribute.value)
+		};
+	}
+
+	Ok(builder)
+}
+
+/// Resolve the erased subject and issuer to their concrete key types, then
+/// build: the subject key encrypts sensitive attributes, the issuer key signs.
+fn dispatch_build(
+	builder: KycCertificateBuilder,
+	subject: &GenericAccount,
+	issuer: &GenericAccount,
+) -> Result<KycCertificate, CodedError> {
+	match (subject, issuer) {
+		(GenericAccount::Ed25519(sub), GenericAccount::Ed25519(iss)) => build_typed(builder, sub, iss),
+		(GenericAccount::Ed25519(sub), GenericAccount::EcdsaSecp256k1(iss)) => build_typed(builder, sub, iss),
+		(GenericAccount::Ed25519(sub), GenericAccount::EcdsaSecp256r1(iss)) => build_typed(builder, sub, iss),
+		(GenericAccount::EcdsaSecp256k1(sub), GenericAccount::Ed25519(iss)) => build_typed(builder, sub, iss),
+		(GenericAccount::EcdsaSecp256k1(sub), GenericAccount::EcdsaSecp256k1(iss)) => build_typed(builder, sub, iss),
+		(GenericAccount::EcdsaSecp256k1(sub), GenericAccount::EcdsaSecp256r1(iss)) => build_typed(builder, sub, iss),
+		(GenericAccount::EcdsaSecp256r1(sub), GenericAccount::Ed25519(iss)) => build_typed(builder, sub, iss),
+		(GenericAccount::EcdsaSecp256r1(sub), GenericAccount::EcdsaSecp256k1(iss)) => build_typed(builder, sub, iss),
+		(GenericAccount::EcdsaSecp256r1(sub), GenericAccount::EcdsaSecp256r1(iss)) => build_typed(builder, sub, iss),
+		_ => Err(CodedError::new(UNSUPPORTED_KEY_TYPE, "issuance requires signing accounts for subject and issuer")),
+	}
+}
+
+/// Build the leaf with a typed subject (encryption) and issuer (signature).
+fn build_typed<TSubject, TSigning, S>(
+	builder: KycCertificateBuilder,
+	subject: &Account<TSubject>,
+	signer: &Account<TSigning>,
+) -> Result<KycCertificate, CodedError>
+where
+	Account<TSubject>: TryFrom<Accountable<TSubject>, Error = AccountError>,
+	Account<TSigning>: TryFrom<Accountable<TSigning>, Error = AccountError>,
+	TSubject: KeyPair,
+	TSigning: KeyPair + CryptoSignerWithOptions<S> + 'static,
+	S: SignatureEncoding,
+{
+	builder
+		.build(&subject.keypair, &signer.keypair)
+		.map_err(coded)
+}
+
 /// Reduce a KYC certificate error to a stable boundary code, deferring the
 /// X.509 case to the base certificate mapping so granular codes survive.
 fn coded(error: KycCertificateError) -> CodedError {
@@ -151,7 +361,9 @@ mod tests {
 	use std::time::{SystemTime, UNIX_EPOCH};
 
 	use keetanetwork_account::{Account, KeyECDSASECP256K1};
-	use keetanetwork_anchor::doc_utils::{create_secp256k1_test_account, create_test_certificate_builder};
+	use keetanetwork_anchor::doc_utils::{
+		create_ed25519_test_account, create_secp256k1_test_account, create_test_certificate_builder,
+	};
 	use keetanetwork_crypto::prelude::IntoSecret;
 
 	use super::*;
@@ -298,6 +510,73 @@ mod tests {
 		let (certificate, _) = fixture();
 		let root = certificate.to_x509().clone();
 		let error = verify(&certificate, &[root], &[], i64::MAX).unwrap_err();
+		assert_eq!(error.code, INVALID_DATE);
+	}
+
+	#[test]
+	fn issues_across_algorithms_and_reads_back() {
+		let subject = Arc::new(GenericAccount::Ed25519(create_ed25519_test_account(Some(0))));
+		let issuer = Arc::new(GenericAccount::EcdsaSecp256k1(create_secp256k1_test_account(Some(1))));
+		let attributes = [
+			IssueAttribute { name: "postalCode".to_string(), sensitive: false, value: b"12345".to_vec() },
+			IssueAttribute { name: "email".to_string(), sensitive: true, value: b"john@example.com".to_vec() },
+		];
+		let not_before = now_millis() / 1000;
+		let not_after = not_before + 31_536_000;
+
+		let certificate =
+			issue(subject.as_ref(), issuer.as_ref(), "Subject", "Issuer", 7, not_before, not_after, false, &attributes)
+				.unwrap();
+
+		assert_eq!(plain_attribute(&certificate, "postalCode").unwrap(), b"12345".to_vec());
+		assert_eq!(
+			decrypt_attribute_with_account(&certificate, "email", &subject).unwrap(),
+			b"john@example.com".to_vec()
+		);
+	}
+
+	#[test]
+	fn proves_and_validates_every_sensitive_attribute() {
+		let (certificate, subject) = fixture();
+		for &(name, _) in SENSITIVE {
+			let proof = prove_attribute(&certificate, name, &subject.keypair).unwrap();
+			assert!(validate_attribute_proof(&certificate, name, &subject.keypair, proof).unwrap());
+		}
+	}
+
+	#[test]
+	fn proves_and_validates_for_an_erased_subject() {
+		let (certificate, subject) = fixture();
+		let account = Arc::new(GenericAccount::EcdsaSecp256k1(subject));
+		for &(name, _) in SENSITIVE {
+			let proof = prove_attribute_with_account(&certificate, name, &account).unwrap();
+			assert!(validate_attribute_proof_with_account(&certificate, name, &account, proof).unwrap());
+		}
+	}
+
+	#[test]
+	fn a_proof_does_not_validate_against_a_different_attribute() {
+		let (certificate, subject) = fixture();
+		let proof = prove_attribute(&certificate, "fullName", &subject.keypair).unwrap();
+		assert!(!validate_attribute_proof(&certificate, "email", &subject.keypair, proof).unwrap());
+	}
+
+	#[test]
+	fn proving_a_plain_attribute_is_rejected() {
+		let (certificate, subject) = fixture();
+		let code = prove_attribute(&certificate, "postalCode", &subject.keypair)
+			.err()
+			.map(|error| error.code);
+		assert_eq!(code, Some(SENSITIVE_ATTRIBUTE.to_string()));
+	}
+
+	#[test]
+	fn issuing_with_an_out_of_range_validity_is_rejected() {
+		let subject = Arc::new(GenericAccount::EcdsaSecp256k1(create_secp256k1_test_account(Some(0))));
+		let issuer = Arc::new(GenericAccount::EcdsaSecp256k1(create_secp256k1_test_account(Some(1))));
+
+		let error = issue(subject.as_ref(), issuer.as_ref(), "Subject", "Issuer", 1, i64::MAX, i64::MAX, false, &[])
+			.unwrap_err();
 		assert_eq!(error.code, INVALID_DATE);
 	}
 }

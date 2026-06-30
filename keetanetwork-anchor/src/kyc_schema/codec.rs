@@ -14,6 +14,13 @@ pub fn encode_value<O: AsRef<str>>(oid: O, semantic: &[u8]) -> Result<Vec<u8>, A
 		Some(AttributeValueType::Utf8String) => Ok(rasn::der::encode(&Utf8String::from(as_utf8(semantic)?))?),
 		#[cfg(feature = "chrono")]
 		Some(AttributeValueType::GeneralizedTime) => encode_time(semantic),
+		// Structured values encode to the positional (CHOICE-wrapped) DER via the
+		// rasn types; anything without a mapping falls back to the raw bytes.
+		#[cfg(feature = "serde")]
+		Some(AttributeValueType::Structured(token)) => {
+			Ok(crate::kyc_schema::iso20022_codec::encode_structured(token, semantic)
+				.unwrap_or_else(|_| semantic.to_vec()))
+		}
 		_ => Ok(semantic.to_vec()),
 	}
 }
@@ -24,8 +31,11 @@ pub fn decode_value<O: AsRef<str>>(oid: O, der: &[u8]) -> Result<Vec<u8>, Anchor
 		Some(AttributeValueType::Utf8String) => decode_utf8(der),
 		#[cfg(feature = "chrono")]
 		Some(AttributeValueType::GeneralizedTime) => decode_time(der),
+		// Decode the positional (CHOICE-wrapped) DER via the rasn types first, then
+		// fall back to the legacy bare-CHOICE walker for pre-wrapper certificates.
 		#[cfg(feature = "serde")]
-		Some(AttributeValueType::Structured(token)) => crate::kyc_schema::structured::decode_structured(token, der),
+		Some(AttributeValueType::Structured(token)) => crate::kyc_schema::iso20022_codec::decode_structured(token, der)
+			.or_else(|_| crate::kyc_schema::structured::decode_structured(token, der)),
 		_ => return Ok(der.to_vec()),
 	};
 
@@ -162,6 +172,8 @@ fn parse_datetime(text: &str) -> Option<chrono::DateTime<chrono::Utc>> {
 mod tests {
 	use super::*;
 	use crate::asn1::oids;
+	#[cfg(feature = "serde")]
+	use crate::kyc_schema::testing::{assert_json_eq, from_hex};
 
 	#[test]
 	fn utf8_attribute_round_trips_through_der() {
@@ -221,6 +233,27 @@ mod tests {
 		der.extend_from_slice(body);
 		let decoded = decode_value(&oid, &der).unwrap();
 		assert_eq!(decoded, b"1980-01-01T00:00:00.000Z");
+	}
+
+	#[cfg(feature = "serde")]
+	#[test]
+	fn structured_address_round_trips_through_wrapped_der() {
+		let oid = oids::keeta::ADDRESS.to_string();
+		let json = r#"{"addressType":"HOME","postalCode":"34677","townName":"Oldsmar"}"#;
+		let encoded = encode_value(&oid, json.as_bytes()).unwrap();
+		// CHOICE field carried under its positional [1] wrapper.
+		assert_eq!(encoded[2], 0xa1);
+		let decoded = decode_value(&oid, &encoded).unwrap();
+		assert_json_eq(&decoded, json);
+	}
+
+	#[cfg(feature = "serde")]
+	#[test]
+	fn legacy_bare_entity_type_decodes_via_fallback() {
+		let oid = oids::keeta::ENTITY_TYPE.to_string();
+		let bare = from_hex("301ca11a30183016a00d0c0b3132332d34352d36373839a0050c0353534e");
+		let decoded = decode_value(&oid, &bare).unwrap();
+		assert_json_eq(&decoded, r#"{"person":[{"id":"123-45-6789","schemeName":"SSN"}]}"#);
 	}
 
 	#[cfg(feature = "chrono")]

@@ -11,6 +11,10 @@ env:
 
 jobs:
   test:
+    permissions:
+      contents: read
+      packages: read
+
     name: Test
     runs-on: ubuntu-latest
     steps:
@@ -53,6 +57,10 @@ jobs:
       run: make test-all
 
   wasi:
+    permissions:
+      contents: read
+      packages: read
+
     name: WASI bindings e2e
     runs-on: ubuntu-latest
     steps:
@@ -101,6 +109,10 @@ jobs:
         NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   lint:
+    permissions:
+      contents: read
+      packages: read
+
     name: Lint
     runs-on: ubuntu-latest
     steps:
@@ -127,8 +139,17 @@ jobs:
         path: target
         key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
 
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: 20
+        registry-url: https://npm.pkg.github.com
+        scope: '@keetanetwork'
+
     - name: Check formatting and linting
       run: make do-lint-ci
+      env:
+        NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Check documentation
       run: make do-docs-ci

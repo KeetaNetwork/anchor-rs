@@ -3,15 +3,15 @@
 //! without erroring.
 
 mod common;
-mod support;
+mod harness;
 
 use std::error::Error;
 
 use common::account_from_seed;
+use harness::{signed_request_body, KycHarness};
 use keetanetwork_anchor::signing::{add_signature_to_url, sign_with, SignParams, Signable, Url};
 use keetanetwork_anchor_client::{AnchorHttpTransport, ReqwestTransport};
 use serde_json::{json, Value};
-use support::{signed_request_body, KycHarness};
 
 type TestResult = Result<(), Box<dyn Error>>;
 

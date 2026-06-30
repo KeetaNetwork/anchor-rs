@@ -13,7 +13,7 @@ path = "src/lib.rs"
 
 [features]
 default = ["std"]
-std = ["keetanetwork-bindings/std", "keetanetwork-anchor/std", "keetanetwork-x509/std"]
+std = ["keetanetwork-bindings/std", "keetanetwork-anchor/std", "keetanetwork-x509/std", "keetanetwork-crypto/std"]
 
 [dependencies]
 keetanetwork-account = { workspace = true, default-features = false, features = [
@@ -25,6 +25,11 @@ keetanetwork-anchor = { path = "../keetanetwork-anchor", default-features = fals
 	"x509",
 ] }
 keetanetwork-x509 = { workspace = true, default-features = false, features = [
+	"rasn",
+] }
+keetanetwork-crypto = { workspace = true, default-features = false, features = [
+	"signature",
+	"encryption",
 	"rasn",
 ] }
 chrono = { workspace = true, default-features = false, features = ["alloc"] }

@@ -81,6 +81,8 @@ wstd = { workspace = true }
 keetanetwork-anchor = { path = "../keetanetwork-anchor", features = [
 	"std",
 	"signing",
+	"serde",
+	"chrono",
 ] }
 keetanetwork-account = { workspace = true, features = ["std", "rasn"] }
 keetanetwork-crypto = { workspace = true, features = [

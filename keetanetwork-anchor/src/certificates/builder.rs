@@ -550,6 +550,21 @@ impl KycCertificateBuilder {
 		self
 	}
 
+	/// Set an explicit validity window from `not_before` to `not_after`.
+	///
+	/// Required where no ambient clock exists (component targets), since
+	/// [`with_validity_days`](Self::with_validity_days) anchors to the current
+	/// time.
+	#[cfg(any(feature = "chrono", feature = "x509"))]
+	pub fn with_validity(
+		mut self,
+		not_before: chrono::DateTime<chrono::Utc>,
+		not_after: chrono::DateTime<chrono::Utc>,
+	) -> Self {
+		self.inner = self.inner.with_validity(not_before, not_after);
+		self
+	}
+
 	/// Set the subject public key
 	///
 	/// Sets the public key for the certificate subject. This is the public key
@@ -790,14 +805,16 @@ impl KycCertificateBuilder {
 	/// assert!(certificate.is_ok());
 	/// # Ok::<(), Box<dyn std::error::Error>>(())
 	/// ```
-	pub fn build<T, S>(
+	pub fn build<TSubject, TSigning, S>(
 		mut self,
-		subject_keypair: &T,
-		signing_keypair: &T,
+		subject_keypair: &TSubject,
+		signing_keypair: &TSigning,
 	) -> Result<KycCertificate, KycCertificateError>
 	where
-		Account<T>: TryFrom<Accountable<T>, Error = AccountError>,
-		T: KeyPair + CryptoSignerWithOptions<S> + 'static,
+		Account<TSubject>: TryFrom<Accountable<TSubject>, Error = AccountError>,
+		Account<TSigning>: TryFrom<Accountable<TSigning>, Error = AccountError>,
+		TSubject: KeyPair,
+		TSigning: KeyPair + CryptoSignerWithOptions<S> + 'static,
 		S: SignatureEncoding,
 	{
 		// Check for collected KYC attribute errors first
@@ -959,6 +976,32 @@ mod tests {
 			assert!(result.is_err());
 			assert!(matches!(result.unwrap_err(), KycCertificateError::SensitiveAttributeError { .. }));
 		}
+	}
+
+	#[test]
+	fn builds_with_distinct_subject_and_issuer_algorithms() {
+		use keetanetwork_account::KeyED25519;
+
+		let subject = create_account_from_seed::<KeyED25519>(7);
+		let issuer = create_account_from_seed::<KeyECDSASECP256K1>(8);
+		let subject_dn = keetanetwork_x509::utils::create_dn(&[(keetanetwork_x509::oids::CN, "Subject")]).unwrap();
+		let issuer_dn = keetanetwork_x509::utils::create_dn(&[(keetanetwork_x509::oids::CN, "Issuer")]).unwrap();
+		let subject_public_key = SubjectPublicKeyInfo::try_from(&subject).unwrap();
+
+		let certificate = KycCertificateBuilder::for_end_entity()
+			.with_subject_dn(subject_dn)
+			.with_issuer_dn(issuer_dn)
+			.with_serial_number(SerialNumber::from(9u64))
+			.with_validity_days(365)
+			.with_subject_public_key(subject_public_key)
+			.with_sensitive_attribute("email", b"john@example.com".to_vec().into_secret())
+			.build(&subject.keypair, &issuer.keypair)
+			.unwrap();
+
+		let decrypted = certificate
+			.decrypt_kyc_attribute("email", &subject.keypair)
+			.unwrap();
+		assert_eq!(decrypted, b"john@example.com");
 	}
 
 	/// Helper function to test conversion from KycAttributeEntry to SensitiveAttribute
