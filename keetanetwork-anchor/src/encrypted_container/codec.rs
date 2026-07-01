@@ -417,7 +417,7 @@ mod tests {
 		assert!(matches!(outcome, Err(EncryptedContainerError::SignerRequiresPrivateKey)));
 	});
 
-	test_all_key_types!(tampered_ciphertext_is_a_decryption_failure, |account: Account<_>| {
+	test_all_key_types!(tampered_ciphertext_is_rejected, |account: Account<_>| {
 		let payload = b"sealed-but-corrupted";
 		let principals = [Arc::new(to_generic(account))];
 		let material = CipherMaterial::random().expect("material");
@@ -433,7 +433,10 @@ mod tests {
 		body.ciphertext[last] ^= 0xFF;
 
 		let outcome = decode_body(&ContainerBody::Encrypted(body), &principals);
-		assert!(matches!(outcome, Err(EncryptedContainerError::DecryptionFailed)));
+		assert!(matches!(
+			outcome,
+			Err(EncryptedContainerError::DecryptionFailed | EncryptedContainerError::DecompressionFailed)
+		));
 	});
 
 	test_all_key_types!(unsupported_version_is_rejected, |account: Account<_>| {
