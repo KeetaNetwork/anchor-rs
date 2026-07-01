@@ -82,6 +82,7 @@ if (Environment.GetEnvironmentVariable("KEETA_ASSET") is not null)
 string nodeApi = RequireEnv("KEETA_NODE_API");
 string root = RequireEnv("KEETA_ROOT");
 string providerId = RequireEnv("KEETA_PROVIDER_ID");
+string issuedVerificationId = RequireEnv("KEETA_ISSUED_VERIFICATION_ID");
 string seed = Environment.GetEnvironmentVariable("KEETA_SEED") ?? new string('1', 64);
 
 string[] algorithms = { "ed25519", "ecdsa_secp256k1", "ecdsa_secp256r1" };
@@ -100,7 +101,16 @@ foreach (string algorithm in algorithms)
 	KycProvider provider = providers[0];
 	Require(provider.Id == providerId, $"{algorithm}: provider id mismatch ({provider.Id} != {providerId})");
 
-	VerificationOutcome verification = client.CreateVerification(provider, countries);
+	// The provider's advertised CA parses into a certificate handle the caller
+	// can use as a trust root for issued leaves.
+	using CryptoCertificate providerCa = client.ProviderCertificate(provider);
+	Require(
+		providerCa.Pem().Contains("BEGIN CERTIFICATE"),
+		$"{algorithm}: the provider CA must parse to a certificate");
+
+	// The redirect URL rides the signed create body; the server must accept the
+	// extra field and still assign a verification.
+	VerificationOutcome verification = client.CreateVerification(provider, countries, "https://example.test/done");
 	Require(verification.Ready is not null, $"{algorithm}: create-verification was not ready");
 	Require(!string.IsNullOrEmpty(verification.Ready!.Id), $"{algorithm}: verification id was empty");
 	Require(!string.IsNullOrEmpty(verification.Ready!.WebUrl), $"{algorithm}: verification web url was empty");
@@ -108,11 +118,19 @@ foreach (string algorithm in algorithms)
 	StatusOutcome status = client.GetVerificationStatus(provider, verification.Ready!.Id);
 	Require(status.Ready is not null, $"{algorithm}: status was not ready");
 	Require(!string.IsNullOrEmpty(status.Ready!.Status), $"{algorithm}: status was empty");
-
-	CertificatesOutcome certificates = client.GetCertificates(provider, verification.Ready!.Id);
 	Require(
-		certificates.Ready is not null || certificates.RetryAfterMs is not null,
-		$"{algorithm}: certificates were neither ready nor a retry");
+		status.Ready!.RequiresManualVerification == true,
+		$"{algorithm}: the manual-review flag must survive the status decode");
+
+	// A not-yet-issued certificate reports as a retry (the server's 404); an
+	// issued verification serves its full `[leaf, ca]` chain.
+	CertificatesOutcome pending = client.GetCertificates(provider, "pending");
+	Require(pending.RetryAfterMs is not null, $"{algorithm}: a pending certificate must report a retry");
+
+	CertificatesOutcome chain = client.GetCertificates(provider, issuedVerificationId);
+	Require(
+		chain.Ready is not null && chain.Ready!.Results.Count == 2,
+		$"{algorithm}: an issued verification must serve its leaf and ca chain");
 
 	Console.WriteLine($"{algorithm}: OK");
 }

@@ -66,9 +66,12 @@ interface types {
 		expected-cost: expected-cost,
 	}
 
-	/// The provider-reported status of a verification (e.g. `pending`).
+	/// The provider-reported status of a verification (e.g. `pending`), and
+	/// whether the provider requires a manual review to complete, when
+	/// reported.
 	record verification-status {
 		status: string,
+		requires-manual-verification: option<bool>,
 	}
 
 	/// One issued, PEM-encoded leaf certificate together with the PEM-encoded

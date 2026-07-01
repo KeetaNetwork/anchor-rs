@@ -167,7 +167,10 @@ impl From<AnchorOutcome<Verification>> for VerificationOutcome {
 impl From<AnchorOutcome<VerificationStatus>> for StatusOutcome {
 	fn from(outcome: AnchorOutcome<VerificationStatus>) -> Self {
 		match outcome {
-			AnchorOutcome::Ready(value) => Self::Ready(WitVerificationStatus { status: value.status }),
+			AnchorOutcome::Ready(value) => Self::Ready(WitVerificationStatus {
+				status: value.status,
+				requires_manual_verification: value.requires_manual_verification,
+			}),
 			AnchorOutcome::Retry { after_ms } => Self::Retry(after_ms),
 		}
 	}

@@ -311,7 +311,14 @@ function kycCallbacks(
 			return(await Promise.resolve([{ certificate: ca.toPEM() }]));
 		},
 		getVerificationStatus: async function() {
-			return(await Promise.resolve({ status: kycStatus.KYCVerificationStatus.PENDING }));
+			/*
+			 * The manual-review flag exercises the optional
+			 * `requiresManualVerification` response field end to end.
+			 */
+			return(await Promise.resolve({
+				status: kycStatus.KYCVerificationStatus.PENDING,
+				requiresManualVerification: true
+			}));
 		}
 	};
 

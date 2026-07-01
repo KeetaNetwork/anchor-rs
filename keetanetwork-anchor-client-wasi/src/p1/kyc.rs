@@ -346,8 +346,11 @@ struct ExpectedCostDto {
 
 /// A verification's provider-reported status.
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 struct StatusDto {
 	status: String,
+	#[serde(skip_serializing_if = "Option::is_none")]
+	requires_manual_verification: Option<bool>,
 }
 
 /// One issued, PEM-encoded certificate and the intermediates bridging it to a
@@ -366,7 +369,7 @@ struct CertificatesDto {
 
 /// A verification result, ready or retry-after-millis.
 #[derive(Serialize)]
-#[serde(tag = "type", rename_all = "camelCase")]
+#[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
 enum VerificationOutcomeDto {
 	Ready { verification: VerificationDto },
 	Retry { after_ms: u32 },
@@ -374,7 +377,7 @@ enum VerificationOutcomeDto {
 
 /// A status result, ready or retry-after-millis.
 #[derive(Serialize)]
-#[serde(tag = "type", rename_all = "camelCase")]
+#[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
 enum StatusOutcomeDto {
 	Ready { status: StatusDto },
 	Retry { after_ms: u32 },
@@ -382,7 +385,7 @@ enum StatusOutcomeDto {
 
 /// A certificates result, ready or retry-after-millis.
 #[derive(Serialize)]
-#[serde(tag = "type", rename_all = "camelCase")]
+#[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
 enum CertificatesOutcomeDto {
 	Ready { certificates: CertificatesDto },
 	Retry { after_ms: u32 },
@@ -446,7 +449,7 @@ impl From<ExpectedCost> for ExpectedCostDto {
 
 impl From<VerificationStatus> for StatusDto {
 	fn from(status: VerificationStatus) -> Self {
-		Self { status: status.status }
+		Self { status: status.status, requires_manual_verification: status.requires_manual_verification }
 	}
 }
 

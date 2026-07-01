@@ -27,8 +27,11 @@ public sealed record ExpectedCost(string Min, string Max, string Token);
 /// <summary>An in-progress verification, the URL where the user completes it, and its expected cost.</summary>
 public sealed record Verification(string Id, string WebUrl, ExpectedCost ExpectedCost);
 
-/// <summary>The provider-reported status of a verification.</summary>
-public sealed record VerificationStatus(string Status);
+/// <summary>
+/// The provider-reported status of a verification, and whether the provider
+/// requires a manual review to complete (null when not reported).
+/// </summary>
+public sealed record VerificationStatus(string Status, bool? RequiresManualVerification = null);
 
 /// <summary>One issued, PEM-encoded certificate and the intermediates bridging it to a trust root.</summary>
 public sealed record Certificate(

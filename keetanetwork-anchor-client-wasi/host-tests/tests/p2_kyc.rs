@@ -69,11 +69,13 @@ async fn p2_kyc_signs_against_live_anchor() -> Result<(), BoxError> {
 		.ok_or("the provider list is non-empty")?;
 	assert_eq!(provider.id, provider_id, "the discovered provider id must match the harness");
 
-	// SignedBody parity: the real TS server verifies the signature on the empty
-	// `create-verification` payload, or the whole request is rejected.
+	// SignedBody parity: the real TS server verifies the signature on the
+	// `create-verification` payload (here carrying a redirect URL), or the
+	// whole request is rejected.
+	let redirect = Some("https://example.test/done");
 	let outcome = kyc
 		.client()
-		.call_create_verification(&mut store, client, &provider, &countries, None)
+		.call_create_verification(&mut store, client, &provider, &countries, redirect)
 		.await?
 		.map_err(coded)?;
 	let verification = match outcome {
@@ -86,7 +88,8 @@ async fn p2_kyc_signs_against_live_anchor() -> Result<(), BoxError> {
 	assert!(!verification.web_url.is_empty(), "the verification must carry a web url");
 
 	// SignedUrl parity: status reads sign the request URL; the TS server must
-	// accept it and report the harness-configured pending status.
+	// accept it and report the harness-configured pending status together with
+	// its manual-review flag.
 	let status = kyc
 		.client()
 		.call_get_verification_status(&mut store, client, &provider, &verification.id)
@@ -96,19 +99,35 @@ async fn p2_kyc_signs_against_live_anchor() -> Result<(), BoxError> {
 		StatusOutcome::Ready(status) => status,
 		StatusOutcome::Retry(after) => panic!("status must be ready, got retry after {after}ms"),
 	};
-	assert!(!status.status.is_empty(), "the status must be non-empty");
+	assert_eq!(status.status, "pending", "the harness reports every verification pending");
+	assert_eq!(
+		status.requires_manual_verification,
+		Some(true),
+		"the manual-review flag must survive the status decode"
+	);
 
-	// SignedUrl parity on the certificate path: the server accepts the signed
-	// request and returns either the issued certificates or a retry.
-	let certificates = kyc
+	// A not-yet-issued certificate reports as a retry (the server's 404), the
+	// promise the caller polls on.
+	let pending = kyc
 		.client()
-		.call_get_certificates(&mut store, client, &provider, &verification.id)
+		.call_get_certificates(&mut store, client, &provider, "pending")
 		.await?
 		.map_err(coded)?;
-	assert!(
-		matches!(certificates, CertificatesOutcome::Ready(_) | CertificatesOutcome::Retry(_)),
-		"the certificate read must yield a ready or retry outcome"
-	);
+	assert!(matches!(pending, CertificatesOutcome::Retry(_)), "a pending certificate must yield a retry outcome");
+
+	// A leaf issued for a verification is served back as its full `[leaf, ca]`
+	// chain over the same certificate path.
+	let issued = harness.request("issueCertificate", json!({ "subjectSeed": SUBJECT_SEED, "attributes": issue_attributes() }))?;
+	let verification_id = field_str(&issued, "verificationID")?;
+	let certificates = kyc
+		.client()
+		.call_get_certificates(&mut store, client, &provider, &verification_id)
+		.await?
+		.map_err(coded)?;
+	let CertificatesOutcome::Ready(groups) = certificates else {
+		panic!("an issued verification must serve its certificates")
+	};
+	assert_eq!(groups.len(), 2, "the issued verification must serve its leaf and ca chain");
 
 	harness.shutdown()?;
 	Ok(())

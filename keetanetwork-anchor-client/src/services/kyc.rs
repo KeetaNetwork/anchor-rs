@@ -59,6 +59,11 @@ pub struct ExpectedCost {
 pub struct VerificationStatus {
 	/// The provider-reported status (e.g. `pending`).
 	pub status: String,
+
+	/// Whether the provider requires a manual review to complete, when
+	/// reported.
+	#[serde(rename = "requiresManualVerification", default)]
+	pub requires_manual_verification: Option<bool>,
 }
 
 /// A single issued certificate.

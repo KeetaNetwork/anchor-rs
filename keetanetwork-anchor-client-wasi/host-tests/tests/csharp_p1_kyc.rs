@@ -55,6 +55,7 @@ fn csharp_sdk_conforms_with_typescript_anchor() -> Result<(), BoxError> {
 	let issued = harness
 		.request("issueCertificate", json!({ "subjectSeed": SUBJECT_SEED, "attributes": issue_attributes() }))?;
 	let anchor_leaf = field_str(&issued, "leaf")?;
+	let issued_verification_id = field_str(&issued, "verificationID")?;
 	let reference = issued
 		.get("attributes")
 		.ok_or("issued certificate is missing its attributes")?;
@@ -80,6 +81,7 @@ fn csharp_sdk_conforms_with_typescript_anchor() -> Result<(), BoxError> {
 		.env("KEETA_ROOT", &root)
 		.env("KEETA_PROVIDER_ID", &provider_id)
 		.env("KEETA_LEAF_PEM", &anchor_leaf)
+		.env("KEETA_ISSUED_VERIFICATION_ID", &issued_verification_id)
 		.env("KEETA_ATTRIBUTES_JSON", &reference_json)
 		.env("KEETA_SUBJECT_SEED", SUBJECT_SEED)
 		.env("KEETA_COMPATIBILITY", "1")
