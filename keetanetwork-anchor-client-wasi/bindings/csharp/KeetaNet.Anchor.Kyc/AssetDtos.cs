@@ -58,8 +58,15 @@ public sealed record AssetTransferRequest(
 	string Value,
 	IReadOnlyList<string>? AllowedRails = null);
 
+/// <summary>
+/// A fiat pull instruction (<c>ACH_DEBIT</c>/<c>CARD_PULL</c>): the rail
+/// <paramref name="Type"/> and the persistent address or template reference to
+/// pull funds from.
+/// </summary>
+public sealed record AssetPullInstruction(string Type, object PullFrom);
+
 /// <summary>A request to execute a pull instruction for a transfer.</summary>
-public sealed record AssetExecuteRequest(string Id, object Instruction);
+public sealed record AssetExecuteRequest(string Id, AssetPullInstruction Instruction);
 
 /// <summary>A request to open a persistent-forwarding template session.</summary>
 public sealed record AssetInitiateTemplateRequest(object Asset, string Location);

@@ -22,7 +22,7 @@ use super::response::{
 	TransactionPage, Transfer, TransferStatus,
 };
 use crate::error::AnchorClientError;
-use crate::service::{AnchorContext, AnchorOutcome, Auth, BodyEnvelope, Call, Endpoint, Method};
+use crate::service::{pending_delay, AnchorContext, AnchorOutcome, Auth, BodyEnvelope, Call, Endpoint, Method};
 
 /// The wire request fields, keyed by name.
 type Fields = Map<String, Value>;
@@ -498,6 +498,9 @@ impl AssetMovementClient {
 	/// Poll `url` until the anchor reports the pending share complete, pausing
 	/// with `sleep` between polls and giving up once the summed delay exceeds
 	/// `options.timeout_ms`.
+	///
+	/// The promise contract is status-only (a settled `200` may carry any
+	/// body), so the poll reads the raw response instead of decoding it.
 	async fn poll_promise<S, Fut>(
 		&self,
 		url: &str,
@@ -523,21 +526,22 @@ impl AssetMovementClient {
 				body: None,
 			};
 
-			match self.context.caller().invoke::<Value>(call).await? {
-				AnchorOutcome::Ready(_) => return Ok(ShareKycOutcome { is_pending: false, promise_url: None }),
-				AnchorOutcome::Retry { after_ms } => {
-					let wait = after_ms.max(options.interval_ms).max(1);
-					if elapsed_ms.saturating_add(wait) > options.timeout_ms {
-						return Err(AnchorClientError::Timeout {
-							operation: "shareKYC",
-							timeout_ms: options.timeout_ms,
-						});
-					}
-
-					sleep(wait).await;
-					elapsed_ms = elapsed_ms.saturating_add(wait);
+			let response = self.context.caller().send(call).await?;
+			let Some(after_ms) = pending_delay(&response) else {
+				if !response.is_success() {
+					return Err(AnchorClientError::Service { status: response.status });
 				}
+
+				return Ok(ShareKycOutcome { is_pending: false, promise_url: None });
+			};
+
+			let wait = after_ms.max(options.interval_ms).max(1);
+			if elapsed_ms.saturating_add(wait) > options.timeout_ms {
+				return Err(AnchorClientError::Timeout { operation: "shareKYC", timeout_ms: options.timeout_ms });
 			}
+
+			sleep(wait).await;
+			elapsed_ms = elapsed_ms.saturating_add(wait);
 		}
 	}
 }

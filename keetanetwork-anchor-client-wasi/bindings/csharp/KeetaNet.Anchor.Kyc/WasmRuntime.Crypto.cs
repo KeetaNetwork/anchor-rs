@@ -392,37 +392,52 @@ public sealed partial class WasmRuntime
 		return WriteBytes(buffer, owned);
 	}
 
+	/// <summary>Resolve `export` after the owner-thread and liveness checks.</summary>
+	private TFunction Export<TFunction>(string export, TFunction? function) where TFunction : class
+	{
+		EnsureUsable();
+		return Required(export, function);
+	}
+
 	private int Invoke<TResult>(string export) =>
-		(int)(object)Required(export, _instance.GetFunction<TResult>(export))()!;
+		(int)(object)Export(export, _instance.GetFunction<TResult>(export))()!;
 
 	private int Invoke<T1, TResult>(string export, T1 arg1) =>
-		(int)(object)Required(export, _instance.GetFunction<T1, TResult>(export))(arg1)!;
+		(int)(object)Export(export, _instance.GetFunction<T1, TResult>(export))(arg1)!;
 
 	private long InvokeLong<T1>(string export, T1 arg1) =>
-		Required(export, _instance.GetFunction<T1, long>(export))(arg1);
+		Export(export, _instance.GetFunction<T1, long>(export))(arg1);
 
 	private int Invoke<T1, T2, TResult>(string export, T1 arg1, T2 arg2) =>
-		(int)(object)Required(export, _instance.GetFunction<T1, T2, TResult>(export))(arg1, arg2)!;
+		(int)(object)Export(export, _instance.GetFunction<T1, T2, TResult>(export))(arg1, arg2)!;
 
 	private int Invoke<T1, T2, T3, TResult>(string export, T1 arg1, T2 arg2, T3 arg3) =>
-		(int)(object)Required(export, _instance.GetFunction<T1, T2, T3, TResult>(export))(arg1, arg2, arg3)!;
+		(int)(object)Export(export, _instance.GetFunction<T1, T2, T3, TResult>(export))(arg1, arg2, arg3)!;
 
 	private int Invoke<T1, T2, T3, T4, TResult>(string export, T1 arg1, T2 arg2, T3 arg3, T4 arg4) =>
-		(int)(object)Required(export, _instance.GetFunction<T1, T2, T3, T4, TResult>(export))(arg1, arg2, arg3, arg4)!;
+		(int)(object)Export(export, _instance.GetFunction<T1, T2, T3, T4, TResult>(export))(arg1, arg2, arg3, arg4)!;
 
 	private int Invoke<T1, T2, T3, T4, T5, TResult>(string export, T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5) =>
-		(int)(object)Required(export, _instance.GetFunction<T1, T2, T3, T4, T5, TResult>(export))(arg1, arg2, arg3, arg4, arg5)!;
+		(int)(object)Export(export, _instance.GetFunction<T1, T2, T3, T4, T5, TResult>(export))(arg1, arg2, arg3, arg4, arg5)!;
 
 	private int Invoke<T1, T2, T3, T4, T5, T6, TResult>(
 		string export, T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6) =>
-		(int)(object)Required(export, _instance.GetFunction<T1, T2, T3, T4, T5, T6, TResult>(export))(
+		(int)(object)Export(export, _instance.GetFunction<T1, T2, T3, T4, T5, T6, TResult>(export))(
 			arg1, arg2, arg3, arg4, arg5, arg6)!;
 
 	private int Invoke<T1, T2, T3, T4, T5, T6, T7, TResult>(
 		string export, T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6, T7 arg7) =>
-		(int)(object)Required(export, _instance.GetFunction<T1, T2, T3, T4, T5, T6, T7, TResult>(export))(
+		(int)(object)Export(export, _instance.GetFunction<T1, T2, T3, T4, T5, T6, T7, TResult>(export))(
 			arg1, arg2, arg3, arg4, arg5, arg6, arg7)!;
 
-	private void Free(string export, int handle) =>
-		Required(export, _instance.GetAction<int>(export))(handle);
+	/// <summary>Release a guest handle; a no-op once the runtime is disposed.</summary>
+	private void Free(string export, int handle)
+	{
+		if (_disposed)
+		{
+			return;
+		}
+
+		Export(export, _instance.GetAction<int>(export))(handle);
+	}
 }

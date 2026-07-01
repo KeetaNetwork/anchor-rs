@@ -25,9 +25,11 @@ struct Containers {
 /// Store `container` under a fresh handle and return it.
 fn store_container(container: EncryptedContainer) -> i32 {
 	CONTAINERS.with_borrow_mut(|state| {
-		state.next += 1;
+		state.next = state.next.wrapping_add(1).max(1);
+
 		let handle = state.next;
 		state.containers.insert(handle, container);
+
 		handle
 	})
 }

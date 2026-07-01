@@ -11,6 +11,14 @@ namespace KeetaNet.Anchor.Kyc;
 /// with .NET HTTP and timers. The anchor logic runs inside the module; this type
 /// owns only the wasm engine, memory marshaling, and the I/O shim.
 /// </summary>
+/// <remarks>
+/// A runtime, and every client built over it, is confined to the thread that
+/// created it: the underlying <c>Wasmtime.Store</c> is thread-affine and the
+/// fetch/take exchange buffers one in-flight response. Calls from any other
+/// thread throw <see cref="KeetaException"/> (code <c>THREAD</c>). To use the
+/// SDK from multiple threads, create one runtime per thread or serialize all
+/// access externally.
+/// </remarks>
 public sealed partial class WasmRuntime : IDisposable
 {
 	private const string HostModule = "keeta:anchor/host";
@@ -38,7 +46,10 @@ public sealed partial class WasmRuntime : IDisposable
 	private readonly Func<int> _lastErrorCode;
 	private readonly Func<int> _lastErrorMessage;
 
+	private readonly int _ownerThread = Environment.CurrentManagedThreadId;
+
 	private byte[] _pending = Array.Empty<byte>();
+	private bool _disposed;
 
 	private WasmRuntime(string wasmPath)
 	{
@@ -157,11 +168,12 @@ public sealed partial class WasmRuntime : IDisposable
 		return _pending.Length;
 	}
 
-	/// <summary>Copy the buffered response into guest memory.</summary>
+	/// <summary>Copy the buffered response into guest memory and release it.</summary>
 	private void HostTake(Caller caller, int responsePtr)
 	{
 		Memory memory = caller.GetMemory(MemoryExport)!;
 		_pending.AsSpan().CopyTo(memory.GetSpan((uint)responsePtr, _pending.Length));
+		_pending = Array.Empty<byte>();
 	}
 
 	private static void HostSleep(long millis)
@@ -218,15 +230,20 @@ public sealed partial class WasmRuntime : IDisposable
 	/// <summary>Copy a UTF-8 string into a fresh guest buffer.</summary>
 	private Argument Write(string value, List<Argument> owned)
 	{
+		EnsureUsable();
 		byte[] bytes = Encoding.UTF8.GetBytes(value);
 		int pointer = _alloc(bytes.Length);
+
+		// Register the allocation before touching guest memory so a copy
+		// failure cannot leak the buffer.
+		var argument = new Argument(pointer, bytes.Length);
+		owned.Add(argument);
+
 		if (bytes.Length > 0)
 		{
 			bytes.AsSpan().CopyTo(_memory.GetSpan(pointer, bytes.Length));
 		}
 
-		var argument = new Argument(pointer, bytes.Length);
-		owned.Add(argument);
 		return argument;
 	}
 
@@ -259,11 +276,16 @@ public sealed partial class WasmRuntime : IDisposable
 	/// <summary>Copy a bytes handle's payload into a managed array and free it.</summary>
 	private byte[] ReadAndFreeBytes(int handle)
 	{
-		int pointer = _bytesPtr(handle);
-		int length = _bytesLen(handle);
-		byte[] data = length > 0 ? _memory.GetSpan(pointer, length).ToArray() : Array.Empty<byte>();
-		_bytesFree(handle);
-		return data;
+		try
+		{
+			int pointer = _bytesPtr(handle);
+			int length = _bytesLen(handle);
+			return length > 0 ? _memory.GetSpan(pointer, length).ToArray() : Array.Empty<byte>();
+		}
+		finally
+		{
+			_bytesFree(handle);
+		}
 	}
 
 	/// <summary>Build an exception from the module's pending <c>code</c>/<c>message</c>.</summary>
@@ -289,8 +311,37 @@ public sealed partial class WasmRuntime : IDisposable
 	private static T Required<T>(string name, T? value) where T : class =>
 		value ?? throw new KeetaException("WASM", $"module export `{name}` not found");
 
+	/// <summary>Whether this runtime has been disposed.</summary>
+	internal bool IsDisposed => _disposed;
+
+	/// <summary>
+	/// Reject a call from a thread other than the creator (the store is
+	/// thread-affine and the response buffer is single-flight), or one made
+	/// after disposal.
+	/// </summary>
+	private void EnsureUsable()
+	{
+		if (_disposed)
+		{
+			throw new KeetaException("DISPOSED", "the runtime has been disposed");
+		}
+
+		if (Environment.CurrentManagedThreadId != _ownerThread)
+		{
+			throw new KeetaException(
+				"THREAD",
+				"the runtime is confined to the thread that created it; create one runtime per thread");
+		}
+	}
+
 	public void Dispose()
 	{
+		if (_disposed)
+		{
+			return;
+		}
+
+		_disposed = true;
 		_http.Dispose();
 		_store.Dispose();
 		_linker.Dispose();

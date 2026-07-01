@@ -7,6 +7,9 @@ mod envelope;
 pub use endpoint::Endpoint;
 pub use envelope::AnchorOutcome;
 
+#[cfg(feature = "asset")]
+pub(crate) use envelope::pending_delay;
+
 mod caller;
 mod context;
 

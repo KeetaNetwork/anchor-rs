@@ -3,8 +3,7 @@ namespace KeetaNet.Anchor.Kyc;
 /// <summary>
 /// The networked asset-movement surface of the P1 core module: discover
 /// providers, then move assets, manage persistent forwarding, and share KYC.
-/// Provider and request payloads cross as JSON strings, byte-identical to
-/// the P2 component and the TS reference.
+/// Provider and request payloads cross as JSON strings.
 /// </summary>
 public sealed partial class WasmRuntime
 {
@@ -90,8 +89,25 @@ public sealed partial class WasmRuntime
 	internal byte[] AssetShareKyc(int handle, string providerJson, string requestJson) =>
 		WithProviderAndArg("keeta_asset_share_kyc", handle, providerJson, requestJson);
 
-	internal byte[] AssetShareKycAwait(int handle, string providerJson, string requestJson) =>
-		WithProviderAndArg("keeta_asset_share_kyc_await", handle, providerJson, requestJson);
+	internal byte[] AssetShareKycAwait(int handle, string providerJson, string requestJson, int intervalMs, int timeoutMs)
+	{
+		var owned = new List<Argument>();
+		try
+		{
+			Argument provider = Write(providerJson, owned);
+			Argument request = Write(requestJson, owned);
+			return TakeBytes(Invoke<int, int, int, int, int, int, int, int>(
+				"keeta_asset_share_kyc_await",
+				handle,
+				provider.Pointer, provider.Length,
+				request.Pointer, request.Length,
+				intervalMs, timeoutMs));
+		}
+		finally
+		{
+			FreeAll(owned);
+		}
+	}
 
 	internal void AssetFree(int handle) => Free("keeta_asset_free", handle);
 

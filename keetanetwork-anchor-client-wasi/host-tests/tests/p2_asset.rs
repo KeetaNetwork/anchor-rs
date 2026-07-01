@@ -1,11 +1,9 @@
 //! wasmtime P2 asset-movement component end-to-end test
 //!
-//! Boots the live reference asset-movement anchor (production
-//! `KeetaNetAssetMovementAnchorHTTPServer`), publishes signed service metadata
-//! on-chain, then drives the P2 component's generated `asset-movement` bindings
-//! over `wasi:http`: discovery, an unsigned `simulate-transfer`, a signed
-//! `initiate-transfer`, a signed-URL `transfer-status`, and `account-status`.
-//! Each result is a JSON document byte-identical to the reference.
+//! Boots the live reference asset-movement anchor, publishes
+//! signed service metadata on-chain, then drives every operation
+//! of the P2 component's generated `asset-movement` bindings
+//! over `wasi:http`.
 
 use serde_json::{json, Value};
 
@@ -13,6 +11,7 @@ mod common;
 mod wasmtime_p2;
 
 use common::{field_str, BoxError, Harness};
+use wasmtime_p2::bindings::exports::keeta::anchor::asset_movement::PollOptions;
 use wasmtime_p2::{coded, instantiate};
 
 /// Parse a JSON document returned across the component boundary.
@@ -32,6 +31,8 @@ async fn p2_asset_movement_signs_against_live_anchor() -> Result<(), BoxError> {
 	let node_url = field_str(&started, "api")?;
 	let root = field_str(&started, "root")?;
 	let asset = field_str(&started, "asset")?;
+	let signer = field_str(&started, "signer")?;
+	let send_to = field_str(&started, "sendToAddress")?;
 
 	let (mut store, bindings) = instantiate().await?;
 	let crypto = bindings.keeta_client_crypto();
@@ -200,6 +201,183 @@ async fn p2_asset_movement_signs_against_live_anchor() -> Result<(), BoxError> {
 			.and_then(Value::as_bool),
 		Some(false),
 		"a ready account must report actionRequired false"
+	);
+
+	// Account-based discovery: the provider's entry is signed by the harness
+	// metadata signer, so a lookup by that account surfaces it.
+	let by_account = asset_movement
+		.asset_client()
+		.call_provider_by_account(&mut store, client, &signer)
+		.await?
+		.map_err(coded)?;
+	assert_eq!(
+		parse(&by_account)?.get("id").and_then(Value::as_str),
+		Some(provider_id.as_str()),
+		"provider-by-account must surface the provider signed by the metadata signer"
+	);
+
+	// Execute a fiat pull instruction (the only shape `executeTransfer`
+	// accepts); the harness reports the transaction executed.
+	let execute = json!({
+		"id": "123",
+		"instruction": {
+			"type": "ACH_DEBIT",
+			"pullFrom": { "type": "persistent-address", "persistentAddressId": "pa-1" }
+		}
+	})
+	.to_string();
+	let executed = asset_movement
+		.asset_client()
+		.call_execute_transfer(&mut store, client, &provider, &execute)
+		.await?
+		.map_err(coded)?;
+	assert_eq!(
+		parse(&executed)?
+			.get("transaction")
+			.and_then(|transaction| transaction.get("status"))
+			.and_then(Value::as_str),
+		Some("EXECUTED"),
+		"execute-transfer must report the executed transaction"
+	);
+
+	// Persistent-forwarding lifecycle: open a template session, create a
+	// template directly, list templates, create an address for a destination
+	// pair, list addresses, then deactivate both.
+	let initiate_template = json!({ "asset": asset, "location": "chain:evm:100" }).to_string();
+	let session = asset_movement
+		.asset_client()
+		.call_initiate_forwarding_template(&mut store, client, &provider, &initiate_template)
+		.await?
+		.map_err(coded)?;
+	let session = parse(&session)?;
+	assert_eq!(
+		session.get("id").and_then(Value::as_str),
+		Some("test-session-id"),
+		"the template session must carry the harness session id"
+	);
+	assert_eq!(
+		session
+			.get("data")
+			.and_then(|data| data.get("type"))
+			.and_then(Value::as_str),
+		Some("plaid"),
+		"the template session must carry the provider-specific data"
+	);
+
+	let create_template = json!({ "asset": asset, "location": "chain:evm:100", "address": send_to }).to_string();
+	let template = asset_movement
+		.asset_client()
+		.call_create_forwarding_template(&mut store, client, &provider, &create_template)
+		.await?
+		.map_err(coded)?;
+	assert_eq!(
+		parse(&template)?.get("id").and_then(Value::as_str),
+		Some("template-id"),
+		"the created template must carry the harness template id"
+	);
+
+	let templates = asset_movement
+		.asset_client()
+		.call_list_forwarding_templates(&mut store, client, &provider, "{}")
+		.await?
+		.map_err(coded)?;
+	let templates = parse(&templates)?;
+	assert_eq!(
+		templates
+			.get("templates")
+			.and_then(Value::as_array)
+			.map(Vec::len),
+		Some(1),
+		"the template list must carry the harness template"
+	);
+	assert_eq!(templates.get("total").and_then(Value::as_str), Some("1"), "the template list must carry its total");
+
+	let create_address = json!({
+		"sourceLocation": "chain:evm:100",
+		"asset": asset,
+		"destinationLocation": "chain:keeta:100",
+		"destinationAddress": send_to
+	})
+	.to_string();
+	let address = asset_movement
+		.asset_client()
+		.call_create_forwarding_address(&mut store, client, &provider, &create_address)
+		.await?
+		.map_err(coded)?;
+	assert!(
+		parse(&address)?.get("address").and_then(Value::as_str).is_some(),
+		"the created forwarding address must carry its address"
+	);
+
+	let addresses = asset_movement
+		.asset_client()
+		.call_list_forwarding_addresses(&mut store, client, &provider, "{}")
+		.await?
+		.map_err(coded)?;
+	assert_eq!(
+		parse(&addresses)?
+			.get("addresses")
+			.and_then(Value::as_array)
+			.map(Vec::len),
+		Some(1),
+		"the address list must carry the harness address"
+	);
+
+	asset_movement
+		.asset_client()
+		.call_deactivate_forwarding_template(&mut store, client, &provider, "template-id")
+		.await?
+		.map_err(coded)?;
+	asset_movement
+		.asset_client()
+		.call_deactivate_forwarding_address(&mut store, client, &provider, "template-id")
+		.await?
+		.map_err(coded)?;
+
+	// The transaction query returns the canonical harness transaction.
+	let transactions = asset_movement
+		.asset_client()
+		.call_list_transactions(&mut store, client, &provider, "{}")
+		.await?
+		.map_err(coded)?;
+	let transactions = parse(&transactions)?;
+	assert_eq!(
+		transactions
+			.get("transactions")
+			.and_then(Value::as_array)
+			.and_then(|entries| entries.first())
+			.and_then(|entry| entry.get("id"))
+			.and_then(Value::as_str),
+		Some("123"),
+		"list-transactions must carry the harness transaction"
+	);
+
+	// A settled share resolves immediately; the outcome is not pending.
+	let share = json!({ "attributes": "immediate-attributes" }).to_string();
+	let settled = asset_movement
+		.asset_client()
+		.call_share_kyc(&mut store, client, &provider, &share)
+		.await?
+		.map_err(coded)?;
+	assert_eq!(
+		parse(&settled)?.get("isPending").and_then(Value::as_bool),
+		Some(false),
+		"a settled share must not be pending"
+	);
+
+	// A pending share hands back a promise URL; the await variant polls it
+	// (two 202s, then a 200) to the settled outcome, paced by the options.
+	let pending_share = json!({ "attributes": "test-promise" }).to_string();
+	let options = PollOptions { interval_ms: 50, timeout_ms: 30_000 };
+	let awaited = asset_movement
+		.asset_client()
+		.call_share_kyc_await(&mut store, client, &provider, &pending_share, Some(options))
+		.await?
+		.map_err(coded)?;
+	assert_eq!(
+		parse(&awaited)?.get("isPending").and_then(Value::as_bool),
+		Some(false),
+		"an awaited pending share must settle"
 	);
 
 	harness.shutdown()?;

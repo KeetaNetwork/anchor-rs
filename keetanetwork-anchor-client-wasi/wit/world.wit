@@ -262,6 +262,15 @@ interface asset-movement {
 	use keeta:client/types@0.1.0.{coded-error};
 	use keeta:client/crypto@0.1.0.{account};
 
+	/// How to pace and bound a polled operation (awaiting a share-KYC promise).
+	record poll-options {
+		/// The minimum delay between polls, in milliseconds. The provider's
+		/// `retry-after` hint overrides this when it is longer.
+		interval-ms: u32,
+		/// The overall deadline, in milliseconds, after which the poll gives up.
+		timeout-ms: u32,
+	}
+
 	/// An asset-movement client bound to a signer and a metadata root.
 	resource asset-client {
 		/// Build a client that resolves providers from the `root` account's
@@ -305,8 +314,9 @@ interface asset-movement {
 		/// Share KYC attributes with the provider, returning a JSON outcome.
 		share-kyc: func(provider: string, request: string) -> result<string, coded-error>;
 		/// Share KYC attributes and poll the returned promise URL to completion,
-		/// returning a JSON outcome.
-		share-kyc-await: func(provider: string, request: string) -> result<string, coded-error>;
+		/// pacing and bounding the poll with `options` (or the defaults when
+		/// absent), returning a JSON outcome.
+		share-kyc-await: func(provider: string, request: string, options: option<poll-options>) -> result<string, coded-error>;
 	}
 }
 

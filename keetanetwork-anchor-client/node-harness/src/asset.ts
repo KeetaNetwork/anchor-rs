@@ -366,7 +366,19 @@ function assetCallbacks(baseTokenAccount: TokenAccount, sendToAccount: GenericAc
 			});
 		},
 
-		shareKYC: async function() {
+		shareKYC: async function(request) {
+			/*
+			 * A magic attributes string exercises the pending path: the anchor
+			 * reports the share pending and hands back a root-relative promise
+			 * URL the client must poll to completion.
+			 */
+			if (request.attributes.includes('promise')) {
+				return({
+					isPending: true,
+					promiseURL: `/_promises/${request.attributes}`
+				});
+			}
+
 			return({});
 		},
 
@@ -416,7 +428,38 @@ async function handleStartAssetAnchor(request: StartAssetAnchorRequest): Promise
 	const sendToAccount = Account.fromSeed(Account.generateRandomSeed(), 0);
 	const moment = (new Date()).toISOString();
 
-	const server: AssetServerInstance = new assetServer.KeetaNetAssetMovementAnchorHTTPServer({
+	/*
+	 * Pending share-KYC promises, counted per promise id. The promise route
+	 * reports pending (202) for the first two polls and completes (200) after.
+	 */
+	const promisePolling = new Map<string, number>();
+
+	const server: AssetServerInstance = new (class extends assetServer.KeetaNetAssetMovementAnchorHTTPServer {
+		protected override async initRoutes(config: AssetServerConfig) {
+			const routes = await super.initRoutes(config);
+			routes['GET /_promises/:promiseID'] = async function(params) {
+				const promiseId = params.get('promiseID');
+				if (promiseId === undefined) {
+					throw(new Error('Missing promise ID'));
+				}
+
+				const polls = (promisePolling.get(promiseId) ?? 0) + 1;
+				promisePolling.set(promiseId, polls);
+
+				if (polls <= 2) {
+					return({
+						statusCode: 202,
+						output: 'pending',
+						headers: { 'Retry-After': '0.1' }
+					});
+				}
+
+				return({ output: JSON.stringify({ ok: true }) });
+			};
+
+			return(routes);
+		}
+	})({
 		metadataSigner: sign ? metadataSigner : undefined,
 		assetMovement: assetCallbacks(baseTokenAccount, sendToAccount, moment)
 	});

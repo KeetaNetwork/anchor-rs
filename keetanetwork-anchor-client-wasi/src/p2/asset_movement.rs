@@ -22,7 +22,7 @@ use crate::asset_json::{
 };
 
 use super::exports::keeta::anchor::asset_movement::{
-	AssetClient as WitAssetClient, Guest as AssetMovementGuest, GuestAssetClient,
+	AssetClient as WitAssetClient, Guest as AssetMovementGuest, GuestAssetClient, PollOptions as WitPollOptions,
 };
 use super::exports::keeta::client::crypto::AccountBorrow;
 use super::{run, AccountResource, CodedError, Component};
@@ -174,15 +174,23 @@ impl GuestAssetClient for AssetSession {
 		text(encode(&outcome))
 	}
 
-	fn share_kyc_await(&self, provider: String, request: String) -> Result<String, CodedError> {
+	fn share_kyc_await(
+		&self,
+		provider: String,
+		request: String,
+		options: Option<WitPollOptions>,
+	) -> Result<String, CodedError> {
 		let provider = core(parse_provider(&provider))?;
 		let request = core(share_kyc_request(&request))?;
-		let outcome =
-			run(self
-				.inner
-				.share_kyc_await(&provider, &request, PollOptions::default(), |millis| async move {
-					WasiRuntime.sleep_ms(u64::from(millis)).await;
-				}))?;
+		let options = options.map_or_else(PollOptions::default, |options| PollOptions {
+			interval_ms: options.interval_ms,
+			timeout_ms: options.timeout_ms,
+		});
+		let outcome = run(self
+			.inner
+			.share_kyc_await(&provider, &request, options, |millis| async move {
+				WasiRuntime.sleep_ms(u64::from(millis)).await;
+			}))?;
 
 		text(encode(&outcome))
 	}

@@ -5,6 +5,7 @@
 
 mod common;
 
+use core::sync::atomic::{AtomicU32, Ordering};
 use std::collections::VecDeque;
 use std::error::Error;
 use std::sync::{Arc, Mutex};
@@ -16,8 +17,8 @@ use common::account_from_seed;
 use keetanetwork_account::GenericAccount;
 use keetanetwork_anchor_client::error::TransportError;
 use keetanetwork_anchor_client::{
-	AccountStatus, AnchorContext, AnchorHttpTransport, AssetMovementClient, AssetOrPair, HttpResponse, Resolver,
-	TransferDestination, TransferRequest, TransferSource,
+	AccountStatus, AnchorClientError, AnchorContext, AnchorHttpTransport, AssetMovementClient, AssetOrPair,
+	HttpResponse, PollOptions, Resolver, ShareKycRequest, TransferDestination, TransferRequest, TransferSource,
 };
 use serde_json::{json, Value};
 
@@ -165,6 +166,7 @@ async fn discovery_reads_the_published_provider() -> TestResult {
 
 	let providers = client.providers().await?;
 	assert_eq!(providers.len(), 1, "exactly one provider is published");
+
 	let provider = &providers[0];
 	assert_eq!(provider.id, PROVIDER_ID, "discovered provider id diverges");
 	assert!(client.is_operation_supported(provider, "simulateTransfer"), "simulateTransfer must be advertised");
@@ -218,6 +220,7 @@ async fn initiate_transfer_signs_the_flat_body() -> TestResult {
 		.post_body("initiateTransfer")
 		.ok_or("initiateTransfer was not called")?;
 	assert_eq!(body["to"]["recipient"], recipient, "the recipient is carried in the destination");
+
 	let signed = body
 		.get("signed")
 		.ok_or("a required operation must carry a signature")?;
@@ -269,6 +272,7 @@ async fn transfer_status_signs_the_url() -> TestResult {
 async fn account_status_resolves_ready_and_blocked() -> TestResult {
 	let ready = HttpResponse::new(200, br#"{"ok":true,"actionRequired":false}"#.to_vec());
 	let (client, _transport) = client_over(&provider_metadata(), [ready]);
+
 	let provider = client
 		.provider_by_id(PROVIDER_ID)
 		.await?
@@ -281,11 +285,116 @@ async fn account_status_resolves_ready_and_blocked() -> TestResult {
 		.provider_by_id(PROVIDER_ID)
 		.await?
 		.ok_or("provider missing")?;
+
 	let status = client.account_status(&provider).await?;
 	assert!(
 		matches!(status, AccountStatus::ActionRequired { blockers } if blockers.len() == 1),
 		"a blocked account lists its blockers"
 	);
+
+	Ok(())
+}
+
+/// The metadata document a share-KYC provider publishes.
+fn kyc_provider_metadata() -> Value {
+	json!({
+		"version": 1,
+		"services": {
+			"assetMovement": {
+				PROVIDER_ID: {
+					"operations": {
+						"shareKYC": {
+							"url": "http://anchor.test/api/shareKYC",
+							"options": { "authentication": { "type": "required" } }
+						}
+					}
+				}
+			}
+		}
+	})
+}
+
+/// The share-KYC request the poll tests submit.
+fn share_kyc_request() -> ShareKycRequest {
+	ShareKycRequest { attributes: "exported-attributes".to_string(), tos_agreement: None }
+}
+
+#[tokio::test]
+async fn share_kyc_await_polls_a_pending_promise_to_completion() -> TestResult {
+	// The share reports pending; the promise stays pending (202, opaque body)
+	// for two polls and then settles with a 200 whose body is not JSON.
+	let responses = [
+		HttpResponse::new(200, br#"{"ok":true,"isPending":true,"promiseURL":"/_promises/p1"}"#.to_vec()),
+		HttpResponse::new(202, b"pending".to_vec()),
+		HttpResponse::new(202, b"pending".to_vec()),
+		HttpResponse::new(200, b"ok".to_vec()),
+	];
+	let (client, transport) = client_over(&kyc_provider_metadata(), responses);
+	let provider = client
+		.provider_by_id(PROVIDER_ID)
+		.await?
+		.ok_or("provider missing")?;
+
+	let polls = Arc::new(AtomicU32::new(0));
+	let counter = Arc::clone(&polls);
+	let options = PollOptions { interval_ms: 1, timeout_ms: 60_000 };
+	let outcome = client
+		.share_kyc_await(&provider, &share_kyc_request(), options, move |_millis| {
+			let counter = Arc::clone(&counter);
+			async move {
+				counter.fetch_add(1, Ordering::Relaxed);
+			}
+		})
+		.await?;
+	assert!(!outcome.is_pending, "the settled outcome must not be pending");
+	assert_eq!(polls.load(Ordering::Relaxed), 2, "the poll must sleep once per pending response");
+
+	let url = transport
+		.get_url("/_promises/p1")
+		.ok_or("the promise URL was not polled")?;
+	assert!(url.starts_with("http://anchor.test/"), "a root-relative promise URL resolves against the endpoint");
+
+	Ok(())
+}
+
+#[tokio::test]
+async fn share_kyc_await_times_out_on_an_unsettled_promise() -> TestResult {
+	let responses = [
+		HttpResponse::new(200, br#"{"ok":true,"isPending":true,"promiseURL":"/_promises/p2"}"#.to_vec()),
+		HttpResponse::new(202, b"pending".to_vec()),
+	];
+	let (client, _transport) = client_over(&kyc_provider_metadata(), responses);
+	let provider = client
+		.provider_by_id(PROVIDER_ID)
+		.await?
+		.ok_or("provider missing")?;
+
+	let options = PollOptions { interval_ms: 1_000, timeout_ms: 500 };
+	let outcome = client
+		.share_kyc_await(&provider, &share_kyc_request(), options, |_millis| async {})
+		.await;
+	assert!(
+		matches!(outcome, Err(AnchorClientError::Timeout { .. })),
+		"an unsettled promise must surface a typed timeout, got {outcome:?}"
+	);
+
+	Ok(())
+}
+
+#[tokio::test]
+async fn a_settled_share_kyc_returns_without_polling() -> TestResult {
+	let responses = [HttpResponse::new(200, br#"{"ok":true}"#.to_vec())];
+	let (client, transport) = client_over(&kyc_provider_metadata(), responses);
+	let provider = client
+		.provider_by_id(PROVIDER_ID)
+		.await?
+		.ok_or("provider missing")?;
+
+	let outcome = client
+		.share_kyc_await(&provider, &share_kyc_request(), PollOptions::default(), |_millis| async {})
+		.await?;
+	assert!(!outcome.is_pending, "an immediately settled share must not be pending");
+	assert!(transport.get_url("_promises").is_none(), "a settled share must not poll any promise URL");
 
 	Ok(())
 }

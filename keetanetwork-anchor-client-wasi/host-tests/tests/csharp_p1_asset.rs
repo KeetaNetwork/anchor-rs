@@ -36,6 +36,8 @@ fn csharp_asset_sdk_conforms_with_typescript_anchor() -> Result<(), BoxError> {
 	let root = field_str(&started, "root")?;
 	let provider_id = field_str(&started, "providerId")?;
 	let asset = field_str(&started, "asset")?;
+	let signer = field_str(&started, "signer")?;
+	let send_to = field_str(&started, "sendToAddress")?;
 
 	// Run the C# SDK end-to-end against the live anchor.
 	let output = Command::new("dotnet")
@@ -48,6 +50,8 @@ fn csharp_asset_sdk_conforms_with_typescript_anchor() -> Result<(), BoxError> {
 		.env("KEETA_ROOT", &root)
 		.env("KEETA_PROVIDER_ID", &provider_id)
 		.env("KEETA_ASSET_ID", &asset)
+		.env("KEETA_PROVIDER_ACCOUNT", &signer)
+		.env("KEETA_SEND_TO", &send_to)
 		.output()?;
 
 	let stdout = String::from_utf8_lossy(&output.stdout);

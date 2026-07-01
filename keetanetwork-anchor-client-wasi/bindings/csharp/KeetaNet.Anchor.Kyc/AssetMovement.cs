@@ -81,17 +81,26 @@ public sealed class AssetMovementClient : IDisposable
 	public JsonElement? GetProviderLegalDisclaimersById(string id) => ProviderById(id)?.Legal;
 
 	/// <summary>
-	/// The provider's asset metadata for <paramref name="location"/> (a
-	/// canonical location string), or null when the provider advertises none.
+	/// The provider's display metadata for <paramref name="asset"/> (an external
+	/// chain asset id) at <paramref name="location"/> (a canonical location
+	/// string), or null when the provider advertises none.
 	/// </summary>
-	public JsonElement? GetAssetMetadataForLocation(AssetProvider provider, string location)
+	public JsonElement? GetAssetMetadataForLocation(AssetProvider provider, string location, string asset)
 	{
 		if (provider.LocationMetadata is not { } metadata || metadata.ValueKind != JsonValueKind.Object)
 		{
 			return null;
 		}
 
-		return metadata.TryGetProperty(location, out JsonElement found) ? found : null;
+		if (!metadata.TryGetProperty(location, out JsonElement forLocation)
+			|| forLocation.ValueKind != JsonValueKind.Object
+			|| !forLocation.TryGetProperty("assets", out JsonElement assets)
+			|| assets.ValueKind != JsonValueKind.Object)
+		{
+			return null;
+		}
+
+		return assets.TryGetProperty(asset, out JsonElement found) ? found : null;
 	}
 
 	/// <summary>Simulate a transfer, returning a fluent handle over its instruction choices.</summary>
@@ -166,11 +175,25 @@ public sealed class AssetMovementClient : IDisposable
 
 	/// <summary>
 	/// Share KYC attributes and, when the outcome is pending with a promise URL,
-	/// poll that URL inside the core until it resolves (or the core's deadline
-	/// elapses). Returns the settled outcome.
+	/// poll that URL inside the core until it resolves.
 	/// </summary>
-	public AssetShareKycOutcome ShareKycAndWait(AssetProvider provider, AssetShareKycRequest request) =>
-		Read<AssetShareKycOutcome>(_runtime.AssetShareKycAwait(_handle, Serialize(provider), Serialize(request)));
+	public AssetShareKycOutcome ShareKycAndWait(
+		AssetProvider provider,
+		AssetShareKycRequest request,
+		TimeSpan? pollInterval = null,
+		TimeSpan? timeout = null) =>
+		Read<AssetShareKycOutcome>(_runtime.AssetShareKycAwait(
+			_handle,
+			Serialize(provider),
+			Serialize(request),
+			ToWholeMilliseconds(pollInterval),
+			ToWholeMilliseconds(timeout)));
+
+	/// <summary>A bound as whole milliseconds, with 0 selecting the core default.</summary>
+	private static int ToWholeMilliseconds(TimeSpan? bound) =>
+		bound is { } value && value > TimeSpan.Zero
+			? (int)Math.Min(value.TotalMilliseconds, int.MaxValue)
+			: 0;
 
 	private static string Serialize<T>(T value) => JsonSerializer.Serialize(value, Json);
 
@@ -228,8 +251,20 @@ public sealed class AssetSimulatedTransfer
 	/// <summary>The candidate instructions that would complete this transfer.</summary>
 	public IReadOnlyList<JsonElement> InstructionChoices { get; }
 
-	/// <summary>Initiate the simulated transfer with the same provider and request.</summary>
-	public AssetTransfer CreateTransfer() => _client.InitiateTransfer(_provider, _request);
+	/// <summary>
+	/// Initiate the simulated transfer with the same provider and request.
+	/// A simulation may omit the recipient; supply <paramref name="recipient"/>
+	/// here to complete the destination before initiating.
+	/// </summary>
+	public AssetTransfer CreateTransfer(object? recipient = null, string? depositMessage = null)
+	{
+		AssetTransferDestination to = _request.To with
+		{
+			Recipient = recipient ?? _request.To.Recipient,
+			DepositMessage = depositMessage ?? _request.To.DepositMessage,
+		};
+		return _client.InitiateTransfer(_provider, _request with { To = to });
+	}
 }
 
 /// <summary>
@@ -263,7 +298,7 @@ public sealed class AssetTransfer
 	/// <summary>Read this transfer's current status.</summary>
 	public AssetTransferStatus GetStatus() => _client.TransferStatus(_provider, Id);
 
-	/// <summary>Execute a chosen pull <paramref name="instruction"/> for this transfer.</summary>
-	public AssetTransferStatus Execute(object instruction) =>
+	/// <summary>Execute a fiat pull <paramref name="instruction"/> for this transfer.</summary>
+	public AssetTransferStatus Execute(AssetPullInstruction instruction) =>
 		_client.ExecuteTransfer(_provider, new AssetExecuteRequest(Id, instruction));
 }

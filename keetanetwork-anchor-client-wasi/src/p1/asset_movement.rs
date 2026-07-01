@@ -417,6 +417,9 @@ pub unsafe extern "C" fn keeta_asset_share_kyc(
 /// pausing between polls through the host timer; returns a JSON outcome bytes
 /// handle (`0` on error).
 ///
+/// A non-positive `interval_ms` or `timeout_ms` selects that bound's default
+/// ([`PollOptions::default`]).
+///
 /// # Safety
 ///
 /// See [`keeta_asset_with_account`].
@@ -427,16 +430,36 @@ pub unsafe extern "C" fn keeta_asset_share_kyc_await(
 	provider_len: i32,
 	request_ptr: i32,
 	request_len: i32,
+	interval_ms: i32,
+	timeout_ms: i32,
 ) -> i32 {
 	dispatch2(provider_ptr, provider_len, request_ptr, request_len, |provider, request| {
 		let request = share_kyc_request(request)?;
+		let options = poll_options(interval_ms, timeout_ms);
 		let outcome = with_session(handle, |client| {
-			block_on(client.share_kyc_await(&provider, &request, PollOptions::default(), |millis| async move {
+			block_on(client.share_kyc_await(&provider, &request, options, |millis| async move {
 				host_sleep_ms(u64::from(millis))
 			}))
 		})?;
+
 		encode(&outcome)
 	})
+}
+
+/// The poll bounds for a share-KYC await: each positive argument overrides its
+/// default.
+fn poll_options(interval_ms: i32, timeout_ms: i32) -> PollOptions {
+	let defaults = PollOptions::default();
+	PollOptions {
+		interval_ms: u32::try_from(interval_ms)
+			.ok()
+			.filter(|value| *value > 0)
+			.unwrap_or(defaults.interval_ms),
+		timeout_ms: u32::try_from(timeout_ms)
+			.ok()
+			.filter(|value| *value > 0)
+			.unwrap_or(defaults.timeout_ms),
+	}
 }
 
 /// Release a client handle, ignoring an unknown one.
@@ -490,9 +513,11 @@ fn build_client(node_url: String, root: String, signer: Arc<GenericAccount>) -> 
 /// Store `client` under a fresh handle and return it.
 fn insert(client: AssetMovementClient) -> i32 {
 	SESSIONS.with_borrow_mut(|sessions| {
-		sessions.next += 1;
+		sessions.next = sessions.next.wrapping_add(1).max(1);
+
 		let handle = sessions.next;
 		sessions.clients.insert(handle, client);
+
 		handle
 	})
 }
