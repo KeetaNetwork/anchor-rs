@@ -60,27 +60,28 @@ mod tests {
 	use crate::asn1::oids;
 
 	#[test]
-	fn test_get_algorithm_by_oid() {
+	fn test_get_algorithm_by_oid() -> Result<(), Box<dyn std::error::Error>> {
 		const ALGORITHM_TEST_DATA: &[(&ObjectIdentifier, Option<&str>)] = &[(&oids::AES_256_GCM, Some("aes-256-gcm"))];
 		for (oid, expected_name) in ALGORITHM_TEST_DATA {
 			let result = get_algorithm_by_oid(oid);
 			match expected_name {
 				Some(name) => {
 					assert!(result.is_ok());
-					assert_eq!(result.unwrap(), *name);
+					assert_eq!(result?, *name);
 				}
 				None => assert!(result.is_err()),
 			}
 		}
 
 		// Test invalid OID
-		let invalid_oid = ObjectIdentifier::new(&[1, 2, 3, 4, 5, 6, 7, 8, 9]).unwrap();
+		let invalid_oid = ObjectIdentifier::new(&[1, 2, 3, 4, 5, 6, 7, 8, 9]).ok_or("invalid oid")?;
 		let invalid_result = get_algorithm_by_oid(&invalid_oid);
 		assert!(invalid_result.is_err());
+		Ok(())
 	}
 
 	#[test]
-	fn test_get_certificate_attribute_oid() {
+	fn test_get_certificate_attribute_oid() -> Result<(), Box<dyn std::error::Error>> {
 		const SENSITIVE_ATTRIBUTE_TEST_DATA: &[(&str, bool)] =
 			&[("fullName", true), ("email", true), ("invalid", false)];
 		for (name, should_succeed) in SENSITIVE_ATTRIBUTE_TEST_DATA {
@@ -90,8 +91,8 @@ mod tests {
 			if *should_succeed {
 				// Verify specific expected values for known attributes
 				match *name {
-					"fullName" => assert_eq!(result.unwrap(), oids::keeta::FULL_NAME),
-					"email" => assert_eq!(result.unwrap(), oids::keeta::EMAIL),
+					"fullName" => assert_eq!(result?, oids::keeta::FULL_NAME),
+					"email" => assert_eq!(result?, oids::keeta::EMAIL),
 					_ => {}
 				}
 			}
@@ -100,11 +101,12 @@ mod tests {
 		// Test with String type explicitly
 		let string_result = get_sensitive_attribute_oid(String::from("fullName"));
 		assert!(string_result.is_ok());
-		assert_eq!(string_result.unwrap(), oids::keeta::FULL_NAME);
+		assert_eq!(string_result?, oids::keeta::FULL_NAME);
 
 		// Test invalid attribute with String
 		let invalid_string_result = get_sensitive_attribute_oid(String::from("definitely_invalid"));
 		assert!(invalid_string_result.is_err());
+		Ok(())
 	}
 
 	#[test]

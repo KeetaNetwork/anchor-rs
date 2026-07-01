@@ -318,7 +318,7 @@ impl KycAttributesBuilder {
 	///
 	/// #[cfg(feature = "chrono")]
 	/// let birth_info = DateAndPlaceOfBirth::new(
-	///     BirthDate(NaiveDate::from_ymd_opt(1990, 1, 1).unwrap().and_hms_opt(0, 0, 0).unwrap().and_utc().fixed_offset()),
+	///     BirthDate(NaiveDate::from_ymd_opt(1990, 1, 1).unwrap().and_hms_opt(0, 0, 0).unwrap().and_utc().into()),
 	///     TownName("New York".to_string()),
 	///     Country("US".to_string()),
 	///     Some(CountrySubDivision("NY".to_string())),
@@ -498,7 +498,7 @@ mod tests {
 		} else {
 			builder.as_plain().build()
 		}
-		.unwrap()
+		.expect("build attribute")
 	}
 
 	/// Helper function to add test data to `KycAttributesBuilder``.
@@ -538,39 +538,45 @@ mod tests {
 	}
 
 	#[test]
-	fn test_kyc_attributes_builder() {
+	fn test_kyc_attributes_builder() -> Result<(), Box<dyn std::error::Error>> {
 		let mut builder = KycAttributesBuilder::new();
 		for test_case in &TEST_DATA[0..2] {
 			builder = add_test_data_to_builder(builder, test_case);
 		}
 
-		let attributes = builder.build().unwrap();
+		let attributes = builder.build()?;
 		assert_eq!(attributes.count(), 2);
 
 		// Verify attributes match test data
 		for test_case in &TEST_DATA[0..2] {
-			let found = attributes.find_by_oid(test_case.oid.clone()).unwrap();
+			let found = attributes
+				.find_by_oid(test_case.oid.clone())
+				.ok_or("attribute not found")?;
 			assert_eq!(found.is_sensitive(), test_case.is_sensitive);
 			assert_eq!(found.as_ref(), test_case.value);
 		}
+		Ok(())
 	}
 
 	#[test]
-	fn test_builder_with_manual_attributes() {
+	fn test_builder_with_manual_attributes() -> Result<(), Box<dyn std::error::Error>> {
 		let attrs: Vec<Attribute> = TEST_DATA[2..4].iter().map(build_test_attribute).collect();
 		let mut builder = KycAttributesBuilder::new();
 		for attr in attrs {
 			builder = builder.with_attribute(attr);
 		}
 
-		let attributes = builder.build().unwrap();
+		let attributes = builder.build()?;
 		assert_eq!(attributes.count(), 2);
 
 		// Verify all attributes are present
 		for test_case in &TEST_DATA[2..4] {
-			let found = attributes.find_by_oid(test_case.oid.clone()).unwrap();
+			let found = attributes
+				.find_by_oid(test_case.oid.clone())
+				.ok_or("attribute not found")?;
 			assert_eq!(found.as_ref(), test_case.value);
 		}
+		Ok(())
 	}
 
 	#[test]

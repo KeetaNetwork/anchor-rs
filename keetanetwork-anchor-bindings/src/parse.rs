@@ -57,9 +57,10 @@ mod tests {
 	use super::*;
 
 	#[test]
-	fn non_empty_trims_surrounding_whitespace() {
-		let parsed = non_empty("  abc  ", EMPTY_VALUE).unwrap();
+	fn non_empty_trims_surrounding_whitespace() -> Result<(), CodedError> {
+		let parsed = non_empty("  abc  ", EMPTY_VALUE)?;
 		assert_eq!(parsed, "abc");
+		Ok(())
 	}
 
 	#[test]
@@ -69,16 +70,18 @@ mod tests {
 	}
 
 	#[test]
-	fn country_code_borrows_uppercase_input() {
-		let parsed = country_code("US").unwrap();
+	fn country_code_borrows_uppercase_input() -> Result<(), CodedError> {
+		let parsed = country_code("US")?;
 		assert!(matches!(parsed, Cow::Borrowed("US")));
+		Ok(())
 	}
 
 	#[test]
-	fn country_code_normalizes_lowercase_input() {
-		let parsed = country_code("us").unwrap();
+	fn country_code_normalizes_lowercase_input() -> Result<(), CodedError> {
+		let parsed = country_code("us")?;
 		assert_eq!(parsed.as_ref(), "US");
 		assert!(matches!(parsed, Cow::Owned(_)));
+		Ok(())
 	}
 
 	#[test]

@@ -540,14 +540,18 @@ mod tests {
 	test_all_key_types!(test_sensitive_attribute_decrypt, |account: Account<_>| {
 		let test_value = b"test value for decryption";
 		let sensitive_attr = create_test_sensitive_attribute(&account, test_value);
-		let decrypted = sensitive_attr.decrypt(&account.keypair).unwrap();
+		let decrypted = sensitive_attr
+			.decrypt(&account.keypair)
+			.expect("decrypt attribute");
 		assert_eq!(decrypted.expose_secret(), test_value);
 	});
 
 	test_all_key_types!(test_sensitive_attribute_decrypt_string, |account: Account<_>| {
 		let test_string = "Hello, world! 🦀";
 		let sensitive_attr = create_test_sensitive_attribute(&account, test_string.as_bytes());
-		let decrypted_string = sensitive_attr.decrypt_as_string(&account.keypair).unwrap();
+		let decrypted_string = sensitive_attr
+			.decrypt_as_string(&account.keypair)
+			.expect("decrypt as string");
 		assert_eq!(decrypted_string, test_string);
 	});
 
@@ -557,7 +561,7 @@ mod tests {
 		assert!(!proof.value.expose_secret().is_empty());
 		assert!(!proof.hash.salt.is_empty());
 
-		let decoded_value = base64_decode(proof.value.expose_secret()).unwrap();
+		let decoded_value = base64_decode(proof.value.expose_secret()).expect("decode proof value");
 		assert_eq!(decoded_value, test_value);
 	});
 
@@ -569,7 +573,7 @@ mod tests {
 		// Validate the valid proof
 		assert!(sensitive_attr
 			.validate_proof(&account.keypair, proof)
-			.unwrap());
+			.expect("validate proof"));
 
 		// Test with invalid proof (wrong value)
 		let invalid_proof = SensitiveAttributeProof {
@@ -578,7 +582,7 @@ mod tests {
 		};
 		assert!(!sensitive_attr
 			.validate_proof(&account.keypair, invalid_proof)
-			.unwrap());
+			.expect("validate invalid proof"));
 
 		// Test with invalid proof (wrong salt)
 		let invalid_proof_salt = SensitiveAttributeProof {
@@ -587,7 +591,7 @@ mod tests {
 		};
 		assert!(!sensitive_attr
 			.validate_proof(&account.keypair, invalid_proof_salt)
-			.unwrap());
+			.expect("validate invalid salt proof"));
 	});
 
 	test_all_key_types!(test_sensitive_attribute_proof_partial_eq, |account: Account<_>| {
@@ -595,15 +599,21 @@ mod tests {
 		let sensitive_attr = create_test_sensitive_attribute(&account, test_value);
 
 		// Test PartialEq trait - proofs should be equal based on hash field only
-		let proof1 = sensitive_attr.to_proof(&account.keypair).unwrap();
-		let proof2 = sensitive_attr.to_proof(&account.keypair).unwrap();
+		let proof1 = sensitive_attr
+			.to_proof(&account.keypair)
+			.expect("prove first");
+		let proof2 = sensitive_attr
+			.to_proof(&account.keypair)
+			.expect("prove second");
 		assert_eq!(proof1, proof2);
 		assert_eq!(proof1.hash, proof2.hash);
 
 		// Create a different sensitive attribute with different value
 		// Different sensitive attributes should produce different proofs
 		let sensitive_attr2 = create_test_sensitive_attribute(&account, b"different value");
-		let proof3 = sensitive_attr2.to_proof(&account.keypair).unwrap();
+		let proof3 = sensitive_attr2
+			.to_proof(&account.keypair)
+			.expect("prove third");
 		assert_ne!(proof1, proof3);
 		assert_ne!(proof1.hash, proof3.hash);
 	});
@@ -615,21 +625,25 @@ mod tests {
 		// Test object to vec
 		let der_bytes = Vec::<u8>::try_from(sensitive_attr.clone());
 		assert!(der_bytes.is_ok());
-		assert!(!der_bytes.unwrap().is_empty());
+		assert!(!der_bytes.expect("der bytes").is_empty());
 
 		// Test to_der method
-		let der_bytes = sensitive_attr.to_der().unwrap();
+		let der_bytes = sensitive_attr.to_der().expect("to der");
 		assert!(!der_bytes.is_empty());
 
 		// DER encoding should be deterministic
-		let der_bytes2 = sensitive_attr.to_der().unwrap();
+		let der_bytes2 = sensitive_attr.to_der().expect("to der again");
 		assert_eq!(der_bytes, der_bytes2);
 
 		// Test round-trip: decode the DER bytes back to SensitiveAttribute
-		let decoded_attr = SensitiveAttribute::try_from(der_bytes).unwrap();
+		let decoded_attr = SensitiveAttribute::try_from(der_bytes).expect("decode attribute");
 		// Verify the decoded attribute has the same functionality
-		let decrypted_original = sensitive_attr.decrypt(&account.keypair).unwrap();
-		let decrypted_roundtrip = decoded_attr.decrypt(&account.keypair).unwrap();
+		let decrypted_original = sensitive_attr
+			.decrypt(&account.keypair)
+			.expect("decrypt original");
+		let decrypted_roundtrip = decoded_attr
+			.decrypt(&account.keypair)
+			.expect("decrypt roundtrip");
 		assert_eq!(decrypted_original.expose_secret(), decrypted_roundtrip.expose_secret());
 		assert_eq!(decrypted_roundtrip.expose_secret(), test_value);
 	});

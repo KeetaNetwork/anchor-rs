@@ -12,7 +12,7 @@ use common::{
 };
 use harness::SigningHarness;
 use hex::FromHex;
-use keetanetwork_account::{Account, KeyECDSASECP256K1};
+use keetanetwork_account::{Account, AccountPublicKey, KeyECDSASECP256K1};
 use keetanetwork_anchor::signing::{
 	add_signature_to_url, object_to_signable, parse_signature_from_url, sign_with, verification_data, verify,
 	verify_body, verify_url, RequestError, SignParams, Signable, Signed, Url, VerifyOptions,

@@ -39,13 +39,13 @@ pub const INVALID_DATE: &str = "INVALID_DATE";
 pub const UNSUPPORTED_KEY_TYPE: &str = "UNSUPPORTED_KEY_TYPE";
 
 /// Parse a PEM-encoded KYC certificate, reusing the base certificate codec.
-pub fn from_pem(certificate: &str) -> Result<KycCertificate, CodedError> {
-	Ok(KycCertificate::new(certificate_from_pem(certificate)?))
+pub fn from_pem(certificate: impl AsRef<str>) -> Result<KycCertificate, CodedError> {
+	Ok(KycCertificate::new(certificate_from_pem(certificate.as_ref())?))
 }
 
 /// Parse a DER-encoded KYC certificate, reusing the base certificate codec.
-pub fn from_der(certificate: &[u8]) -> Result<KycCertificate, CodedError> {
-	Ok(KycCertificate::new(certificate_from_der(certificate)?))
+pub fn from_der(certificate: impl AsRef<[u8]>) -> Result<KycCertificate, CodedError> {
+	Ok(KycCertificate::new(certificate_from_der(certificate.as_ref())?))
 }
 
 /// The PEM encoding of `certificate`.
@@ -136,7 +136,7 @@ where
 	}
 }
 
-/// A proof attesting to a sensitive attribute's committed value, validatable
+/// A proof attesting to a sensitive attribute's committed value, validated
 /// against the certificate with only the subject's public key. `value` is the
 /// base64 attribute value the proof reveals; `salt` is its base64 commitment
 /// salt. Both cross binding boundaries as opaque strings.
@@ -343,7 +343,7 @@ where
 
 /// Reduce a KYC certificate error to a stable boundary code, deferring the
 /// X.509 case to the base certificate mapping so granular codes survive.
-fn coded(error: KycCertificateError) -> CodedError {
+pub fn coded(error: KycCertificateError) -> CodedError {
 	let message = error.to_string();
 	match error {
 		KycCertificateError::X509Error { source } => CodedError::from(source),
@@ -386,14 +386,16 @@ mod tests {
 			builder = builder.with_sensitive_attribute(name, value.to_vec().into_secret());
 		}
 
-		let certificate = builder.build(&subject.keypair, &issuer.keypair).unwrap();
+		let certificate = builder
+			.build(&subject.keypair, &issuer.keypair)
+			.expect("fixture certificate builds");
 		(certificate, subject)
 	}
 
 	fn now_millis() -> i64 {
 		SystemTime::now()
 			.duration_since(UNIX_EPOCH)
-			.unwrap()
+			.expect("system time is after the unix epoch")
 			.as_millis() as i64
 	}
 
@@ -405,54 +407,60 @@ mod tests {
 	}
 
 	#[test]
-	fn reads_every_plain_attribute() {
+	fn reads_every_plain_attribute() -> Result<(), CodedError> {
 		let (certificate, _) = fixture();
 		for &(name, value) in PLAIN {
-			assert_eq!(plain_attribute(&certificate, name).unwrap(), value.to_vec());
+			assert_eq!(plain_attribute(&certificate, name)?, value.to_vec());
 		}
+		Ok(())
 	}
 
 	#[test]
-	fn decrypts_every_sensitive_attribute() {
+	fn decrypts_every_sensitive_attribute() -> Result<(), CodedError> {
 		let (certificate, subject) = fixture();
 		for &(name, value) in SENSITIVE {
-			assert_eq!(decrypt_attribute(&certificate, name, &subject.keypair).unwrap(), value.to_vec());
+			assert_eq!(decrypt_attribute(&certificate, name, &subject.keypair)?, value.to_vec());
 		}
+		Ok(())
 	}
 
 	#[test]
-	fn decrypts_every_sensitive_attribute_for_an_erased_subject() {
+	fn decrypts_every_sensitive_attribute_for_an_erased_subject() -> Result<(), CodedError> {
 		let (certificate, subject) = fixture();
 		let account = Arc::new(GenericAccount::EcdsaSecp256k1(subject));
 		for &(name, value) in SENSITIVE {
-			assert_eq!(decrypt_attribute_with_account(&certificate, name, &account).unwrap(), value.to_vec());
+			assert_eq!(decrypt_attribute_with_account(&certificate, name, &account)?, value.to_vec());
 		}
+		Ok(())
 	}
 
 	#[test]
-	fn round_trips_through_pem_preserving_attributes() {
+	fn round_trips_through_pem_preserving_attributes() -> Result<(), CodedError> {
 		let (certificate, subject) = fixture();
-		let encoded = pem(&certificate).unwrap();
-		let parsed = from_pem(&encoded).unwrap();
+		let encoded = pem(&certificate)?;
+		let parsed = from_pem(&encoded)?;
 
 		assert_eq!(attribute_count(&parsed), attribute_count(&certificate));
 		for &(name, value) in SENSITIVE {
-			assert_eq!(decrypt_attribute(&parsed, name, &subject.keypair).unwrap(), value.to_vec());
+			assert_eq!(decrypt_attribute(&parsed, name, &subject.keypair)?, value.to_vec());
 		}
+		Ok(())
 	}
 
 	#[test]
-	fn round_trips_through_der_preserving_attributes() {
+	fn round_trips_through_der_preserving_attributes() -> Result<(), CodedError> {
 		let (certificate, _) = fixture();
-		let encoded = der(&certificate).unwrap();
-		let parsed = from_der(&encoded).unwrap();
+		let encoded = der(&certificate)?;
+		let parsed = from_der(&encoded)?;
 		assert_eq!(attribute_count(&parsed), attribute_count(&certificate));
+		Ok(())
 	}
 
 	#[test]
-	fn a_fresh_certificate_is_valid_now() {
+	fn a_fresh_certificate_is_valid_now() -> Result<(), CodedError> {
 		let (certificate, _) = fixture();
-		assert!(valid_at(&certificate, now_millis()).unwrap());
+		assert!(valid_at(&certificate, now_millis())?);
+		Ok(())
 	}
 
 	#[test]
@@ -486,23 +494,26 @@ mod tests {
 	}
 
 	#[test]
-	fn verifies_against_a_trusting_root() {
+	fn verifies_against_a_trusting_root() -> Result<(), CodedError> {
 		let (certificate, _) = fixture();
 		let root = certificate.to_x509().clone();
-		assert!(verify(&certificate, &[root], &[], now_millis()).unwrap());
+		assert!(verify(&certificate, &[root], &[], now_millis())?);
+		Ok(())
 	}
 
 	#[test]
-	fn rejects_an_empty_trust_set() {
+	fn rejects_an_empty_trust_set() -> Result<(), CodedError> {
 		let (certificate, _) = fixture();
-		assert!(!verify(&certificate, &[], &[], now_millis()).unwrap());
+		assert!(!verify(&certificate, &[], &[], now_millis())?);
+		Ok(())
 	}
 
 	#[test]
-	fn rejects_a_foreign_root() {
+	fn rejects_a_foreign_root() -> Result<(), CodedError> {
 		let (certificate, _) = fixture();
 		let foreign = keetanetwork_anchor::doc_utils::create_test_x509_cert();
-		assert!(!verify(&certificate, &[foreign], &[], now_millis()).unwrap());
+		assert!(!verify(&certificate, &[foreign], &[], now_millis())?);
+		Ok(())
 	}
 
 	#[test]
@@ -514,7 +525,7 @@ mod tests {
 	}
 
 	#[test]
-	fn issues_across_algorithms_and_reads_back() {
+	fn issues_across_algorithms_and_reads_back() -> Result<(), CodedError> {
 		let subject = Arc::new(GenericAccount::Ed25519(create_ed25519_test_account(Some(0))));
 		let issuer = Arc::new(GenericAccount::EcdsaSecp256k1(create_secp256k1_test_account(Some(1))));
 		let attributes = [
@@ -524,41 +535,50 @@ mod tests {
 		let not_before = now_millis() / 1000;
 		let not_after = not_before + 31_536_000;
 
-		let certificate =
-			issue(subject.as_ref(), issuer.as_ref(), "Subject", "Issuer", 7, not_before, not_after, false, &attributes)
-				.unwrap();
+		let certificate = issue(
+			subject.as_ref(),
+			issuer.as_ref(),
+			"Subject",
+			"Issuer",
+			7,
+			not_before,
+			not_after,
+			false,
+			&attributes,
+		)?;
 
-		assert_eq!(plain_attribute(&certificate, "postalCode").unwrap(), b"12345".to_vec());
-		assert_eq!(
-			decrypt_attribute_with_account(&certificate, "email", &subject).unwrap(),
-			b"john@example.com".to_vec()
-		);
+		assert_eq!(plain_attribute(&certificate, "postalCode")?, b"12345".to_vec());
+		assert_eq!(decrypt_attribute_with_account(&certificate, "email", &subject)?, b"john@example.com".to_vec());
+		Ok(())
 	}
 
 	#[test]
-	fn proves_and_validates_every_sensitive_attribute() {
+	fn proves_and_validates_every_sensitive_attribute() -> Result<(), CodedError> {
 		let (certificate, subject) = fixture();
 		for &(name, _) in SENSITIVE {
-			let proof = prove_attribute(&certificate, name, &subject.keypair).unwrap();
-			assert!(validate_attribute_proof(&certificate, name, &subject.keypair, proof).unwrap());
+			let proof = prove_attribute(&certificate, name, &subject.keypair)?;
+			assert!(validate_attribute_proof(&certificate, name, &subject.keypair, proof)?);
 		}
+		Ok(())
 	}
 
 	#[test]
-	fn proves_and_validates_for_an_erased_subject() {
+	fn proves_and_validates_for_an_erased_subject() -> Result<(), CodedError> {
 		let (certificate, subject) = fixture();
 		let account = Arc::new(GenericAccount::EcdsaSecp256k1(subject));
 		for &(name, _) in SENSITIVE {
-			let proof = prove_attribute_with_account(&certificate, name, &account).unwrap();
-			assert!(validate_attribute_proof_with_account(&certificate, name, &account, proof).unwrap());
+			let proof = prove_attribute_with_account(&certificate, name, &account)?;
+			assert!(validate_attribute_proof_with_account(&certificate, name, &account, proof)?);
 		}
+		Ok(())
 	}
 
 	#[test]
-	fn a_proof_does_not_validate_against_a_different_attribute() {
+	fn a_proof_does_not_validate_against_a_different_attribute() -> Result<(), CodedError> {
 		let (certificate, subject) = fixture();
-		let proof = prove_attribute(&certificate, "fullName", &subject.keypair).unwrap();
-		assert!(!validate_attribute_proof(&certificate, "email", &subject.keypair, proof).unwrap());
+		let proof = prove_attribute(&certificate, "fullName", &subject.keypair)?;
+		assert!(!validate_attribute_proof(&certificate, "email", &subject.keypair, proof)?);
+		Ok(())
 	}
 
 	#[test]

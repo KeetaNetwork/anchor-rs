@@ -8,6 +8,8 @@
 
 #[path = "generated/sensitive_attributes.rs"]
 mod sensitive_attributes;
+#[path = "generated/encrypted_container.rs"]
+mod encrypted_container;
 #[path = "generated/kyc_attributes.rs"]
 mod kyc_attributes;
 
@@ -18,6 +20,10 @@ pub mod builder_ext;
 
 // Re-export all types from the generated modules
 pub use sensitive_attributes::{SensitiveAttributeCipher, SensitiveAttributeHashedValue, SensitiveAttribute};
+pub use encrypted_container::{ContainerBox, ContainerPackage, EncryptedBox, KeyStore, PlaintextBox, SignerInfo};
 pub use kyc_attributes::{AttributeValue, Attribute, KycAttributes};
 #[path = "generated/attribute_types.rs"]
 pub mod attribute_types;
+#[cfg(feature = "serde")]
+#[path = "generated/iso20022_schema.rs"]
+pub mod iso20022_schema;

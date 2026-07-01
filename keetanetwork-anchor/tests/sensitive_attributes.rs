@@ -44,8 +44,12 @@ where
 		let accounts = TestAccounts::new();
 
 		let builder = SensitiveAttributeBuilder::new().with_value(expected_bytes.clone());
-		let sensitive_attr = builder.build(&accounts.subject.keypair).unwrap();
-		let valid_proof = sensitive_attr.to_proof(&accounts.subject.keypair).unwrap();
+		let sensitive_attr = builder
+			.build(&accounts.subject.keypair)
+			.expect("sensitive attribute builds");
+		let valid_proof = sensitive_attr
+			.to_proof(&accounts.subject.keypair)
+			.expect("proof builds");
 
 		Self { accounts, sensitive_attr, valid_proof, test_value, expected_bytes }
 	}
@@ -57,8 +61,12 @@ where
 		let accounts = TestAccounts::with_seeds(primary_seed, wrong_seed);
 
 		let builder = SensitiveAttributeBuilder::new().with_value(expected_bytes.clone());
-		let sensitive_attr = builder.build(&accounts.subject.keypair).unwrap();
-		let valid_proof = sensitive_attr.to_proof(&accounts.subject.keypair).unwrap();
+		let sensitive_attr = builder
+			.build(&accounts.subject.keypair)
+			.expect("sensitive attribute builds");
+		let valid_proof = sensitive_attr
+			.to_proof(&accounts.subject.keypair)
+			.expect("proof builds");
 
 		Self { accounts, sensitive_attr, valid_proof, test_value, expected_bytes }
 	}
@@ -75,8 +83,12 @@ where
 		let accounts = TestAccounts { issuer, subject: account, subject_public_only, wrong_account };
 
 		let builder = SensitiveAttributeBuilder::new().with_value(expected_bytes.clone());
-		let sensitive_attr = builder.build(&accounts.subject.keypair).unwrap();
-		let valid_proof = sensitive_attr.to_proof(&accounts.subject.keypair).unwrap();
+		let sensitive_attr = builder
+			.build(&accounts.subject.keypair)
+			.expect("sensitive attribute builds");
+		let valid_proof = sensitive_attr
+			.to_proof(&accounts.subject.keypair)
+			.expect("proof builds");
 
 		Self { accounts, sensitive_attr, valid_proof, test_value, expected_bytes }
 	}
@@ -85,7 +97,7 @@ where
 	fn generate_proof(&self) -> SensitiveAttributeProof {
 		self.sensitive_attr
 			.to_proof(&self.accounts.subject.keypair)
-			.unwrap()
+			.expect("proof builds")
 	}
 
 	/// Create an invalid proof with wrong value

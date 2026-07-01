@@ -35,6 +35,7 @@ impl P1 {
 		let memory = instance
 			.get_memory(&mut store, "memory")
 			.ok_or_else(|| wasmtime::Error::msg("the P1 module must export its linear memory"))?;
+
 		Ok(Self { store, instance, memory })
 	}
 
@@ -101,12 +102,83 @@ impl P1 {
 		self.call6("keeta_kyc_certificate_validate_proof", leaf, name_ptr, name_len, account, proof_ptr, proof_len)
 	}
 
+	/// Seal a bundle disclosing `names` from leaf `certificate`, proved with the
+	/// `subject` account and bridged by the base-certificate `intermediates`.
+	pub fn sharable_from_certificate(
+		&mut self,
+		certificate: i32,
+		subject: i32,
+		intermediates: &[i32],
+		names: &[&str],
+	) -> wasmtime::Result<i32> {
+		let (intermediates_ptr, intermediates_len) = self.write_handles(intermediates)?;
+		let labels = serde_json::to_vec(names)?;
+		let (names_ptr, names_len) = self.write(&labels)?;
+		let handle = self.call6(
+			"keeta_sharable_from_certificate",
+			certificate,
+			subject,
+			intermediates_ptr,
+			intermediates_len,
+			names_ptr,
+			names_len,
+		)?;
+
+		self.handle(handle)
+	}
+
+	/// Open a bundle from its PEM envelope, resolved with `principals`.
+	pub fn sharable_from_pem(&mut self, pem: &[u8], principals: &[i32]) -> wasmtime::Result<i32> {
+		let (pem_ptr, pem_len) = self.write(pem)?;
+		let (principals_ptr, principals_len) = self.write_handles(principals)?;
+
+		let handle = self.call4("keeta_sharable_from_pem", pem_ptr, pem_len, principals_ptr, principals_len)?;
+		self.handle(handle)
+	}
+
+	/// Grant `principals` access to the sealed bundle: `1`/`-1`.
+	pub fn sharable_grant_access(&mut self, bundle: i32, principals: &[i32]) -> wasmtime::Result<i32> {
+		let (principals_ptr, principals_len) = self.write_handles(principals)?;
+		self.call3("keeta_sharable_grant_access", bundle, principals_ptr, principals_len)
+	}
+
+	/// The bundle's PEM envelope.
+	pub fn sharable_to_pem(&mut self, bundle: i32) -> wasmtime::Result<Vec<u8>> {
+		let bytes = self.call1("keeta_sharable_to_pem", bundle)?;
+		self.read_handle(bytes)
+	}
+
+	/// The schema-decoded semantic value of disclosed attribute `name`.
+	pub fn sharable_attribute_value(&mut self, bundle: i32, name: &str) -> wasmtime::Result<Vec<u8>> {
+		let (name_ptr, name_len) = self.write(name.as_bytes())?;
+		let bytes = self.call3("keeta_sharable_attribute_value", bundle, name_ptr, name_len)?;
+		self.read_handle(bytes)
+	}
+
+	/// The bundle's disclosed attribute names, as a JSON string array.
+	pub fn sharable_attribute_names(&mut self, bundle: i32) -> wasmtime::Result<Vec<u8>> {
+		let bytes = self.call1("keeta_sharable_attribute_names", bundle)?;
+		self.read_handle(bytes)
+	}
+
+	/// Reserve guest memory for a little-endian `i32` handle list, returning `(ptr, len)`.
+	fn write_handles(&mut self, handles: &[i32]) -> wasmtime::Result<(i32, i32)> {
+		let mut bytes = Vec::with_capacity(handles.len() * 4);
+		for handle in handles {
+			bytes.extend_from_slice(&handle.to_le_bytes());
+		}
+
+		self.write(&bytes)
+	}
+
 	/// Reserve guest memory and copy `data` into it, returning `(ptr, len)`.
 	fn write(&mut self, data: &[u8]) -> wasmtime::Result<(i32, i32)> {
 		let len = data.len() as i32;
 		let ptr = self.call1("keeta_alloc", len)?;
+
 		let memory = self.memory;
 		memory.write(&mut self.store, ptr as usize, data)?;
+
 		Ok((ptr, len))
 	}
 

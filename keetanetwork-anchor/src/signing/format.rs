@@ -107,15 +107,17 @@ mod tests {
 	}
 
 	#[test]
-	fn empty_payload_encodes_three_empty_headers() {
-		let encoded = format_data(&[], "", "", &[]).unwrap();
+	fn empty_payload_encodes_three_empty_headers() -> Result<(), Box<dyn std::error::Error>> {
+		let encoded = format_data(&[], "", "", &[])?;
 		assert_eq!(encoded, [0x30, 0x06, 0x0C, 0x00, 0x0C, 0x00, 0x04, 0x00]);
+		Ok(())
 	}
 
 	#[test]
-	fn integer_part_encodes_as_der_integer() {
-		let encoded = format_data(&[], "", "", &[Signable::from(12345_i64)]).unwrap();
+	fn integer_part_encodes_as_der_integer() -> Result<(), Box<dyn std::error::Error>> {
+		let encoded = format_data(&[], "", "", &[Signable::from(12345_i64)])?;
 		let tail = &encoded[encoded.len() - 4..];
 		assert_eq!(tail, [0x02, 0x02, 0x30, 0x39]);
+		Ok(())
 	}
 }

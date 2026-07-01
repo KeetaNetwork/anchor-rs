@@ -66,7 +66,7 @@ async fn p2_kyc_signs_against_live_anchor() -> Result<(), BoxError> {
 	let provider: KycProvider = providers
 		.into_iter()
 		.next()
-		.expect("the provider list is non-empty");
+		.ok_or("the provider list is non-empty")?;
 	assert_eq!(provider.id, provider_id, "the discovered provider id must match the harness");
 
 	// SignedBody parity: the real TS server verifies the signature on the empty

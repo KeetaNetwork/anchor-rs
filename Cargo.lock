@@ -1172,6 +1172,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "keetanetwork-account"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "814deaf79405345862613ea01b0b755ac080242f20190e76ff674f5f5517c974"
+dependencies = [
+ "base32",
+ "bip39-dict",
+ "hex",
+ "keetanetwork-asn1",
+ "keetanetwork-crypto",
+ "keetanetwork-error",
+ "keetanetwork-utils",
+ "rand_core 0.9.5",
+ "snafu",
+ "strum 0.27.2",
+ "strum_macros 0.27.2",
+ "zeroize",
+]
+
+[[package]]
 name = "keetanetwork-anchor"
 version = "0.1.0"
 dependencies = [
@@ -1180,12 +1200,14 @@ dependencies = [
  "getrandom 0.2.17",
  "getrandom 0.3.4",
  "hex",
- "keetanetwork-account",
+ "keetanetwork-account 0.3.0",
  "keetanetwork-asn1",
  "keetanetwork-crypto",
  "keetanetwork-utils",
  "keetanetwork-x509",
  "lazy_static",
+ "miniz_oxide 0.9.1",
+ "num-bigint",
  "rasn",
  "rasn-compiler",
  "rasn-derive",
@@ -1202,7 +1224,7 @@ name = "keetanetwork-anchor-bindings"
 version = "0.1.0"
 dependencies = [
  "chrono",
- "keetanetwork-account",
+ "keetanetwork-account 0.3.0",
  "keetanetwork-anchor",
  "keetanetwork-bindings",
  "keetanetwork-crypto",
@@ -1219,7 +1241,7 @@ dependencies = [
  "gloo-timers",
  "hex",
  "js-sys",
- "keetanetwork-account",
+ "keetanetwork-account 0.3.0",
  "keetanetwork-anchor",
  "keetanetwork-crypto",
  "keetanetwork-utils",
@@ -1245,7 +1267,7 @@ dependencies = [
  "base64",
  "chrono",
  "hex",
- "keetanetwork-account",
+ "keetanetwork-account 0.3.0",
  "keetanetwork-anchor",
  "keetanetwork-anchor-bindings",
  "keetanetwork-anchor-client",
@@ -1261,9 +1283,9 @@ dependencies = [
 
 [[package]]
 name = "keetanetwork-asn1"
-version = "0.2.3"
+version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5176629ce57df966871edc526c80ac855645f2120ee59910e85adcb30b9836f7"
+checksum = "78c049fceb8ce3504253898bd9b27ca5542245132febc32b524b0a843e6e5be3"
 dependencies = [
  "chrono",
  "const-oid",
@@ -1282,13 +1304,13 @@ dependencies = [
 
 [[package]]
 name = "keetanetwork-bindings"
-version = "0.2.2"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "faf04a1394c58365873fa5947ed79a871640a2587403f704442e0049700fd089"
+checksum = "43294dab3f8b02db684d394498cb7f42bbca9d312dd78a1bdd1a638a5a55e0e6"
 dependencies = [
  "chrono",
  "hex",
- "keetanetwork-account",
+ "keetanetwork-account 0.3.0",
  "keetanetwork-asn1",
  "keetanetwork-block",
  "keetanetwork-crypto",
@@ -1299,13 +1321,13 @@ dependencies = [
 
 [[package]]
 name = "keetanetwork-block"
-version = "0.2.0"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b555b132afbbd1fc27d2210335bd2820ac0d3ecd2228680aa32caa19df311d1c"
+checksum = "dfa7b7bd7ccdb87d0ae958dadbc55314eeb94e3b0c2a650c391c6eb1768f3ebf"
 dependencies = [
  "chrono",
  "hex",
- "keetanetwork-account",
+ "keetanetwork-account 0.3.0",
  "keetanetwork-asn1",
  "keetanetwork-crypto",
  "keetanetwork-error",
@@ -1318,12 +1340,12 @@ dependencies = [
 
 [[package]]
 name = "keetanetwork-client-wasi"
-version = "0.2.2"
+version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "88065928b6a68d1b9fda84b35584d955e1dbf14bf3ef479c6690ef016fd45a0d"
+checksum = "19453f888fc8fb8eac2028f74934f4d4b85eb12033b3a62e783ec56095abbfc2"
 dependencies = [
  "hex",
- "keetanetwork-account",
+ "keetanetwork-account 0.3.0",
  "keetanetwork-bindings",
  "keetanetwork-block",
  "keetanetwork-crypto",
@@ -1394,13 +1416,13 @@ dependencies = [
 
 [[package]]
 name = "keetanetwork-vote"
-version = "0.2.1"
+version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1af4761dfe6ce30198fedd0a1bff6ca4d6f1a12e28dd8c167a8be867b0093163"
+checksum = "6ff4b4b60d409eae1eb9ef29bf57b8e9ca74983fe3b4434d1c646b6600273920"
 dependencies = [
  "chrono",
  "hex",
- "keetanetwork-account",
+ "keetanetwork-account 0.3.0",
  "keetanetwork-asn1",
  "keetanetwork-block",
  "keetanetwork-crypto",
@@ -1424,7 +1446,7 @@ dependencies = [
  "getrandom 0.2.17",
  "getrandom 0.3.4",
  "hex",
- "keetanetwork-account",
+ "keetanetwork-account 0.2.0",
  "keetanetwork-asn1",
  "keetanetwork-crypto",
  "keetanetwork-error",

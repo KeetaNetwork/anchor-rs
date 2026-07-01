@@ -2,40 +2,49 @@
 
 use alloc::string::ToString;
 use alloc::vec::Vec;
+use core::str::from_utf8;
 
+#[cfg(feature = "chrono")]
+use core::mem::size_of;
+
+use rasn::der::{decode, encode};
 use rasn::types::Utf8String;
 
 use crate::asn1::error::AnchorAsn1Error;
 use crate::generated::attribute_types::{attribute_value_type, AttributeValueType};
 
+#[cfg(feature = "serde")]
+use crate::kyc_schema::iso20022_engine::{decode_structured, encode_structured};
+
 /// Encode a semantic attribute value into its schema ASN.1 DER.
-pub fn encode_value<O: AsRef<str>>(oid: O, semantic: &[u8]) -> Result<Vec<u8>, AnchorAsn1Error> {
+pub fn encode_value(oid: impl AsRef<str>, semantic: impl AsRef<[u8]>) -> Result<Vec<u8>, AnchorAsn1Error> {
+	let semantic = semantic.as_ref();
 	match attribute_value_type(oid.as_ref()) {
-		Some(AttributeValueType::Utf8String) => Ok(rasn::der::encode(&Utf8String::from(as_utf8(semantic)?))?),
+		Some(AttributeValueType::Utf8String) => Ok(encode(&Utf8String::from(as_utf8(semantic)?))?),
 		#[cfg(feature = "chrono")]
 		Some(AttributeValueType::GeneralizedTime) => encode_time(semantic),
-		// Structured values encode to the positional (CHOICE-wrapped) DER via the
-		// rasn types; anything without a mapping falls back to the raw bytes.
+		// Structured values encode to positional DER through the schema-driven
+		// engine; anything without a schema falls back to the raw bytes.
 		#[cfg(feature = "serde")]
 		Some(AttributeValueType::Structured(token)) => {
-			Ok(crate::kyc_schema::iso20022_codec::encode_structured(token, semantic)
-				.unwrap_or_else(|_| semantic.to_vec()))
+			let encoded = encode_structured(token, semantic);
+			Ok(encoded.unwrap_or_else(|_| semantic.to_vec()))
 		}
 		_ => Ok(semantic.to_vec()),
 	}
 }
 
 /// Decode a schema ASN.1 DER attribute value back to its semantic form.
-pub fn decode_value<O: AsRef<str>>(oid: O, der: &[u8]) -> Result<Vec<u8>, AnchorAsn1Error> {
+pub fn decode_value(oid: impl AsRef<str>, der: impl AsRef<[u8]>) -> Result<Vec<u8>, AnchorAsn1Error> {
+	let der = der.as_ref();
 	let decoded = match attribute_value_type(oid.as_ref()) {
 		Some(AttributeValueType::Utf8String) => decode_utf8(der),
 		#[cfg(feature = "chrono")]
 		Some(AttributeValueType::GeneralizedTime) => decode_time(der),
-		// Decode the positional (CHOICE-wrapped) DER via the rasn types first, then
-		// fall back to the legacy bare-CHOICE walker for pre-wrapper certificates.
+		// Decode positional DER through the schema-driven engine; it tries the
+		// current schema then a context-stripped legacy schema internally.
 		#[cfg(feature = "serde")]
-		Some(AttributeValueType::Structured(token)) => crate::kyc_schema::iso20022_codec::decode_structured(token, der)
-			.or_else(|_| crate::kyc_schema::structured::decode_structured(token, der)),
+		Some(AttributeValueType::Structured(token)) => decode_structured(token, der),
 		_ => return Ok(der.to_vec()),
 	};
 
@@ -44,13 +53,13 @@ pub fn decode_value<O: AsRef<str>>(oid: O, der: &[u8]) -> Result<Vec<u8>, Anchor
 
 /// Decode a DER `UTF8String` into its raw UTF-8 bytes.
 fn decode_utf8(der: &[u8]) -> Result<Vec<u8>, AnchorAsn1Error> {
-	let text: Utf8String = rasn::der::decode(der)?;
+	let text: Utf8String = decode(der)?;
 	Ok(text.into_bytes())
 }
 
 /// Borrow attribute bytes as UTF-8, mapping invalid input to an encode error.
 fn as_utf8(bytes: &[u8]) -> Result<&str, AnchorAsn1Error> {
-	core::str::from_utf8(bytes).map_err(|error| AnchorAsn1Error::Asn1EncodeError { reason: error.to_string() })
+	from_utf8(bytes).map_err(|error| AnchorAsn1Error::Asn1EncodeError { reason: error.to_string() })
 }
 
 /// Encode a date/time string as ASN.1 `GeneralizedTime`, the canonical KYC time
@@ -68,12 +77,13 @@ fn encode_time(semantic: &[u8]) -> Result<Vec<u8>, AnchorAsn1Error> {
 	der.push(0x18);
 	der.push(body.len() as u8);
 	der.extend_from_slice(body.as_bytes());
+
 	Ok(der)
 }
 
 /// Decode a DER `UTCTime`/`GeneralizedTime` into an ISO-8601 (`toISOString`) form.
 #[cfg(feature = "chrono")]
-fn decode_time(der: &[u8]) -> Result<Vec<u8>, AnchorAsn1Error> {
+pub(crate) fn decode_time(der: &[u8]) -> Result<Vec<u8>, AnchorAsn1Error> {
 	use chrono::{TimeZone, Utc};
 
 	let (tag, value) = read_tlv(der)?;
@@ -100,7 +110,6 @@ fn read_tlv(der: &[u8]) -> Result<(u8, &[u8]), AnchorAsn1Error> {
 
 	let tag = *der.first().ok_or_else(decode_error)?;
 	let first_len = *der.get(1).ok_or_else(decode_error)? as usize;
-
 	let (length, header) = if first_len < 0x80 {
 		(first_len, 2)
 	} else {
@@ -108,14 +117,16 @@ fn read_tlv(der: &[u8]) -> Result<(u8, &[u8]), AnchorAsn1Error> {
 		// cannot fit a usize, then accumulate with checked arithmetic so untrusted
 		// input cannot overflow into a wrapped, attacker-chosen length.
 		let count = first_len & 0x7f;
-		if count == 0 || count > core::mem::size_of::<usize>() {
+		if count == 0 || count > size_of::<usize>() {
 			return Err(decode_error());
 		}
+
 		let bytes = der.get(2..2 + count).ok_or_else(decode_error)?;
 		let length = bytes
 			.iter()
 			.try_fold(0usize, |acc, byte| acc.checked_mul(256)?.checked_add(usize::from(*byte)))
 			.ok_or_else(decode_error)?;
+
 		(length, 2 + count)
 	};
 
@@ -136,6 +147,7 @@ fn parse_utc_time(body: &str) -> Option<chrono::NaiveDateTime> {
 	} else {
 		1900
 	};
+
 	let full = format!("{}{}", century + two_digit_year, body.get(2..)?);
 	NaiveDateTime::parse_from_str(&full, "%Y%m%d%H%M%S").ok()
 }
@@ -176,84 +188,110 @@ mod tests {
 	use crate::kyc_schema::testing::{assert_json_eq, from_hex};
 
 	#[test]
-	fn utf8_attribute_round_trips_through_der() {
+	fn utf8_attribute_round_trips_through_der() -> Result<(), Box<dyn std::error::Error>> {
 		let oid = oids::keeta::EMAIL.to_string();
-		let encoded = encode_value(&oid, b"john@example.com").unwrap();
+		let encoded = encode_value(&oid, b"john@example.com")?;
 		assert_ne!(encoded, b"john@example.com");
-		let decoded = decode_value(&oid, &encoded).unwrap();
+
+		let decoded = decode_value(&oid, &encoded)?;
 		assert_eq!(decoded, b"john@example.com");
+		Ok(())
 	}
 
 	#[test]
-	fn utf8_encoding_is_der_utf8string() {
+	fn utf8_encoding_is_der_utf8string() -> Result<(), Box<dyn std::error::Error>> {
 		let oid = oids::ADDRESS_POSTAL_CODE.to_string();
-		let encoded = encode_value(&oid, b"12345").unwrap();
+		let encoded = encode_value(&oid, b"12345")?;
 		assert_eq!(encoded, [0x0c, 0x05, b'1', b'2', b'3', b'4', b'5']);
+		Ok(())
 	}
 
 	#[test]
-	fn unknown_oid_passes_through() {
-		let decoded = decode_value("1.2.3.4.5", b"raw").unwrap();
+	fn unknown_oid_passes_through() -> Result<(), Box<dyn std::error::Error>> {
+		let decoded = decode_value("1.2.3.4.5", b"raw")?;
 		assert_eq!(decoded, b"raw");
+		Ok(())
 	}
 
 	#[test]
-	fn malformed_utf8_value_falls_back_to_raw() {
+	fn malformed_utf8_value_falls_back_to_raw() -> Result<(), Box<dyn std::error::Error>> {
 		let oid = oids::keeta::EMAIL.to_string();
-		let decoded = decode_value(&oid, &[0xff, 0xfe]).unwrap();
+		let decoded = decode_value(&oid, [0xff, 0xfe])?;
 		assert_eq!(decoded, [0xff, 0xfe]);
+		Ok(())
 	}
 
 	#[cfg(feature = "chrono")]
 	#[test]
-	fn pre_2050_date_encodes_as_generalized_time() {
+	fn pre_2050_date_encodes_as_generalized_time() -> Result<(), Box<dyn std::error::Error>> {
 		let oid = oids::keeta::DATE_OF_BIRTH.to_string();
-		let encoded = encode_value(&oid, b"1990-01-01").unwrap();
+		let encoded = encode_value(&oid, b"1990-01-01")?;
 		assert_eq!(encoded[0], 0x18);
-		let decoded = decode_value(&oid, &encoded).unwrap();
+
+		let decoded = decode_value(&oid, &encoded)?;
 		assert_eq!(decoded, b"1990-01-01T00:00:00.000Z");
+		Ok(())
 	}
 
 	#[cfg(feature = "chrono")]
 	#[test]
-	fn post_2050_date_encodes_as_generalized_time() {
+	fn post_2050_date_encodes_as_generalized_time() -> Result<(), Box<dyn std::error::Error>> {
 		let oid = oids::keeta::DATE_OF_BIRTH.to_string();
-		let encoded = encode_value(&oid, b"2080-06-15").unwrap();
+		let encoded = encode_value(&oid, b"2080-06-15")?;
 		assert_eq!(encoded[0], 0x18);
-		let decoded = decode_value(&oid, &encoded).unwrap();
+		let decoded = decode_value(&oid, &encoded)?;
 		assert_eq!(decoded, b"2080-06-15T00:00:00.000Z");
+		Ok(())
 	}
 
 	#[cfg(feature = "chrono")]
 	#[test]
-	fn decodes_typescript_utc_time() {
+	fn decodes_typescript_utc_time() -> Result<(), Box<dyn std::error::Error>> {
 		let oid = oids::keeta::DATE_OF_BIRTH.to_string();
 		let body = b"800101000000Z";
 		let mut der = alloc::vec![0x17u8, body.len() as u8];
 		der.extend_from_slice(body);
-		let decoded = decode_value(&oid, &der).unwrap();
+		let decoded = decode_value(&oid, &der)?;
 		assert_eq!(decoded, b"1980-01-01T00:00:00.000Z");
+		Ok(())
 	}
 
 	#[cfg(feature = "serde")]
 	#[test]
-	fn structured_address_round_trips_through_wrapped_der() {
+	fn structured_address_round_trips_bare_choice() -> Result<(), Box<dyn std::error::Error>> {
 		let oid = oids::keeta::ADDRESS.to_string();
 		let json = r#"{"addressType":"HOME","postalCode":"34677","townName":"Oldsmar"}"#;
-		let encoded = encode_value(&oid, json.as_bytes()).unwrap();
-		// CHOICE field carried under its positional [1] wrapper.
-		assert_eq!(encoded[2], 0xa1);
-		let decoded = decode_value(&oid, &encoded).unwrap();
+
+		// The bare CHOICE carries its alternative's own tag: [0] EXPLICIT, not a
+		// positional [1] wrapper.
+		let encoded = encode_value(&oid, json.as_bytes())?;
+		assert_eq!(encoded[2], 0xa0);
+
+		let decoded = decode_value(&oid, &encoded)?;
 		assert_json_eq(&decoded, json);
+		Ok(())
+	}
+
+	#[cfg(all(feature = "serde", feature = "chrono"))]
+	#[test]
+	fn legacy_utc_time_document_decodes() -> Result<(), Box<dyn std::error::Error>> {
+		let oid = oids::keeta::DOCUMENT_PASSPORT.to_string();
+		// [0] documentNumber "P1", [7] dob UTCTime 1990-01-01: the engine decodes
+		// the legacy UTCTime date form alongside the canonical GeneralizedTime.
+		let der = from_hex("3017a0040c025031a70f170d3930303130313030303030305a");
+		let decoded = decode_value(&oid, &der)?;
+		assert_json_eq(&decoded, r#"{"documentNumber":"P1","dob":"1990-01-01T00:00:00.000Z"}"#);
+		Ok(())
 	}
 
 	#[cfg(feature = "serde")]
 	#[test]
-	fn legacy_bare_entity_type_decodes_via_fallback() {
+	fn bare_entity_type_decodes() -> Result<(), Box<dyn std::error::Error>> {
 		let oid = oids::keeta::ENTITY_TYPE.to_string();
 		let bare = from_hex("301ca11a30183016a00d0c0b3132332d34352d36373839a0050c0353534e");
-		let decoded = decode_value(&oid, &bare).unwrap();
+		let decoded = decode_value(&oid, &bare)?;
 		assert_json_eq(&decoded, r#"{"person":[{"id":"123-45-6789","schemeName":"SSN"}]}"#);
+		Ok(())
 	}
 
 	#[cfg(feature = "chrono")]

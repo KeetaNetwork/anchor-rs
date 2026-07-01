@@ -17,12 +17,21 @@ pub enum AnchorError {
 
 	#[snafu(display("Sensitive attribute error: {}", source))]
 	SensitiveAttributeError { source: SensitiveAttributeError },
+
+	#[cfg(feature = "encrypted-container")]
+	#[snafu(display("Encrypted container error: {}", source))]
+	EncryptedContainerError { source: crate::encrypted_container::EncryptedContainerError },
 }
 
 impl_source_error_from!(AnchorError, {
 	AnchorAsn1Error => Asn1Error,
 	KycCertificateError => KycCertificateError,
 	SensitiveAttributeError => SensitiveAttributeError,
+});
+
+#[cfg(feature = "encrypted-container")]
+impl_source_error_from!(AnchorError, {
+	crate::encrypted_container::EncryptedContainerError => EncryptedContainerError,
 });
 
 #[cfg(test)]

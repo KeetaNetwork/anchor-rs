@@ -7,7 +7,7 @@ use alloc::borrow::Cow;
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use keetanetwork_account::{Account, KeyPair};
+use keetanetwork_account::{Account, AccountPublicKey, KeyPair};
 
 /// A single element of a signable payload.
 #[derive(Debug, Clone, PartialEq, Eq)]

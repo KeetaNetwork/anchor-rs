@@ -1,6 +1,6 @@
 [package]
 name = "keetanetwork-anchor"
-version.workspace = true
+version = "0.1.0"
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
@@ -34,6 +34,8 @@ serde_json = { workspace = true, default-features = false, features = [
 ], optional = true }
 uuid = { workspace = true, default-features = false, optional = true }
 url = { workspace = true, optional = true }
+miniz_oxide = { workspace = true, optional = true }
+num-bigint = { workspace = true, optional = true }
 keetanetwork-crypto = { workspace = true, default-features = false, features = [
 	"rasn",
 	"signature",
@@ -58,11 +60,14 @@ uuid = { workspace = true, features = ["js"], optional = true }
 [build-dependencies]
 rasn-compiler = { workspace = true }
 serde_json = { workspace = true, features = ["std"] }
-keetanetwork-asn1 = { version = "0.2.1" }
+keetanetwork-asn1 = { workspace = true, features = ["rasn", "serde"] }
 keetanetwork-utils = { workspace = true, features = ["build"] }
 
+[dev-dependencies]
+serde_json = { workspace = true, features = ["std"] }
+
 [features]
-default = ["std", "serde", "chrono", "signing"]
+default = ["std", "serde", "chrono", "signing", "encrypted-container", "sharable-attributes"]
 std = [
 	"alloc",
 	"snafu/std",
@@ -99,4 +104,6 @@ serde = [
 ]
 chrono = ["alloc", "dep:chrono"]
 signing = ["alloc", "dep:chrono", "dep:serde_json", "dep:uuid", "dep:url"]
+encrypted-container = ["alloc", "dep:miniz_oxide", "dep:num-bigint"]
+sharable-attributes = ["encrypted-container", "serde"]
 x509 = ["alloc", "dep:chrono"]

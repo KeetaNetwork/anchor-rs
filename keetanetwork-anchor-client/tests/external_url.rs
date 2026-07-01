@@ -88,9 +88,9 @@ impl AnchorHttpTransport for MapTransport {
 			return Ok(HttpResponse::new(404, Vec::new()));
 		};
 
-		let metadata = STANDARD.encode(serde_json::to_vec(document).unwrap());
+		let metadata = STANDARD.encode(serde_json::to_vec(document).expect("document serializes"));
 		let body = json!({ "info": { "metadata": metadata } });
-		Ok(HttpResponse::new(200, serde_json::to_vec(&body).unwrap()))
+		Ok(HttpResponse::new(200, serde_json::to_vec(&body).expect("response body serializes")))
 	}
 
 	async fn post(&self, _url: &str, _body: &[u8]) -> Result<HttpResponse, TransportError> {

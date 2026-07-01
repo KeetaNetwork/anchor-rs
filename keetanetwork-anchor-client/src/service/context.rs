@@ -21,7 +21,11 @@ pub struct AnchorContext {
 impl AnchorContext {
 	/// A context resolving through `resolver` and signing requests with
 	/// `signer` over `transport`.
-	pub fn new(resolver: Resolver, transport: Arc<dyn AnchorHttpTransport>, signer: Arc<GenericAccount>) -> Self {
+	pub fn new(
+		resolver: Resolver,
+		transport: Arc<dyn AnchorHttpTransport>,
+		signer: impl Into<Arc<GenericAccount>>,
+	) -> Self {
 		let caller = AnchorCaller::new(transport, signer);
 		Self { resolver, caller }
 	}

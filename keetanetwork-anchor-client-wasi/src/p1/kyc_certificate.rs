@@ -28,7 +28,7 @@ struct Leaves {
 }
 
 /// Store `certificate` under a fresh handle and return it.
-fn store_leaf(certificate: KycCertificate) -> i32 {
+pub(crate) fn store_leaf(certificate: KycCertificate) -> i32 {
 	LEAVES.with_borrow_mut(|leaves| {
 		leaves.next += 1;
 		let handle = leaves.next;
@@ -39,7 +39,7 @@ fn store_leaf(certificate: KycCertificate) -> i32 {
 
 /// Resolve `handle` to a clone of its leaf, recording an `INVALID_HANDLE` error
 /// when unknown.
-fn leaf(handle: i32) -> Option<KycCertificate> {
+pub(crate) fn leaf(handle: i32) -> Option<KycCertificate> {
 	let value = LEAVES.with_borrow(|leaves| leaves.certificates.get(&handle).cloned());
 	if value.is_none() {
 		fail(CodedError::new("INVALID_HANDLE", "unknown kyc-certificate handle"));
@@ -348,7 +348,7 @@ pub extern "C" fn keeta_kyc_certificate_free(handle: i32) {
 /// # Safety
 ///
 /// `(ptr, len)` MUST describe an initialized, readable guest buffer.
-unsafe fn resolve_certificates(ptr: i32, len: i32) -> Option<Vec<X509Certificate>> {
+pub(crate) unsafe fn resolve_certificates(ptr: i32, len: i32) -> Option<Vec<X509Certificate>> {
 	let bytes = unsafe { bytes_in(ptr, len) };
 	if !bytes.len().is_multiple_of(4) {
 		fail(CodedError::new("INVALID_HANDLE_LIST", "handle list must be 4-byte aligned"));

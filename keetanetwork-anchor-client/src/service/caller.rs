@@ -75,7 +75,8 @@ pub struct AnchorCaller {
 
 impl AnchorCaller {
 	/// A caller signing requests with `signer` over `transport`.
-	pub fn new(transport: Arc<dyn AnchorHttpTransport>, signer: Arc<GenericAccount>) -> Self {
+	pub fn new(transport: Arc<dyn AnchorHttpTransport>, signer: impl Into<Arc<GenericAccount>>) -> Self {
+		let signer = signer.into();
 		let account = signer.to_string();
 		Self { transport, signer, account }
 	}

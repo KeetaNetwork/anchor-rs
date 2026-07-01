@@ -1,6 +1,6 @@
 [package]
 name = "keetanetwork-anchor-bindings"
-version.workspace = true
+version = "0.1.0"
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
@@ -23,6 +23,8 @@ keetanetwork-bindings = { workspace = true }
 keetanetwork-anchor = { path = "../keetanetwork-anchor", default-features = false, features = [
 	"alloc",
 	"x509",
+	"encrypted-container",
+	"sharable-attributes",
 ] }
 keetanetwork-x509 = { workspace = true, default-features = false, features = [
 	"rasn",

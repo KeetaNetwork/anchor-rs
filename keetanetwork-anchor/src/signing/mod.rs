@@ -19,8 +19,8 @@ use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
 use chrono::{DateTime, SecondsFormat, Utc};
 use format::format_data;
-use keetanetwork_account::account::AccountSigner;
-use keetanetwork_account::{Account, GenericAccount, KeyPair};
+use keetanetwork_account::account::{AccountPublicKey, AccountSigner, AccountVerifier};
+use keetanetwork_account::{Account, KeyPair};
 use uuid::Uuid;
 
 /// Default allowed clock skew.
@@ -103,7 +103,7 @@ impl VerifyOptions {
 /// [`SignParams`] (e.g. for reproducible tests or replayed requests).
 pub fn sign<A, T>(account: &A, data: &T) -> Result<Signed, SigningError>
 where
-	A: AccountSigner + VerifyingAccount + ?Sized,
+	A: AccountSigner + AccountPublicKey + ?Sized,
 	T: ToSignable + ?Sized,
 {
 	let params = SignParams::generate();
@@ -113,7 +113,7 @@ where
 /// Sign `data` with `account` using explicit [`SignParams`].
 pub fn sign_with<A, T>(account: &A, data: &T, params: &SignParams) -> Result<Signed, SigningError>
 where
-	A: AccountSigner + VerifyingAccount + ?Sized,
+	A: AccountSigner + AccountPublicKey + ?Sized,
 	T: ToSignable + ?Sized,
 {
 	ensure_canonical_timestamp(&params.timestamp)?;
@@ -129,11 +129,12 @@ where
 /// `data` under `account` and `params`.
 pub fn verification_data<A, T>(account: &A, data: &T, params: &SignParams) -> Result<Vec<u8>, SigningError>
 where
-	A: VerifyingAccount + ?Sized,
+	A: AccountPublicKey + ?Sized,
 	T: ToSignable + ?Sized,
 {
 	let parts = data.to_signable();
-	let signer = account.public_key_with_type();
+	let signer = account.to_public_key_with_type();
+
 	format_data(&signer, &params.nonce, &params.timestamp, &parts)
 }
 
@@ -151,41 +152,10 @@ where
 	verify_envelope(account, data, signed, options)
 }
 
-/// An account that can verify a signature and expose its `publicKeyAndType`
-/// transport bytes. Implemented for both the statically typed [`Account`]
-/// and the runtime-typed [`GenericAccount`].
-pub trait VerifyingAccount {
-	fn public_key_with_type(&self) -> Vec<u8>;
-	fn verify_signature(&self, message: &[u8], signature: &[u8]) -> Result<(), VerifyError>;
-}
-
-impl<K> VerifyingAccount for Account<K>
-where
-	K: KeyPair,
-{
-	fn public_key_with_type(&self) -> Vec<u8> {
-		self.to_public_key_with_type()
-	}
-
-	fn verify_signature(&self, message: &[u8], signature: &[u8]) -> Result<(), VerifyError> {
-		self.verify(message, signature, None)
-			.map_err(|_| VerifyError::SignatureMismatch)
-	}
-}
-
-impl VerifyingAccount for GenericAccount {
-	fn public_key_with_type(&self) -> Vec<u8> {
-		self.to_public_key_with_type()
-	}
-
-	fn verify_signature(&self, message: &[u8], signature: &[u8]) -> Result<(), VerifyError> {
-		self.verify(message, signature, None)
-			.map_err(|_| VerifyError::SignatureMismatch)
-	}
-}
-
-/// Verify a [`Signed`] envelope against any [`VerifyingAccount`]: enforce the
-/// canonical timestamp, the clock-skew window, then the signature itself.
+/// Verify a [`Signed`] envelope against any account that exposes its public key
+/// and can verify: enforce the canonical timestamp, the clock-skew window, then
+/// the signature itself. Satisfied by both [`Account`] and the runtime-typed
+/// `GenericAccount`.
 pub(crate) fn verify_envelope<A, T>(
 	account: &A,
 	data: &T,
@@ -193,7 +163,7 @@ pub(crate) fn verify_envelope<A, T>(
 	options: &VerifyOptions,
 ) -> Result<(), VerifyError>
 where
-	A: VerifyingAccount + ?Sized,
+	A: AccountPublicKey + AccountVerifier + ?Sized,
 	T: ToSignable + ?Sized,
 {
 	let parsed_timestamp = DateTime::parse_from_rfc3339(&signed.timestamp)?;
@@ -209,10 +179,12 @@ where
 
 	let signature = STANDARD.decode(&signed.signature)?;
 	let parts = data.to_signable();
-	let signer = account.public_key_with_type();
+	let signer = account.to_public_key_with_type();
 	let verification = format_data(&signer, &signed.nonce, &signed.timestamp, &parts)?;
 
-	account.verify_signature(&verification, &signature)
+	account
+		.verify(&verification, &signature, None)
+		.map_err(|_| VerifyError::SignatureMismatch)
 }
 
 /// Format `instant` exactly as JavaScript's `Date.prototype.toISOString`:
@@ -238,11 +210,10 @@ mod tests {
 	use super::*;
 
 	#[test]
-	fn format_iso8601_uses_milliseconds_and_zulu() {
-		let instant = DateTime::parse_from_rfc3339("2024-01-02T03:04:05.678Z")
-			.unwrap()
-			.with_timezone(&Utc);
+	fn format_iso8601_uses_milliseconds_and_zulu() -> Result<(), Box<dyn std::error::Error>> {
+		let instant = DateTime::parse_from_rfc3339("2024-01-02T03:04:05.678Z")?.with_timezone(&Utc);
 		assert_eq!(format_iso8601(instant), "2024-01-02T03:04:05.678Z");
+		Ok(())
 	}
 
 	#[test]

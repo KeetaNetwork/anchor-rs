@@ -15,6 +15,11 @@ use crate::certificates::{KycCertificate, KycCertificateBuilder};
 use crate::kyc_schema::builder::AttributeBuilderLike;
 use crate::kyc_schema::{Attribute, AttributeBuilder, KycAttributes, KycAttributesBuilder};
 use crate::sensitive_attributes::{SensitiveAttribute, SensitiveAttributeBuilder, SensitiveAttributeProof};
+#[cfg(feature = "sharable-attributes")]
+use keetanetwork_account::GenericAccount;
+
+#[cfg(feature = "sharable-attributes")]
+use crate::sharable_attributes::SharableCertificateAttributes;
 
 /// Test data from TypeScript test
 pub const TEST_SEED: &str = "D6986115BE7334E50DA8D73B1A4670A510E8BF47E8C5C9960B8F5248EC7D6E3D";
@@ -52,14 +57,15 @@ macro_rules! test_all_key_types {
 }
 
 /// Helper function to create an account from a hex seed string for different key types.
-pub fn create_account_from_seed_hex<T>(hex_seed: &str, index: u32) -> Account<T>
+pub fn create_account_from_seed_hex<T>(hex_seed: impl AsRef<str>, index: u32) -> Account<T>
 where
 	T: KeyPair,
 	Account<T>: TryFrom<Accountable<T>, Error = AccountError>,
 {
-	let seed_bytes = hex::decode(hex_seed).expect("Invalid hex seed");
+	let seed_bytes = hex::decode(hex_seed.as_ref()).expect("Invalid hex seed");
 	let seed_array: [u8; 32] = seed_bytes.try_into().expect("Seed must be 32 bytes");
-	let seed = Keyable::Seed((seed_array.into_secret(), index));
+	let secret = seed_array.into_secret();
+	let seed = Keyable::Seed((secret, index));
 	let accountable = Accountable::KeyAndType(seed, T::KEY_PAIR_TYPE);
 	Account::<T>::try_from(accountable).expect("Failed to create account from seed")
 }
@@ -85,36 +91,53 @@ where
 		.expect("Failed to get public key string");
 	let keyable = Keyable::PublicKeyString(public_key_string);
 	let accountable = Accountable::KeyAndType(keyable, T::KEY_PAIR_TYPE);
-	Account::<T>::try_from(accountable).unwrap()
+	Account::<T>::try_from(accountable).expect("create public-key-only account")
 }
 
 /// Helper function to create a sensitive attribute and proof for testing.
 pub fn create_test_sensitive_attribute_with_proof<T: KeyPair>(
 	account: &Account<T>,
-	test_value: &[u8],
+	test_value: impl AsRef<[u8]>,
 ) -> (SensitiveAttribute, SensitiveAttributeProof) {
-	let builder = SensitiveAttributeBuilder::new().with_value(test_value);
-	let sensitive_attr = builder.build(&account.keypair).unwrap();
-	let proof = sensitive_attr.to_proof(&account.keypair).unwrap();
+	let value = test_value.as_ref().to_vec();
+	let builder = SensitiveAttributeBuilder::new().with_value(value);
+
+	let sensitive_attr = builder
+		.build(&account.keypair)
+		.expect("build sensitive attribute");
+	let proof = sensitive_attr
+		.to_proof(&account.keypair)
+		.expect("prove sensitive attribute");
+
 	(sensitive_attr, proof)
 }
 
 /// Helper function to create just a sensitive attribute for testing.
-pub fn create_test_sensitive_attribute<T: KeyPair>(account: &Account<T>, test_value: &[u8]) -> SensitiveAttribute {
-	let builder = SensitiveAttributeBuilder::new().with_value(test_value);
-	builder.build(&account.keypair).unwrap()
+pub fn create_test_sensitive_attribute<T: KeyPair>(
+	account: &Account<T>,
+	test_value: impl AsRef<[u8]>,
+) -> SensitiveAttribute {
+	let value = test_value.as_ref().to_vec();
+	let builder = SensitiveAttributeBuilder::new().with_value(value);
+
+	builder
+		.build(&account.keypair)
+		.expect("build sensitive attribute")
 }
 
 /// Helper function to create a KycCertificateBuilder with default test data.
 pub fn create_test_certificate_builder<T: KeyPair>(account: &Account<T>) -> KycCertificateBuilder {
-	let subject_dn = keetanetwork_x509::utils::create_dn(&[(keetanetwork_x509::oids::CN, "Test Subject")]).unwrap();
-	let subject_public_key_info = SubjectPublicKeyInfo::try_from(account).unwrap();
+	let subject_dn =
+		keetanetwork_x509::utils::create_dn(&[(keetanetwork_x509::oids::CN, "Test Subject")]).expect("test subject dn");
+	let subject_public_key_info = SubjectPublicKeyInfo::try_from(account).expect("subject public key info");
+	let serial = SerialNumber::from(12345u64);
+	let validity_days = 365;
 
 	KycCertificateBuilder::for_end_entity()
 		.with_subject_dn(subject_dn.clone())
 		.with_issuer_dn(subject_dn)
-		.with_serial_number(SerialNumber::from(12345u64))
-		.with_validity_days(365)
+		.with_serial_number(serial)
+		.with_validity_days(validity_days)
 		.with_subject_public_key(subject_public_key_info)
 }
 
@@ -130,34 +153,40 @@ pub fn create_test_kyc_attributes() -> KycAttributes {
 		}
 	}
 
-	builder.build().unwrap()
+	builder.build().expect("build kyc attributes")
 }
 
 /// Issue a self-signed CA and an end-entity leaf for `subject_seed_hex`, encoding
 /// each `(name, semantic, sensitive)` attribute through the production codec and
 /// encrypting the sensitive ones to the subject.
-pub fn issue_leaf_pem(subject_seed_hex: &str, attributes: &[(&str, &[u8], bool)]) -> (String, String) {
+pub fn issue_leaf_pem(subject_seed_hex: impl AsRef<str>, attributes: &[(&str, &[u8], bool)]) -> (String, String) {
 	let subject = create_account_from_seed_hex::<KeyECDSASECP256K1>(subject_seed_hex, 0);
 	let issuer = create_account_from_seed::<KeyECDSASECP256K1>(1);
 
 	let ca_dn = create_dn(&[(keetanetwork_x509::oids::CN, "Test CA Root")]).expect("CA distinguished name");
+	let serial = SerialNumber::from(1u64);
+	let validity_days = 3650;
+	let public_key = SubjectPublicKeyInfo::try_from(&issuer).expect("CA public key info");
 	let ca = KycCertificateBuilder::for_ca()
 		.with_subject_dn(ca_dn.clone())
 		.with_issuer_dn(ca_dn.clone())
-		.with_serial_number(SerialNumber::from(1u64))
-		.with_validity_days(3650)
-		.with_subject_public_key(SubjectPublicKeyInfo::try_from(&issuer).expect("CA public key info"))
+		.with_serial_number(serial)
+		.with_validity_days(validity_days)
+		.with_subject_public_key(public_key)
 		.with_basic_constraints(true, Some(5))
 		.build(&issuer.keypair, &issuer.keypair)
 		.expect("CA certificate");
 
 	let subject_dn = create_dn(&[(keetanetwork_x509::oids::CN, "Test Subject")]).expect("subject DN");
+	let serial = SerialNumber::from(4u64);
+	let validity_days = 365;
+	let public_key = SubjectPublicKeyInfo::try_from(&subject).expect("subject public key info");
 	let mut builder = KycCertificateBuilder::for_end_entity()
 		.with_subject_dn(subject_dn)
 		.with_issuer_dn(ca_dn)
-		.with_serial_number(SerialNumber::from(4u64))
-		.with_validity_days(365)
-		.with_subject_public_key(SubjectPublicKeyInfo::try_from(&subject).expect("subject public key info"));
+		.with_serial_number(serial)
+		.with_validity_days(validity_days)
+		.with_subject_public_key(public_key);
 
 	for (name, value, sensitive) in attributes {
 		builder = if *sensitive {
@@ -179,18 +208,95 @@ pub fn issue_leaf_pem(subject_seed_hex: &str, attributes: &[(&str, &[u8], bool)]
 /// Parse a leaf PEM and decrypt the sensitive attribute `name` with the key for
 /// `subject_seed_hex`, returning the decoded semantic bytes. The inverse of
 /// [`issue_leaf_pem`] for reading an externally issued leaf through the core.
-pub fn read_sensitive_attribute(leaf_pem: &str, subject_seed_hex: &str, name: &str) -> Vec<u8> {
+pub fn read_sensitive_attribute(
+	leaf_pem: impl AsRef<str>,
+	subject_seed_hex: impl AsRef<str>,
+	name: impl AsRef<str>,
+) -> Vec<u8> {
 	let subject = create_account_from_seed_hex::<KeyECDSASECP256K1>(subject_seed_hex, 0);
-	let x509 = X509Certificate::from_str(leaf_pem).expect("leaf PEM parses");
+	let x509 = X509Certificate::from_str(leaf_pem.as_ref()).expect("leaf PEM parses");
 	let certificate = KycCertificate::new(x509);
+
 	certificate
 		.decrypt_kyc_attribute(name, &subject.keypair)
 		.expect("sensitive attribute decrypts")
 }
 
+/// Issue an end-entity leaf for `subject_seed_hex`, wrap the named attributes in
+/// a sharable bundle, grant `recipient_seed_hex` access, and export the PEM
+/// envelope. Sensitive attributes are proven with the subject key; plain ones
+/// carry their certificate value. The inverse of [`open_sharable_buffer`].
+#[cfg(feature = "sharable-attributes")]
+pub fn export_sharable_pem(
+	subject_seed_hex: impl AsRef<str>,
+	recipient_seed_hex: impl AsRef<str>,
+	attributes: &[(&str, &[u8], bool)],
+) -> String {
+	let serial = SerialNumber::from(4u64);
+	let validity_days = 365;
+	let subject = create_account_from_seed_hex::<KeyECDSASECP256K1>(subject_seed_hex, 0);
+	let issuer = create_account_from_seed::<KeyECDSASECP256K1>(1);
+
+	let public_key = SubjectPublicKeyInfo::try_from(&subject).expect("subject public key info");
+	let subject_dn = create_dn(&[(keetanetwork_x509::oids::CN, "Test Subject")]).expect("subject DN");
+	let issuer_dn = create_dn(&[(keetanetwork_x509::oids::CN, "Test Issuer")]).expect("issuer DN");
+	let mut builder = KycCertificateBuilder::for_end_entity()
+		.with_subject_dn(subject_dn)
+		.with_issuer_dn(issuer_dn)
+		.with_serial_number(serial)
+		.with_validity_days(validity_days)
+		.with_subject_public_key(public_key);
+
+	for (name, value, sensitive) in attributes {
+		builder = if *sensitive {
+			builder.with_sensitive_attribute(*name, value.to_vec().into_secret())
+		} else {
+			builder.with_plain_attribute(*name, value)
+		};
+	}
+
+	let certificate = builder
+		.build(&subject.keypair, &issuer.keypair)
+		.expect("leaf certificate");
+
+	let subject_account = GenericAccount::EcdsaSecp256k1(subject);
+	let recipient = create_account_from_seed_hex::<KeyECDSASECP256K1>(recipient_seed_hex, 0);
+	let recipient_account = GenericAccount::EcdsaSecp256k1(recipient);
+	let names: Vec<&str> = attributes.iter().map(|(name, _, _)| *name).collect();
+
+	let mut sharable = SharableCertificateAttributes::from_certificate(&certificate, &subject_account, &[], names)
+		.expect("build sharable attributes");
+	sharable
+		.grant_access([recipient_account])
+		.expect("grant recipient access");
+
+	sharable.to_pem().expect("export sharable PEM")
+}
+
+/// Open a sharable bundle PEM with the key for `recipient_seed_hex` and return
+/// the disclosed buffer for `name`, validated against the embedded certificate.
+/// The inverse of [`export_sharable_pem`] for reading an externally exported
+/// bundle through the core.
+#[cfg(feature = "sharable-attributes")]
+pub fn open_sharable_buffer(
+	pem: impl AsRef<str>,
+	recipient_seed_hex: impl AsRef<str>,
+	name: impl AsRef<str>,
+) -> Option<Vec<u8>> {
+	let recipient = create_account_from_seed_hex::<KeyECDSASECP256K1>(recipient_seed_hex, 0);
+	let recipient_account = GenericAccount::EcdsaSecp256k1(recipient);
+	let mut sharable =
+		SharableCertificateAttributes::from_pem(pem.as_ref(), [recipient_account]).expect("import sharable PEM");
+	sharable
+		.attribute_buffer(name)
+		.expect("read sharable attribute")
+}
+
 /// Helper to create individual test attributes
-pub fn create_test_attribute(oid_str: &str, value: &[u8], is_sensitive: bool) -> Attribute {
-	let mut builder = AttributeBuilder::new().with_oid(oid_str).with_value(value);
+pub fn create_test_attribute(oid_str: impl AsRef<str>, value: impl AsRef<[u8]>, is_sensitive: bool) -> Attribute {
+	let mut builder = AttributeBuilder::new()
+		.with_oid(oid_str.as_ref())
+		.with_value(value);
 
 	if is_sensitive {
 		builder = builder.as_sensitive();
@@ -198,5 +304,5 @@ pub fn create_test_attribute(oid_str: &str, value: &[u8], is_sensitive: bool) ->
 		builder = builder.as_plain();
 	}
 
-	builder.build().unwrap()
+	builder.build().expect("build attribute")
 }
