@@ -10,12 +10,12 @@ pub mod request;
 pub mod response;
 
 pub use asset::{canonicalize_asset, AssetOrPair};
-pub use client::AssetMovementClient;
+pub use client::{AssetMovementClient, PollOptions};
 pub use error::{AccountStatus, AssetMovementBlocker};
 pub use location::{canonicalize_location, AssetLocation, ChainLocation};
 pub use metadata::{
 	AssetMovementOperations, AssetMovementProvider, AssetMovementQuery, EndpointAuth, OperationEndpoint,
-	ProviderFilter, OPERATION_NAMES,
+	ProviderFilter, ProviderSearch, OPERATION_NAMES,
 };
 pub use request::{
 	CreateForwardingAddressRequest, CreateForwardingTemplateRequest, ExecuteTransferRequest, ForwardingAddressFilter,

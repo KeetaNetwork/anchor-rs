@@ -4,13 +4,14 @@
 use alloc::string::{String, ToString};
 use alloc::vec;
 use alloc::vec::Vec;
+use core::future::Future;
 
 use keetanetwork_anchor::signing::Signable;
 use serde::de::DeserializeOwned;
 use serde_json::{Map, Value};
 
 use super::error::{AccountStatus, AssetMovementBlocker};
-use super::metadata::{AssetMovementProvider, AssetMovementQuery, EndpointAuth, ProviderFilter};
+use super::metadata::{AssetMovementProvider, AssetMovementQuery, EndpointAuth, ProviderFilter, ProviderSearch};
 use super::request::{
 	id_literal, literal, CreateForwardingAddressRequest, CreateForwardingTemplateRequest, ExecuteTransferRequest,
 	InitiateForwardingTemplateRequest, ListForwardingAddressesRequest, ListForwardingTemplatesRequest,
@@ -25,6 +26,23 @@ use crate::service::{AnchorContext, AnchorOutcome, Auth, BodyEnvelope, Call, End
 
 /// The wire request fields, keyed by name.
 type Fields = Map<String, Value>;
+
+/// How to pace and bound a polled operation (e.g. awaiting a share-KYC
+/// promise).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PollOptions {
+	/// The minimum delay between polls, in milliseconds. The provider's
+	/// `retryAfter` hint overrides this when it is longer.
+	pub interval_ms: u32,
+	/// The overall deadline, in milliseconds, after which the poll gives up.
+	pub timeout_ms: u32,
+}
+
+impl Default for PollOptions {
+	fn default() -> Self {
+		Self { interval_ms: 2_000, timeout_ms: 300_000 }
+	}
+}
 
 /// An asset-movement anchor client over a shared [`AnchorContext`].
 ///
@@ -50,6 +68,23 @@ impl AssetMovementClient {
 	pub async fn providers(&self) -> Result<Vec<AssetMovementProvider>, AnchorClientError> {
 		let providers = self.lookup(ProviderFilter::default()).await?;
 		Ok(providers)
+	}
+
+	/// Every provider whose published `supportedAssets` satisfies `search`
+	/// (asset, endpoints, and rails).
+	///
+	/// # Errors
+	///
+	/// Returns [`AnchorClientError`] when no metadata root can be read.
+	pub async fn providers_for_transfer(
+		&self,
+		search: &ProviderSearch,
+	) -> Result<Vec<AssetMovementProvider>, AnchorClientError> {
+		let providers = self.providers().await?;
+		Ok(providers
+			.into_iter()
+			.filter(|provider| search.accepts(provider))
+			.collect())
 	}
 
 	/// The provider with `id`, when one advertises asset movement.
@@ -358,6 +393,39 @@ impl AssetMovementClient {
 			.await
 	}
 
+	/// Share KYC attributes and, when the anchor reports the share pending with
+	/// a promise URL, poll that URL to completion.
+	///
+	/// `sleep` pauses between polls; `options` bounds the interval and overall
+	/// deadline. Elapsed time is summed from the observed delays, so no wall
+	/// clock is required.
+	///
+	/// # Errors
+	///
+	/// Returns [`AnchorClientError::UnsupportedOperation`] when the provider
+	/// does not advertise `shareKYC`, [`AnchorClientError::Timeout`] when the
+	/// promise does not resolve within `options.timeout_ms`, or any request
+	/// failure.
+	pub async fn share_kyc_await<S, Fut>(
+		&self,
+		provider: &AssetMovementProvider,
+		request: &ShareKycRequest,
+		options: PollOptions,
+		sleep: S,
+	) -> Result<ShareKycOutcome, AnchorClientError>
+	where
+		S: Fn(u32) -> Fut,
+		Fut: Future<Output = ()>,
+	{
+		let outcome = self.share_kyc(provider, request).await?;
+		let Some(promise_url) = outcome.promise_url.clone().filter(|_| outcome.is_pending) else {
+			return Ok(outcome);
+		};
+
+		let url = self.resolve_promise_url(provider, &promise_url)?;
+		self.poll_promise(&url, options, sleep).await
+	}
+
 	/// The signer's account string.
 	fn account(&self) -> &str {
 		self.context.caller().account()
@@ -414,6 +482,73 @@ impl AssetMovementClient {
 		let outcome = self.context.caller().invoke(call).await?;
 		expect_ready(outcome)
 	}
+
+	/// Resolve a (possibly relative) share-KYC promise URL against the
+	/// provider's `shareKYC` endpoint.
+	fn resolve_promise_url(
+		&self,
+		provider: &AssetMovementProvider,
+		promise_url: &str,
+	) -> Result<String, AnchorClientError> {
+		let (endpoint, _auth) = operation(provider, "shareKYC")?;
+		let base = endpoint.url(&[])?;
+		join_promise_url(base.as_str(), promise_url)
+	}
+
+	/// Poll `url` until the anchor reports the pending share complete, pausing
+	/// with `sleep` between polls and giving up once the summed delay exceeds
+	/// `options.timeout_ms`.
+	async fn poll_promise<S, Fut>(
+		&self,
+		url: &str,
+		options: PollOptions,
+		sleep: S,
+	) -> Result<ShareKycOutcome, AnchorClientError>
+	where
+		S: Fn(u32) -> Fut,
+		Fut: Future<Output = ()>,
+	{
+		let endpoint = Endpoint::from(url);
+		let signed: [Signable<'_>; 0] = [];
+		let mut elapsed_ms: u32 = 0;
+
+		loop {
+			let call = Call {
+				endpoint: &endpoint,
+				params: &[],
+				method: Method::Get,
+				auth: Auth::None,
+				signed: &signed,
+				envelope: BodyEnvelope::Flat,
+				body: None,
+			};
+
+			match self.context.caller().invoke::<Value>(call).await? {
+				AnchorOutcome::Ready(_) => return Ok(ShareKycOutcome { is_pending: false, promise_url: None }),
+				AnchorOutcome::Retry { after_ms } => {
+					let wait = after_ms.max(options.interval_ms).max(1);
+					if elapsed_ms.saturating_add(wait) > options.timeout_ms {
+						return Err(AnchorClientError::Timeout {
+							operation: "shareKYC",
+							timeout_ms: options.timeout_ms,
+						});
+					}
+
+					sleep(wait).await;
+					elapsed_ms = elapsed_ms.saturating_add(wait);
+				}
+			}
+		}
+	}
+}
+
+/// Resolve a promise URL against the share-KYC endpoint `base`. An absolute
+/// promise URL replaces the base; a root- or path-relative one is joined onto
+/// it.
+fn join_promise_url(base: &str, promise: &str) -> Result<String, AnchorClientError> {
+	let base = url::Url::parse(base)?;
+	let joined = base.join(promise)?;
+	Ok(joined.to_string())
 }
 
 /// The endpoint and authentication for an advertised operation, or a typed
@@ -514,5 +649,26 @@ mod tests {
 	fn an_unrecognized_error_is_a_service_failure() {
 		let body = json!({ "ok": false, "name": "Other", "code": "NOPE", "error": "boom" });
 		assert!(matches!(resolve_account_status(&body, 500), Err(AnchorClientError::Service { status: 500 })));
+	}
+
+	#[test]
+	fn a_root_relative_promise_url_resolves_against_the_share_endpoint() -> Result<(), AnchorClientError> {
+		let resolved = join_promise_url("https://anchor.example/api/shareKYC", "/_promises/abc")?;
+		assert_eq!(resolved, "https://anchor.example/_promises/abc");
+		Ok(())
+	}
+
+	#[test]
+	fn a_path_relative_promise_url_resolves_beside_the_endpoint() -> Result<(), AnchorClientError> {
+		let resolved = join_promise_url("https://anchor.example/api/shareKYC", "status/42")?;
+		assert_eq!(resolved, "https://anchor.example/api/status/42");
+		Ok(())
+	}
+
+	#[test]
+	fn an_absolute_promise_url_replaces_the_base() -> Result<(), AnchorClientError> {
+		let resolved = join_promise_url("https://anchor.example/api/shareKYC", "https://other.example/p/1")?;
+		assert_eq!(resolved, "https://other.example/p/1");
+		Ok(())
 	}
 }

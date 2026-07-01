@@ -174,6 +174,15 @@ pub enum AnchorClientError {
 		/// The operation name that was missing.
 		operation: &'static str,
 	},
+
+	/// A polled operation did not complete within its deadline.
+	#[snafu(display("operation `{operation}` did not complete within {timeout_ms} ms"))]
+	Timeout {
+		/// The operation that was awaited.
+		operation: &'static str,
+		/// The deadline that elapsed, in milliseconds.
+		timeout_ms: u32,
+	},
 }
 
 impl AnchorClientError {
@@ -189,6 +198,7 @@ impl AnchorClientError {
 			Self::Body { .. } => "INVALID_BODY",
 			Self::Service { .. } => "SERVICE",
 			Self::UnsupportedOperation { .. } => "UNSUPPORTED_OPERATION",
+			Self::Timeout { .. } => "TIMEOUT",
 		}
 	}
 }

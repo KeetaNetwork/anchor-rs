@@ -9,15 +9,16 @@ use std::sync::Arc;
 
 use keetanetwork_account::GenericAccount;
 use keetanetwork_anchor_bindings::error::CodedError as CoreCodedError;
-use keetanetwork_anchor_client::resilience::{ResilientTransport, WasiRuntime};
+use keetanetwork_anchor_client::resilience::{ResilienceRuntime, ResilientTransport, WasiRuntime};
 use keetanetwork_anchor_client::{
-	AnchorContext, AnchorHttpTransport, AssetMovementClient, ProviderFilter, Resolver, WasiTransport,
+	AnchorContext, AnchorHttpTransport, AssetMovementClient, PollOptions, ProviderFilter, Resolver, WasiTransport,
 };
 
 use crate::asset_json::{
 	create_address_request, create_template_request, encode, encode_account_status, encode_ack, encode_provider,
 	encode_providers, execute_request, filter_providers, initiate_template_request, list_addresses_request,
-	list_templates_request, list_transactions_request, parse_provider, share_kyc_request, transfer_request,
+	list_templates_request, list_transactions_request, parse_provider, parse_provider_search, share_kyc_request,
+	transfer_request,
 };
 
 use super::exports::keeta::anchor::asset_movement::{
@@ -51,6 +52,7 @@ impl GuestAssetClient for AssetSession {
 		let one = filter_providers(all, &ProviderFilter::by_id(id))
 			.into_iter()
 			.next();
+
 		text(encode_provider(one))
 	}
 
@@ -62,10 +64,17 @@ impl GuestAssetClient for AssetSession {
 		text(encode_provider(one))
 	}
 
+	fn providers_for_transfer(&self, search: String) -> Result<String, CodedError> {
+		let search = core(parse_provider_search(&search))?;
+		let providers = run(self.inner.providers_for_transfer(&search))?;
+		text(encode_providers(providers))
+	}
+
 	fn simulate_transfer(&self, provider: String, request: String) -> Result<String, CodedError> {
 		let provider = core(parse_provider(&provider))?;
 		let request = core(transfer_request(&request))?;
 		let outcome = run(self.inner.simulate_transfer(&provider, &request))?;
+
 		text(encode(&outcome))
 	}
 
@@ -73,6 +82,7 @@ impl GuestAssetClient for AssetSession {
 		let provider = core(parse_provider(&provider))?;
 		let request = core(transfer_request(&request))?;
 		let outcome = run(self.inner.initiate_transfer(&provider, &request))?;
+
 		text(encode(&outcome))
 	}
 
@@ -80,6 +90,7 @@ impl GuestAssetClient for AssetSession {
 		let provider = core(parse_provider(&provider))?;
 		let request = core(execute_request(&request))?;
 		let outcome = run(self.inner.execute_transfer(&provider, &request))?;
+
 		text(encode(&outcome))
 	}
 
@@ -99,6 +110,7 @@ impl GuestAssetClient for AssetSession {
 		let provider = core(parse_provider(&provider))?;
 		let request = core(initiate_template_request(&request))?;
 		let outcome = run(self.inner.initiate_forwarding_template(&provider, &request))?;
+
 		text(encode(&outcome))
 	}
 
@@ -106,6 +118,7 @@ impl GuestAssetClient for AssetSession {
 		let provider = core(parse_provider(&provider))?;
 		let request = core(create_template_request(&request))?;
 		let outcome = run(self.inner.create_forwarding_template(&provider, &request))?;
+
 		text(encode(&outcome))
 	}
 
@@ -113,6 +126,7 @@ impl GuestAssetClient for AssetSession {
 		let provider = core(parse_provider(&provider))?;
 		let request = core(list_templates_request(&request))?;
 		let outcome = run(self.inner.list_forwarding_templates(&provider, &request))?;
+
 		text(encode(&outcome))
 	}
 
@@ -120,6 +134,7 @@ impl GuestAssetClient for AssetSession {
 		let provider = core(parse_provider(&provider))?;
 		let request = core(create_address_request(&request))?;
 		let details = run(self.inner.create_forwarding_address(&provider, &request))?;
+
 		text(encode(&details))
 	}
 
@@ -127,6 +142,7 @@ impl GuestAssetClient for AssetSession {
 		let provider = core(parse_provider(&provider))?;
 		let request = core(list_addresses_request(&request))?;
 		let outcome = run(self.inner.list_forwarding_addresses(&provider, &request))?;
+
 		text(encode(&outcome))
 	}
 
@@ -146,6 +162,7 @@ impl GuestAssetClient for AssetSession {
 		let provider = core(parse_provider(&provider))?;
 		let request = core(list_transactions_request(&request))?;
 		let outcome = run(self.inner.list_transactions(&provider, &request))?;
+
 		text(encode(&outcome))
 	}
 
@@ -153,6 +170,20 @@ impl GuestAssetClient for AssetSession {
 		let provider = core(parse_provider(&provider))?;
 		let request = core(share_kyc_request(&request))?;
 		let outcome = run(self.inner.share_kyc(&provider, &request))?;
+
+		text(encode(&outcome))
+	}
+
+	fn share_kyc_await(&self, provider: String, request: String) -> Result<String, CodedError> {
+		let provider = core(parse_provider(&provider))?;
+		let request = core(share_kyc_request(&request))?;
+		let outcome =
+			run(self
+				.inner
+				.share_kyc_await(&provider, &request, PollOptions::default(), |millis| async move {
+					WasiRuntime.sleep_ms(u64::from(millis)).await;
+				}))?;
+
 		text(encode(&outcome))
 	}
 }

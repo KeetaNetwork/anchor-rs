@@ -295,15 +295,49 @@ static void AssetMovementSelfTest(WasmRuntime runtime)
 		AssetProvider provider = client.ProviderById(providerId)
 			?? throw new InvalidOperationException($"{algorithm}: provider `{providerId}` was not advertised");
 
+		// Provider search over the advertised evm->keeta KEETA_SEND path: a
+		// directional search surfaces the provider.
+		AssetProviderSearch search = new(
+			asset,
+			From: "chain:evm:100",
+			To: "chain:keeta:100",
+			InboundRails: new[] { "KEETA_SEND" },
+			OutboundRails: new[] { "KEETA_SEND" });
+		Require(
+			client.GetProvidersForTransfer(search).Any(candidate => candidate.Id == providerId),
+			$"{algorithm}: provider search must surface the matching provider");
+		Require(
+			client.GetProvidersForTransfer(new AssetProviderSearch(asset, From: "chain:evm:1"))
+				.All(candidate => candidate.Id != providerId),
+			$"{algorithm}: a search over an unadvertised location must exclude the provider");
+
+		// The advertised operation map answers support queries without a round trip.
+		Require(
+			client.IsOperationSupported(provider, "initiateTransfer"),
+			$"{algorithm}: the provider must advertise initiateTransfer");
+		Require(
+			!client.IsOperationSupported(provider, "operationThatDoesNotExist"),
+			$"{algorithm}: an unadvertised operation must report unsupported");
+
 		AssetSimulatedTransfer simulated = client.SimulateTransfer(provider, request);
 		Require(simulated.InstructionChoices.Count > 0, $"{algorithm}: the simulation must carry instruction choices");
 		Require(
 			simulated.InstructionChoices[0].GetProperty("type").GetString() == "KEETA_SEND",
 			$"{algorithm}: the first instruction choice must be a KEETA_SEND");
 
+		// Fluent promotion: the simulated handle initiates the same transfer.
+		AssetTransfer created = simulated.CreateTransfer();
+		Require(created.Id == "123", $"{algorithm}: the fluent CreateTransfer must initiate the transfer");
+
 		AssetTransfer transfer = client.InitiateTransfer(provider, request);
 		Require(transfer.Id == "123", $"{algorithm}: the initiated transfer must carry its id");
 		Require(transfer.InstructionChoices.Count > 0, $"{algorithm}: the transfer must carry instruction choices");
+
+		// Fluent status binds the provider and id for the caller.
+		AssetTransferStatus fluentStatus = transfer.GetStatus();
+		Require(
+			fluentStatus.Transaction.GetProperty("id").GetString() == "123",
+			$"{algorithm}: the fluent status must report the harness transaction");
 
 		AssetTransferStatus status = client.TransferStatus(provider, transfer.Id);
 		Require(

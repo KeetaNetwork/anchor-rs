@@ -56,8 +56,8 @@ pub use services::asset_movement::{
 	ChainLocation, CreateForwardingAddressRequest, CreateForwardingTemplateRequest, EndpointAuth,
 	ExecuteTransferRequest, ForwardingAddressFilter, ForwardingDestination, ForwardingTemplate,
 	InitiateForwardingTemplateRequest, ListForwardingAddressesRequest, ListForwardingTemplatesRequest,
-	ListTransactionsRequest, OperationEndpoint, Pagination, PersistentAddressFilter, ProviderFilter, ShareKycOutcome,
-	ShareKycRequest, SimulatedTransfer, TemplatePage, TemplateSession, TransactionEndpointFilter, TransactionPage,
-	TransactionRefFilter, Transfer, TransferDestination, TransferRequest, TransferSource, TransferStatus,
-	OPERATION_NAMES,
+	ListTransactionsRequest, OperationEndpoint, Pagination, PersistentAddressFilter, PollOptions, ProviderFilter,
+	ProviderSearch, ShareKycOutcome, ShareKycRequest, SimulatedTransfer, TemplatePage, TemplateSession,
+	TransactionEndpointFilter, TransactionPage, TransactionRefFilter, Transfer, TransferDestination, TransferRequest,
+	TransferSource, TransferStatus, OPERATION_NAMES,
 };

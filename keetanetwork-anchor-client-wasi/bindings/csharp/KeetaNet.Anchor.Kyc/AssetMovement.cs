@@ -52,13 +52,63 @@ public sealed class AssetMovementClient : IDisposable
 	public AssetProvider? ProviderByAccount(string account) =>
 		ParseOptionalProvider(_runtime.AssetProviderByAccount(_handle, account));
 
-	/// <summary>Simulate a transfer, returning its instruction choices.</summary>
-	public AssetSimulatedTransfer SimulateTransfer(AssetProvider provider, AssetTransferRequest request) =>
-		Read<AssetSimulatedTransfer>(_runtime.AssetSimulateTransfer(_handle, Serialize(provider), Serialize(request)));
+	/// <summary>
+	/// Every provider whose advertised <c>supportedAssets</c> satisfies
+	/// <paramref name="search"/> (asset, endpoints, and directional rails).
+	/// </summary>
+	public IReadOnlyList<AssetProvider> GetProvidersForTransfer(AssetProviderSearch search)
+	{
+		byte[] payload = _runtime.AssetProvidersForTransfer(_handle, Serialize(search));
+		return JsonSerializer.Deserialize<List<AssetProvider>>(payload, Json) ?? new List<AssetProvider>();
+	}
 
-	/// <summary>Initiate a transfer. The request's recipient is required.</summary>
-	public AssetTransfer InitiateTransfer(AssetProvider provider, AssetTransferRequest request) =>
-		Read<AssetTransfer>(_runtime.AssetInitiateTransfer(_handle, Serialize(provider), Serialize(request)));
+	/// <summary>
+	/// Whether <paramref name="provider"/> advertises the
+	/// <paramref name="operation"/> endpoint (e.g. <c>initiateTransfer</c>,
+	/// <c>createPersistentForwarding</c>).
+	/// </summary>
+	public bool IsOperationSupported(AssetProvider provider, string operation) =>
+		provider.Operations.ContainsKey(operation);
+
+	/// <summary>The provider's advertised legal disclaimers, or null when none.</summary>
+	public JsonElement? GetLegalDisclaimers(AssetProvider provider) => provider.Legal;
+
+	/// <summary>
+	/// The legal disclaimers advertised by the provider with
+	/// <paramref name="id"/>, or null when the provider or its disclaimers are
+	/// absent.
+	/// </summary>
+	public JsonElement? GetProviderLegalDisclaimersById(string id) => ProviderById(id)?.Legal;
+
+	/// <summary>
+	/// The provider's asset metadata for <paramref name="location"/> (a
+	/// canonical location string), or null when the provider advertises none.
+	/// </summary>
+	public JsonElement? GetAssetMetadataForLocation(AssetProvider provider, string location)
+	{
+		if (provider.LocationMetadata is not { } metadata || metadata.ValueKind != JsonValueKind.Object)
+		{
+			return null;
+		}
+
+		return metadata.TryGetProperty(location, out JsonElement found) ? found : null;
+	}
+
+	/// <summary>Simulate a transfer, returning a fluent handle over its instruction choices.</summary>
+	public AssetSimulatedTransfer SimulateTransfer(AssetProvider provider, AssetTransferRequest request)
+	{
+		var wire = Read<AssetSimulatedTransferWire>(
+			_runtime.AssetSimulateTransfer(_handle, Serialize(provider), Serialize(request)));
+		return new AssetSimulatedTransfer(this, provider, request, wire.InstructionChoices);
+	}
+
+	/// <summary>Initiate a transfer, returning a fluent handle. The request's recipient is required.</summary>
+	public AssetTransfer InitiateTransfer(AssetProvider provider, AssetTransferRequest request)
+	{
+		var wire = Read<AssetTransferWire>(
+			_runtime.AssetInitiateTransfer(_handle, Serialize(provider), Serialize(request)));
+		return new AssetTransfer(this, provider, wire.Id, wire.InstructionChoices);
+	}
 
 	/// <summary>Execute a pull instruction for a transfer.</summary>
 	public AssetTransferStatus ExecuteTransfer(AssetProvider provider, AssetExecuteRequest request) =>
@@ -107,11 +157,20 @@ public sealed class AssetMovementClient : IDisposable
 		Read<AssetTransactionPage>(_runtime.AssetListTransactions(_handle, Serialize(provider), Serialize(request)));
 
 	/// <summary>
-	/// Share KYC attributes with the provider. When the outcome is pending, poll
-	/// its promise URL until it completes.
+	/// Share KYC attributes with the provider, returning the outcome verbatim.
+	/// A pending outcome carries the promise URL the caller must poll; use
+	/// <see cref="ShareKycAndWait"/> to poll it automatically.
 	/// </summary>
 	public AssetShareKycOutcome ShareKyc(AssetProvider provider, AssetShareKycRequest request) =>
 		Read<AssetShareKycOutcome>(_runtime.AssetShareKyc(_handle, Serialize(provider), Serialize(request)));
+
+	/// <summary>
+	/// Share KYC attributes and, when the outcome is pending with a promise URL,
+	/// poll that URL inside the core until it resolves (or the core's deadline
+	/// elapses). Returns the settled outcome.
+	/// </summary>
+	public AssetShareKycOutcome ShareKycAndWait(AssetProvider provider, AssetShareKycRequest request) =>
+		Read<AssetShareKycOutcome>(_runtime.AssetShareKycAwait(_handle, Serialize(provider), Serialize(request)));
 
 	private static string Serialize<T>(T value) => JsonSerializer.Serialize(value, Json);
 
@@ -141,4 +200,70 @@ public sealed class AssetMovementClient : IDisposable
 		_disposed = true;
 		_runtime.AssetFree(_handle);
 	}
+}
+
+/// <summary>
+/// A simulated transfer: the instruction choices a caller can inspect, plus the
+/// fluent step to promote the simulation into a real, managed transfer with the
+/// same provider and request.
+/// </summary>
+public sealed class AssetSimulatedTransfer
+{
+	private readonly AssetMovementClient _client;
+	private readonly AssetProvider _provider;
+	private readonly AssetTransferRequest _request;
+
+	internal AssetSimulatedTransfer(
+		AssetMovementClient client,
+		AssetProvider provider,
+		AssetTransferRequest request,
+		IReadOnlyList<JsonElement> instructionChoices)
+	{
+		_client = client;
+		_provider = provider;
+		_request = request;
+		InstructionChoices = instructionChoices;
+	}
+
+	/// <summary>The candidate instructions that would complete this transfer.</summary>
+	public IReadOnlyList<JsonElement> InstructionChoices { get; }
+
+	/// <summary>Initiate the simulated transfer with the same provider and request.</summary>
+	public AssetTransfer CreateTransfer() => _client.InitiateTransfer(_provider, _request);
+}
+
+/// <summary>
+/// An initiated transfer bound to its provider: inspect the instruction
+/// choices, poll its status, or execute a chosen pull instruction, without
+/// re-threading the provider or id.
+/// </summary>
+public sealed class AssetTransfer
+{
+	private readonly AssetMovementClient _client;
+	private readonly AssetProvider _provider;
+
+	internal AssetTransfer(
+		AssetMovementClient client,
+		AssetProvider provider,
+		string id,
+		IReadOnlyList<JsonElement> instructionChoices)
+	{
+		_client = client;
+		_provider = provider;
+		Id = id;
+		InstructionChoices = instructionChoices;
+	}
+
+	/// <summary>The transfer id assigned by the provider.</summary>
+	public string Id { get; }
+
+	/// <summary>The candidate instructions that complete this transfer.</summary>
+	public IReadOnlyList<JsonElement> InstructionChoices { get; }
+
+	/// <summary>Read this transfer's current status.</summary>
+	public AssetTransferStatus GetStatus() => _client.TransferStatus(_provider, Id);
+
+	/// <summary>Execute a chosen pull <paramref name="instruction"/> for this transfer.</summary>
+	public AssetTransferStatus Execute(object instruction) =>
+		_client.ExecuteTransfer(_provider, new AssetExecuteRequest(Id, instruction));
 }

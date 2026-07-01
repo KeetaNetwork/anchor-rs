@@ -13,17 +13,18 @@ use std::sync::Arc;
 use keetanetwork_account::GenericAccount;
 use keetanetwork_anchor_bindings::error::CodedError;
 use keetanetwork_anchor_client::{
-	AnchorClientError, AnchorContext, AssetMovementClient, AssetMovementProvider, ProviderFilter, Resolver,
+	AnchorClientError, AnchorContext, AssetMovementClient, AssetMovementProvider, PollOptions, ProviderFilter, Resolver,
 };
 use keetanetwork_client_wasi::{account, bytes_result, string_in};
 
 use crate::asset_json::{
 	create_address_request, create_template_request, encode, encode_account_status, encode_ack, encode_provider,
 	encode_providers, execute_request, filter_providers, initiate_template_request, list_addresses_request,
-	list_templates_request, list_transactions_request, parse_provider, share_kyc_request, transfer_request,
+	list_templates_request, list_transactions_request, parse_provider, parse_provider_search, share_kyc_request,
+	transfer_request,
 };
 
-use super::transport::{block_on, host_transport};
+use super::transport::{block_on, host_sleep_ms, host_transport};
 
 thread_local! {
 	static SESSIONS: RefCell<Sessions> = RefCell::new(Sessions::default());
@@ -76,6 +77,21 @@ pub unsafe extern "C" fn keeta_asset_with_account(
 #[no_mangle]
 pub extern "C" fn keeta_asset_providers(handle: i32) -> i32 {
 	bytes_result(providers(handle, ProviderFilter::default()))
+}
+
+/// Every provider whose published `supportedAssets` satisfies the JSON
+/// `search`, as a JSON array; returns a bytes handle (`0` on error).
+///
+/// # Safety
+///
+/// See [`keeta_asset_with_account`].
+#[no_mangle]
+pub unsafe extern "C" fn keeta_asset_providers_for_transfer(handle: i32, search_ptr: i32, search_len: i32) -> i32 {
+	let Some(search_json) = (unsafe { string_in(search_ptr, search_len) }) else {
+		return 0;
+	};
+
+	bytes_result(providers_for_transfer(handle, &search_json))
 }
 
 /// The provider with `id` (JSON provider, or `null` when absent); returns a
@@ -397,6 +413,32 @@ pub unsafe extern "C" fn keeta_asset_share_kyc(
 	})
 }
 
+/// Share KYC attributes and poll the returned promise URL to completion,
+/// pausing between polls through the host timer; returns a JSON outcome bytes
+/// handle (`0` on error).
+///
+/// # Safety
+///
+/// See [`keeta_asset_with_account`].
+#[no_mangle]
+pub unsafe extern "C" fn keeta_asset_share_kyc_await(
+	handle: i32,
+	provider_ptr: i32,
+	provider_len: i32,
+	request_ptr: i32,
+	request_len: i32,
+) -> i32 {
+	dispatch2(provider_ptr, provider_len, request_ptr, request_len, |provider, request| {
+		let request = share_kyc_request(request)?;
+		let outcome = with_session(handle, |client| {
+			block_on(client.share_kyc_await(&provider, &request, PollOptions::default(), |millis| async move {
+				host_sleep_ms(u64::from(millis))
+			}))
+		})?;
+		encode(&outcome)
+	})
+}
+
 /// Release a client handle, ignoring an unknown one.
 #[no_mangle]
 pub extern "C" fn keeta_asset_free(handle: i32) {
@@ -409,6 +451,12 @@ pub extern "C" fn keeta_asset_free(handle: i32) {
 
 fn providers(handle: i32, filter: ProviderFilter) -> Result<Vec<u8>, CodedError> {
 	let providers = with_session(handle, |client| block_on(lookup(client, &filter)))?;
+	encode_providers(providers)
+}
+
+fn providers_for_transfer(handle: i32, search_json: &str) -> Result<Vec<u8>, CodedError> {
+	let search = parse_provider_search(search_json)?;
+	let providers = with_session(handle, |client| block_on(client.providers_for_transfer(&search)))?;
 	encode_providers(providers)
 }
 

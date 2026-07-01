@@ -79,6 +79,49 @@ async fn p2_asset_movement_signs_against_live_anchor() -> Result<(), BoxError> {
 		"provider-by-id must return the advertised provider"
 	);
 
+	// Provider search: the advertised evm->keeta KEETA_SEND path satisfies a
+	// directional search, so the provider surfaces; an unadvertised source
+	// location excludes it.
+	let search = json!({
+		"asset": asset,
+		"from": "chain:evm:100",
+		"to": "chain:keeta:100",
+		"inboundRails": ["KEETA_SEND"],
+		"outboundRails": ["KEETA_SEND"]
+	})
+	.to_string();
+	let matched = asset_movement
+		.asset_client()
+		.call_providers_for_transfer(&mut store, client, &search)
+		.await?
+		.map_err(coded)?;
+	let matched = parse(&matched)?;
+	let matched_ids: Vec<&str> = matched
+		.as_array()
+		.ok_or("providers-for-transfer must be a JSON array")?
+		.iter()
+		.filter_map(|entry| entry.get("id").and_then(Value::as_str))
+		.collect();
+	assert!(matched_ids.contains(&provider_id.as_str()), "provider search must surface the provider, got {matched_ids:?}");
+
+	let unmatched_search = json!({ "asset": asset, "from": "chain:evm:1" }).to_string();
+	let unmatched = asset_movement
+		.asset_client()
+		.call_providers_for_transfer(&mut store, client, &unmatched_search)
+		.await?
+		.map_err(coded)?;
+	let unmatched = parse(&unmatched)?;
+	let unmatched_ids: Vec<&str> = unmatched
+		.as_array()
+		.ok_or("providers-for-transfer must be a JSON array")?
+		.iter()
+		.filter_map(|entry| entry.get("id").and_then(Value::as_str))
+		.collect();
+	assert!(
+		!unmatched_ids.contains(&provider_id.as_str()),
+		"a search over an unadvertised source location must exclude the provider, got {unmatched_ids:?}"
+	);
+
 	let request = json!({
 		"asset": asset,
 		"from": { "location": "chain:keeta:100" },

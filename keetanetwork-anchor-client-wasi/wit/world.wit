@@ -274,6 +274,8 @@ interface asset-movement {
 		provider-by-id: func(id: string) -> result<string, coded-error>;
 		/// The provider signed by `account` as a JSON document, or JSON `null`.
 		provider-by-account: func(account: string) -> result<string, coded-error>;
+		/// Every provider whose supported assets satisfy the JSON search, as a JSON array.
+		providers-for-transfer: func(search: string) -> result<string, coded-error>;
 		/// Simulate a transfer, returning a JSON simulated transfer.
 		simulate-transfer: func(provider: string, request: string) -> result<string, coded-error>;
 		/// Initiate a transfer, returning a JSON transfer.
@@ -302,6 +304,9 @@ interface asset-movement {
 		list-transactions: func(provider: string, request: string) -> result<string, coded-error>;
 		/// Share KYC attributes with the provider, returning a JSON outcome.
 		share-kyc: func(provider: string, request: string) -> result<string, coded-error>;
+		/// Share KYC attributes and poll the returned promise URL to completion,
+		/// returning a JSON outcome.
+		share-kyc-await: func(provider: string, request: string) -> result<string, coded-error>;
 	}
 }
 

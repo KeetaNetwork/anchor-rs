@@ -127,11 +127,23 @@ public sealed record AssetListTransactionsRequest(
 /// <summary>A request to share KYC attributes with the provider.</summary>
 public sealed record AssetShareKycRequest(string Attributes, object? TosAgreement = null);
 
-/// <summary>An initiated transfer: its id and the instruction choices to complete it.</summary>
-public sealed record AssetTransfer(string Id, IReadOnlyList<JsonElement> InstructionChoices);
+/// <summary>
+/// A transfer search: an optional asset (a canonical string or a
+/// <c>{ from, to }</c> pair), the endpoints value must move between, and the
+/// directional rails each endpoint must advertise.
+/// </summary>
+public sealed record AssetProviderSearch(
+	object? Asset = null,
+	string? From = null,
+	string? To = null,
+	IReadOnlyList<string>? InboundRails = null,
+	IReadOnlyList<string>? OutboundRails = null);
 
-/// <summary>A simulated transfer: the instruction choices, without an id.</summary>
-public sealed record AssetSimulatedTransfer(IReadOnlyList<JsonElement> InstructionChoices);
+/// <summary>The wire shape of an initiated transfer decoded from the core.</summary>
+internal sealed record AssetTransferWire(string Id, IReadOnlyList<JsonElement> InstructionChoices);
+
+/// <summary>The wire shape of a simulated transfer decoded from the core.</summary>
+internal sealed record AssetSimulatedTransferWire(IReadOnlyList<JsonElement> InstructionChoices);
 
 /// <summary>A transfer's status: the underlying transaction record.</summary>
 public sealed record AssetTransferStatus(JsonElement Transaction);
@@ -161,3 +173,34 @@ public sealed record AssetShareKycOutcome(
 /// set, the polymorphic <see cref="Blockers"/> the caller must resolve first.
 /// </summary>
 public sealed record AssetAccountStatus(bool ActionRequired, IReadOnlyList<JsonElement>? Blockers = null);
+
+/// <summary>
+/// Typed access to the polymorphic asset-movement address surface
+/// (bank-account/mobile-wallet, each resolved or obfuscated). Addresses cross
+/// the wasm boundary as raw JSON so they round-trip unchanged.
+/// </summary>
+public static class AssetAddress
+{
+	/// <summary>Decode <paramref name="address"/> into the generated typed model.</summary>
+	public static Generated.AddressTypes Parse(JsonElement address) =>
+		Generated.AddressTypes.FromJson(address.GetRawText())
+		?? throw new KeetaException("DECODE", "could not decode an asset-movement address");
+
+	/// <summary>
+	/// Try to decode <paramref name="address"/> into the generated typed model,
+	/// returning false when the JSON does not match a known address shape.
+	/// </summary>
+	public static bool TryParse(JsonElement address, out Generated.AddressTypes? parsed)
+	{
+		try
+		{
+			parsed = Generated.AddressTypes.FromJson(address.GetRawText());
+			return parsed is not null;
+		}
+		catch (JsonException)
+		{
+			parsed = null;
+			return false;
+		}
+	}
+}

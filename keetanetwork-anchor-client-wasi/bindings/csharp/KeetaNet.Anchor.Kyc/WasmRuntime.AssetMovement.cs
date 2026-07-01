@@ -33,6 +33,9 @@ public sealed partial class WasmRuntime
 	internal byte[] AssetProviderByAccount(int handle, string account) =>
 		WithHandleAndText("keeta_asset_provider_by_account", handle, account);
 
+	internal byte[] AssetProvidersForTransfer(int handle, string searchJson) =>
+		WithHandleAndText("keeta_asset_providers_for_transfer", handle, searchJson);
+
 	internal byte[] AssetSimulateTransfer(int handle, string providerJson, string requestJson) =>
 		WithProviderAndArg("keeta_asset_simulate_transfer", handle, providerJson, requestJson);
 
@@ -86,6 +89,9 @@ public sealed partial class WasmRuntime
 
 	internal byte[] AssetShareKyc(int handle, string providerJson, string requestJson) =>
 		WithProviderAndArg("keeta_asset_share_kyc", handle, providerJson, requestJson);
+
+	internal byte[] AssetShareKycAwait(int handle, string providerJson, string requestJson) =>
+		WithProviderAndArg("keeta_asset_share_kyc_await", handle, providerJson, requestJson);
 
 	internal void AssetFree(int handle) => Free("keeta_asset_free", handle);
 

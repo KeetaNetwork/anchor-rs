@@ -14,8 +14,8 @@ use keetanetwork_anchor_client::{
 	CreateForwardingTemplateRequest, EndpointAuth, ExecuteTransferRequest, ForwardingAddressFilter,
 	ForwardingDestination, InitiateForwardingTemplateRequest, ListForwardingAddressesRequest,
 	ListForwardingTemplatesRequest, ListTransactionsRequest, OperationEndpoint, Pagination, PersistentAddressFilter,
-	ProviderFilter, ShareKycRequest, TransactionEndpointFilter, TransactionRefFilter, TransferDestination,
-	TransferRequest, TransferSource,
+	ProviderFilter, ProviderSearch, ShareKycRequest, TransactionEndpointFilter, TransactionRefFilter,
+	TransferDestination, TransferRequest, TransferSource,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -249,6 +249,44 @@ pub(crate) fn list_transactions_request(json: &str) -> Result<ListTransactionsRe
 /// Parse a share-KYC request.
 pub(crate) fn share_kyc_request(json: &str) -> Result<ShareKycRequest, CodedError> {
 	Ok(parse::<ShareKycDto>(json)?.into_core())
+}
+
+/// Parse a provider-search argument from its JSON representation.
+pub(crate) fn parse_provider_search(json: &str) -> Result<ProviderSearch, CodedError> {
+	parse::<ProviderSearchDto>(json)?.into_core()
+}
+
+/// A transfer search: an optional asset, endpoints, and directional rails.
+#[derive(Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct ProviderSearchDto {
+	#[serde(default)]
+	asset: Option<Value>,
+	#[serde(default)]
+	from: Option<String>,
+	#[serde(default)]
+	to: Option<String>,
+	#[serde(default)]
+	inbound_rails: Vec<String>,
+	#[serde(default)]
+	outbound_rails: Vec<String>,
+}
+
+impl ProviderSearchDto {
+	fn into_core(self) -> Result<ProviderSearch, CodedError> {
+		let asset = match self.asset {
+			Some(value) => Some(asset_or_pair(value)?),
+			None => None,
+		};
+
+		Ok(ProviderSearch {
+			asset,
+			from: self.from,
+			to: self.to,
+			inbound_rails: self.inbound_rails,
+			outbound_rails: self.outbound_rails,
+		})
+	}
 }
 
 /// Convert a JSON asset (a bare string or `{ from, to }`) into an
