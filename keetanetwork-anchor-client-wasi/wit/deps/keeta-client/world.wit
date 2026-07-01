@@ -364,7 +364,7 @@ interface node {
 		commit: func() -> result<list<string>, coded-error>;
 	}
 
-	/// A low-level, offline block assembler: stage operations on an operating
+	/// A low-level, block assembler: stage operations on an operating
 	/// account, attach a single or multisig signer, then build-and-sign into a
 	/// transport block (hex). The signed block settles via
 	/// `user-client.transmit`.

@@ -36,6 +36,17 @@ pub fn issue_attributes() -> Value {
 		} },
 		{ "name": "entityType", "sensitive": true, "value": {
 			"person": [{ "id": "123-45-6789", "schemeName": "SSN" }]
+		} },
+		{ "name": "documentPassport", "sensitive": true, "value": {
+			"documentNumber": "X1234567",
+			"front": {
+				"external": { "url": "https://example.test/doc", "contentType": "image/png" },
+				"digest": {
+					"digestAlgorithm": "sha3-256",
+					"digest": { "type": "Buffer", "data": [1, 2, 3] }
+				},
+				"encryptionAlgorithm": "1.3.6.1.4.1.62675.2"
+			}
 		} }
 	])
 }
