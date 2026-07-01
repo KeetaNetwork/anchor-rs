@@ -126,7 +126,7 @@ impl Scenario {
 		self
 	}
 
-	/// Wire the scripted transport, clock, and decorator into a live harness.
+	/// Connect the scripted transport, clock, and decorator into a live harness.
 	fn build(self) -> Harness {
 		let inner = ScriptedTransport::new(self.steps);
 		let runtime = VirtualRuntime::default();

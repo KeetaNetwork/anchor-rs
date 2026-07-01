@@ -5,7 +5,7 @@ namespace KeetaNet.Anchor.Kyc;
 
 /// <summary>
 /// The authentication an asset-movement operation endpoint requires. Serialized
-/// in its lowercase wire form (<c>none</c>/<c>optional</c>/<c>required</c>) by the
+/// in its lowercase transport form (<c>none</c>/<c>optional</c>/<c>required</c>) by the
 /// camelCase enum converter the asset-movement options register.
 /// </summary>
 public enum AssetEndpointAuth
@@ -146,11 +146,11 @@ public sealed record AssetProviderSearch(
 	IReadOnlyList<string>? InboundRails = null,
 	IReadOnlyList<string>? OutboundRails = null);
 
-/// <summary>The wire shape of an initiated transfer decoded from the core.</summary>
-internal sealed record AssetTransferWire(string Id, IReadOnlyList<JsonElement> InstructionChoices);
+/// <summary>The transport shape of an initiated transfer decoded from the core.</summary>
+internal sealed record AssetTransferTransport(string Id, IReadOnlyList<JsonElement> InstructionChoices);
 
-/// <summary>The wire shape of a simulated transfer decoded from the core.</summary>
-internal sealed record AssetSimulatedTransferWire(IReadOnlyList<JsonElement> InstructionChoices);
+/// <summary>The transport shape of a simulated transfer decoded from the core.</summary>
+internal sealed record AssetSimulatedTransferTransport(IReadOnlyList<JsonElement> InstructionChoices);
 
 /// <summary>A transfer's status: the underlying transaction record.</summary>
 public sealed record AssetTransferStatus(JsonElement Transaction);

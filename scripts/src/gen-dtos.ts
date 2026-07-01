@@ -65,6 +65,23 @@ const targets: DtoTarget[] = [
 	}
 ];
 
+/**
+ * The JSON Schema `type` keyword matching a `const` literal's runtime type.
+ *
+ * @param literal - The literal the `const` carried.
+ * @returns The schema type name.
+ */
+function literalType(literal: JsonValue | undefined): string {
+	if (typeof literal === "boolean") {
+		return("boolean");
+	}
+	if (typeof literal === "number") {
+		return("number");
+	}
+
+	return("string");
+}
+
 /*
  * quicktype's schema reader rejects a bare `const` (it assumes a string and
  * calls `codePointAt`); rewrite each `const` as a single-value `enum` with an
@@ -83,11 +100,11 @@ function normalizeConsts(node: JsonValue): JsonValue {
 		rewritten[key] = normalizeConsts(value);
 	}
 
-	if (Object.prototype.hasOwnProperty.call(rewritten, "const")) {
+	if (Object.hasOwn(rewritten, "const")) {
 		const literal = rewritten["const"];
 		delete rewritten["const"];
 		rewritten["enum"] = [literal ?? null];
-		rewritten["type"] = typeof literal === "boolean" ? "boolean" : typeof literal === "number" ? "number" : "string";
+		rewritten["type"] = literalType(literal);
 	}
 
 	return(rewritten);

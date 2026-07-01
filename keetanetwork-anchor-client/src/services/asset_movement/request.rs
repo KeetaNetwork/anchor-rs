@@ -1,5 +1,5 @@
 //! Asset-movement request inputs and the two byte-exact projections each one
-//! produces: the wire `fields` sent in the request body (the TypeScript
+//! produces: the transport `fields` sent in the request body (the TypeScript
 //! `serializeRequest`) and the [`Signable`] payload that is signed.
 
 use alloc::string::{String, ToString};
@@ -13,7 +13,7 @@ use super::asset::AssetOrPair;
 /// A signed payload, either canonical object JSON or a fixed string tuple.
 type Payload = Vec<Signable<'static>>;
 
-/// The wire request fields, without the `account` the caller injects.
+/// The transport request fields, without the `account` the caller injects.
 type Fields = Map<String, Value>;
 
 /// Pagination bounds shared by the list operations.
@@ -26,7 +26,7 @@ pub struct Pagination {
 }
 
 impl Pagination {
-	/// The wire `{ limit?, offset? }` value, or [`None`] when both are absent.
+	/// The transport `{ limit?, offset? }` value, or [`None`] when both are absent.
 	fn to_value(&self) -> Option<Value> {
 		let mut map = Map::new();
 		insert_u32(&mut map, "limit", self.limit);
@@ -54,7 +54,7 @@ pub struct TransferDestination {
 	/// The recipient (a resolved address or a persistent-address reference).
 	/// Required to initiate a transfer; optional to simulate one.
 	pub recipient: Option<Value>,
-	/// An optional deposit message (e.g. a wire reference note).
+	/// An optional deposit message (e.g. a bank transfer reference note).
 	pub deposit_message: Option<String>,
 }
 
@@ -74,8 +74,8 @@ pub struct TransferRequest {
 }
 
 impl TransferRequest {
-	/// The wire fields for `initiateTransfer` / `simulateTransfer`.
-	pub fn wire_fields(&self) -> Fields {
+	/// The transport fields for `initiateTransfer` / `simulateTransfer`.
+	pub fn transport_fields(&self) -> Fields {
 		let mut from = Map::new();
 		from.insert("location".into(), Value::String(self.from.location.clone()));
 		insert_some(&mut from, "source", self.from.source.clone());
@@ -129,8 +129,8 @@ pub struct ExecuteTransferRequest {
 }
 
 impl ExecuteTransferRequest {
-	/// The wire fields (the id travels in the URL).
-	pub fn wire_fields(&self) -> Fields {
+	/// The transport fields (the id travels in the URL).
+	pub fn transport_fields(&self) -> Fields {
 		let mut fields = Map::new();
 		fields.insert("instruction".into(), self.instruction.clone());
 		fields
@@ -152,8 +152,8 @@ pub struct InitiateForwardingTemplateRequest {
 }
 
 impl InitiateForwardingTemplateRequest {
-	/// The wire fields for `initiatePersistentForwardingTemplate`.
-	pub fn wire_fields(&self) -> Fields {
+	/// The transport fields for `initiatePersistentForwardingTemplate`.
+	pub fn transport_fields(&self) -> Fields {
 		let mut fields = Map::new();
 		fields.insert("location".into(), Value::String(self.location.clone()));
 		fields.insert("asset".into(), self.asset.to_canonical_value());
@@ -192,8 +192,8 @@ pub enum CreateForwardingTemplateRequest {
 }
 
 impl CreateForwardingTemplateRequest {
-	/// The wire fields for `createPersistentForwardingTemplate`.
-	pub fn wire_fields(&self) -> Fields {
+	/// The transport fields for `createPersistentForwardingTemplate`.
+	pub fn transport_fields(&self) -> Fields {
 		let mut fields = Map::new();
 		match self {
 			Self::Direct { asset, location, address } => {
@@ -273,8 +273,8 @@ impl CreateForwardingAddressRequest {
 		fields
 	}
 
-	/// The wire fields for `createPersistentForwarding`.
-	pub fn wire_fields(&self) -> Fields {
+	/// The transport fields for `createPersistentForwarding`.
+	pub fn transport_fields(&self) -> Fields {
 		let mut fields = self.base();
 		match &self.destination {
 			ForwardingDestination::Address { location, address } => {
@@ -321,11 +321,11 @@ pub struct ListForwardingTemplatesRequest {
 }
 
 impl ListForwardingTemplatesRequest {
-	/// The wire fields for `listPersistentForwardingTemplate`.
+	/// The transport fields for `listPersistentForwardingTemplate`.
 	///
 	/// Matches the reference `serializeRequest`, which carries only the asset
 	/// and location filters (pagination is not serialized).
-	pub fn wire_fields(&self) -> Fields {
+	pub fn transport_fields(&self) -> Fields {
 		let mut fields = Map::new();
 		insert_some(&mut fields, "asset", self.asset.clone().map(string_array));
 		insert_some(&mut fields, "location", self.location.clone().map(string_array));
@@ -381,8 +381,8 @@ pub struct ListForwardingAddressesRequest {
 }
 
 impl ListForwardingAddressesRequest {
-	/// The wire fields for `listPersistentForwarding`.
-	pub fn wire_fields(&self) -> Fields {
+	/// The transport fields for `listPersistentForwarding`.
+	pub fn transport_fields(&self) -> Fields {
 		let mut fields = Map::new();
 		if let Some(search) = &self.search {
 			let items = search
@@ -474,8 +474,8 @@ pub struct ListTransactionsRequest {
 }
 
 impl ListTransactionsRequest {
-	/// The wire fields for `listTransactions`.
-	pub fn wire_fields(&self) -> Fields {
+	/// The transport fields for `listTransactions`.
+	pub fn transport_fields(&self) -> Fields {
 		let mut fields = Map::new();
 		insert_some(&mut fields, "pagination", self.pagination.to_value());
 		if let Some(addresses) = &self.persistent_addresses {
@@ -513,8 +513,8 @@ pub struct ShareKycRequest {
 }
 
 impl ShareKycRequest {
-	/// The wire fields for `shareKYC`.
-	pub fn wire_fields(&self) -> Fields {
+	/// The transport fields for `shareKYC`.
+	pub fn transport_fields(&self) -> Fields {
 		let mut fields = Map::new();
 		fields.insert("attributes".into(), Value::String(self.attributes.clone()));
 		insert_some(&mut fields, "tosAgreement", self.tos_agreement.clone());

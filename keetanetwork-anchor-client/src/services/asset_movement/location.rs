@@ -17,12 +17,12 @@ use crate::error::ResolverError;
 pub enum ChainLocation {
 	/// A Keeta network, identified by its non-negative integer network id.
 	Keeta {
-		/// The network id (decimal digits; a `bigint` on the wire).
+		/// The network id (decimal digits; a `bigint` in transport).
 		network_id: String,
 	},
 	/// An EVM network, identified by its non-negative integer chain id.
 	Evm {
-		/// The chain id (decimal digits; a `bigint` on the wire).
+		/// The chain id (decimal digits; a `bigint` in transport).
 		chain_id: String,
 	},
 	/// A Solana cluster, identified by its base58 genesis hash.

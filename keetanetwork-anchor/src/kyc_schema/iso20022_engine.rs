@@ -7,7 +7,7 @@
 //! `ValidateASN1` JSON shapes: `serde_json` values, symbolic OID names, Node
 //! `Buffer` objects, and ISO-8601 dates. The schema descriptors are generated
 //! from `oids.json` (see [`crate::generated::iso20022_schema`]), so both
-//! languages derive their wire format from one source.
+//! languages derive their transport format from one source.
 
 use alloc::borrow::ToOwned;
 use alloc::boxed::Box;

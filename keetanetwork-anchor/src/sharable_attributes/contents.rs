@@ -28,7 +28,7 @@ pub(super) struct AttributeEntry {
 }
 
 /// The disclosed value: a proof for sensitive attributes, or a base64 plaintext
-/// of the raw certificate value for plain attributes. Untagged so the on-wire
+/// of the raw certificate value for plain attributes. Untagged so the transport
 /// shape decides the variant, matching the TypeScript union.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]

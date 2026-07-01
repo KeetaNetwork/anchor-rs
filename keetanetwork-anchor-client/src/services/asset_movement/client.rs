@@ -24,7 +24,7 @@ use super::response::{
 use crate::error::AnchorClientError;
 use crate::service::{pending_delay, AnchorContext, AnchorOutcome, Auth, BodyEnvelope, Call, Endpoint, Method};
 
-/// The wire request fields, keyed by name.
+/// The transport request fields, keyed by name.
 type Fields = Map<String, Value>;
 
 /// How to pace and bound a polled operation (e.g. awaiting a share-KYC
@@ -131,7 +131,7 @@ impl AssetMovementClient {
 	) -> Result<SimulatedTransfer, AnchorClientError> {
 		let (endpoint, auth) = operation(provider, "simulateTransfer")?;
 		let signed = request.signable()?;
-		self.post(&endpoint, auth, &[], request.wire_fields(), &signed)
+		self.post(&endpoint, auth, &[], request.transport_fields(), &signed)
 			.await
 	}
 
@@ -153,7 +153,7 @@ impl AssetMovementClient {
 
 		let (endpoint, auth) = operation(provider, "initiateTransfer")?;
 		let signed = request.signable()?;
-		self.post(&endpoint, auth, &[], request.wire_fields(), &signed)
+		self.post(&endpoint, auth, &[], request.transport_fields(), &signed)
 			.await
 	}
 
@@ -171,7 +171,7 @@ impl AssetMovementClient {
 		let (endpoint, auth) = operation(provider, "executeTransfer")?;
 		let signed = request.signable()?;
 		let params = [("id", request.id.as_str())];
-		self.post(&endpoint, auth, &params, request.wire_fields(), &signed)
+		self.post(&endpoint, auth, &params, request.transport_fields(), &signed)
 			.await
 	}
 
@@ -194,7 +194,7 @@ impl AssetMovementClient {
 
 	/// Read whether the signer's account is ready to use this provider.
 	///
-	/// Resolves the wire `actionRequired` discriminant into [`AccountStatus`],
+	/// Resolves the transport `actionRequired` discriminant into [`AccountStatus`],
 	/// folding a recognized asset-movement blocker returned as an error into
 	/// [`AccountStatus::ActionRequired`]. A request-level failure still errors.
 	///
@@ -237,13 +237,13 @@ impl AssetMovementClient {
 		provider: &AssetMovementProvider,
 		id: &str,
 	) -> Result<(), AnchorClientError> {
-		let (endpoint, auth) = operation(provider, "deactivatePersistentForwardingTemplate")?;
-		let signed = id_literal("deactivate-persistent-forwarding-template", id);
-		let params = [("id", id)];
-		let _: Value = self
-			.post(&endpoint, auth, &params, Fields::new(), &signed)
-			.await?;
-		Ok(())
+		self.deactivate(
+			provider,
+			"deactivatePersistentForwardingTemplate",
+			"deactivate-persistent-forwarding-template",
+			id,
+		)
+		.await
 	}
 
 	/// Deactivate a persistent-forwarding address by id.
@@ -258,13 +258,8 @@ impl AssetMovementClient {
 		provider: &AssetMovementProvider,
 		id: &str,
 	) -> Result<(), AnchorClientError> {
-		let (endpoint, auth) = operation(provider, "deactivatePersistentForwarding")?;
-		let signed = id_literal("deactivate-persistent-forwarding-address", id);
-		let params = [("id", id)];
-		let _: Value = self
-			.post(&endpoint, auth, &params, Fields::new(), &signed)
-			.await?;
-		Ok(())
+		self.deactivate(provider, "deactivatePersistentForwarding", "deactivate-persistent-forwarding-address", id)
+			.await
 	}
 
 	/// Open a persistent-forwarding template session.
@@ -281,7 +276,8 @@ impl AssetMovementClient {
 	) -> Result<TemplateSession, AnchorClientError> {
 		let (endpoint, auth) = operation(provider, "initiatePersistentForwardingTemplate")?;
 		let signed = request.signable()?;
-		self.post(&endpoint, auth, &[], request.wire_fields(), &signed)
+
+		self.post(&endpoint, auth, &[], request.transport_fields(), &signed)
 			.await
 	}
 
@@ -299,7 +295,7 @@ impl AssetMovementClient {
 	) -> Result<ForwardingTemplate, AnchorClientError> {
 		let (endpoint, auth) = operation(provider, "createPersistentForwardingTemplate")?;
 		let signed = request.signable()?;
-		self.post(&endpoint, auth, &[], request.wire_fields(), &signed)
+		self.post(&endpoint, auth, &[], request.transport_fields(), &signed)
 			.await
 	}
 
@@ -317,7 +313,7 @@ impl AssetMovementClient {
 	) -> Result<TemplatePage, AnchorClientError> {
 		let (endpoint, auth) = operation(provider, "listPersistentForwardingTemplate")?;
 		let signed = request.signable();
-		self.post(&endpoint, auth, &[], request.wire_fields(), &signed)
+		self.post(&endpoint, auth, &[], request.transport_fields(), &signed)
 			.await
 	}
 
@@ -335,7 +331,7 @@ impl AssetMovementClient {
 	) -> Result<Value, AnchorClientError> {
 		let (endpoint, auth) = operation(provider, "createPersistentForwarding")?;
 		let signed = request.signable()?;
-		self.post(&endpoint, auth, &[], request.wire_fields(), &signed)
+		self.post(&endpoint, auth, &[], request.transport_fields(), &signed)
 			.await
 	}
 
@@ -352,7 +348,7 @@ impl AssetMovementClient {
 	) -> Result<AddressPage, AnchorClientError> {
 		let (endpoint, auth) = operation(provider, "listPersistentForwarding")?;
 		let signed = request.signable();
-		self.post(&endpoint, auth, &[], request.wire_fields(), &signed)
+		self.post(&endpoint, auth, &[], request.transport_fields(), &signed)
 			.await
 	}
 
@@ -369,7 +365,7 @@ impl AssetMovementClient {
 	) -> Result<TransactionPage, AnchorClientError> {
 		let (endpoint, auth) = operation(provider, "listTransactions")?;
 		let signed = request.signable();
-		self.post(&endpoint, auth, &[], request.wire_fields(), &signed)
+		self.post(&endpoint, auth, &[], request.transport_fields(), &signed)
 			.await
 	}
 
@@ -389,7 +385,7 @@ impl AssetMovementClient {
 	) -> Result<ShareKycOutcome, AnchorClientError> {
 		let (endpoint, auth) = operation(provider, "shareKYC")?;
 		let signed = request.signable();
-		self.post(&endpoint, auth, &[], request.wire_fields(), &signed)
+		self.post(&endpoint, auth, &[], request.transport_fields(), &signed)
 			.await
 	}
 
@@ -431,6 +427,25 @@ impl AssetMovementClient {
 		self.context.caller().account()
 	}
 
+	/// Deactivate the resource `id` through the advertised `operation_name`,
+	/// signing the `signed_name` literal, discarding the response body.
+	async fn deactivate(
+		&self,
+		provider: &AssetMovementProvider,
+		operation_name: &'static str,
+		signed_name: &'static str,
+		id: &str,
+	) -> Result<(), AnchorClientError> {
+		let (endpoint, auth) = operation(provider, operation_name)?;
+		let signed = id_literal(signed_name, id);
+		let params = [("id", id)];
+		let _: Value = self
+			.post(&endpoint, auth, &params, Fields::new(), &signed)
+			.await?;
+
+		Ok(())
+	}
+
 	/// Discover providers matching `filter`.
 	async fn lookup(&self, filter: ProviderFilter) -> Result<Vec<AssetMovementProvider>, AnchorClientError> {
 		let providers = self
@@ -438,6 +453,7 @@ impl AssetMovementClient {
 			.resolver()
 			.lookup::<AssetMovementQuery>(&filter)
 			.await?;
+
 		Ok(providers)
 	}
 
@@ -480,6 +496,7 @@ impl AssetMovementClient {
 		let call =
 			Call { endpoint, params, method: Method::Get, auth, signed, envelope: BodyEnvelope::Flat, body: None };
 		let outcome = self.context.caller().invoke(call).await?;
+
 		expect_ready(outcome)
 	}
 
@@ -587,7 +604,7 @@ fn expect_ready<T>(outcome: AnchorOutcome<T>) -> Result<T, AnchorClientError> {
 /// Resolve a `getAccountStatus` body into an [`AccountStatus`].
 fn resolve_account_status(body: &Value, status: u16) -> Result<AccountStatus, AnchorClientError> {
 	if body.get("ok").and_then(Value::as_bool) == Some(false) {
-		let blocker = AssetMovementBlocker::from_wire(body);
+		let blocker = AssetMovementBlocker::from_transport(body);
 		return match blocker {
 			AssetMovementBlocker::Other { .. } => Err(AnchorClientError::Service { status }),
 			recognized => Ok(AccountStatus::ActionRequired { blockers: vec![recognized] }),
@@ -605,7 +622,12 @@ fn resolve_account_status(body: &Value, status: u16) -> Result<AccountStatus, An
 	let blockers = body
 		.get("errors")
 		.and_then(Value::as_array)
-		.map(|errors| errors.iter().map(AssetMovementBlocker::from_wire).collect())
+		.map(|errors| {
+			errors
+				.iter()
+				.map(AssetMovementBlocker::from_transport)
+				.collect()
+		})
 		.unwrap_or_default();
 	Ok(AccountStatus::ActionRequired { blockers })
 }

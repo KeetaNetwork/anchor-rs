@@ -106,17 +106,17 @@ public sealed class AssetMovementClient : IDisposable
 	/// <summary>Simulate a transfer, returning a fluent handle over its instruction choices.</summary>
 	public AssetSimulatedTransfer SimulateTransfer(AssetProvider provider, AssetTransferRequest request)
 	{
-		var wire = Read<AssetSimulatedTransferWire>(
+		var transport = Read<AssetSimulatedTransferTransport>(
 			_runtime.AssetSimulateTransfer(_handle, Serialize(provider), Serialize(request)));
-		return new AssetSimulatedTransfer(this, provider, request, wire.InstructionChoices);
+		return new AssetSimulatedTransfer(this, provider, request, transport.InstructionChoices);
 	}
 
 	/// <summary>Initiate a transfer, returning a fluent handle. The request's recipient is required.</summary>
 	public AssetTransfer InitiateTransfer(AssetProvider provider, AssetTransferRequest request)
 	{
-		var wire = Read<AssetTransferWire>(
+		var transport = Read<AssetTransferTransport>(
 			_runtime.AssetInitiateTransfer(_handle, Serialize(provider), Serialize(request)));
-		return new AssetTransfer(this, provider, wire.Id, wire.InstructionChoices);
+		return new AssetTransfer(this, provider, transport.Id, transport.InstructionChoices);
 	}
 
 	/// <summary>Execute a pull instruction for a transfer.</summary>

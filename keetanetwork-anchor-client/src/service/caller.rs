@@ -214,7 +214,7 @@ impl AnchorCaller {
 	}
 }
 
-/// The wire `{ nonce, timestamp, signature }` object for a signature.
+/// The transport `{ nonce, timestamp, signature }` object for a signature.
 fn signed_field(signed: &Signed) -> Value {
 	json!({ "nonce": signed.nonce, "timestamp": signed.timestamp, "signature": signed.signature })
 }

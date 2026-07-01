@@ -13,13 +13,13 @@ use alloc::vec::Vec;
 
 use serde_json::Value;
 
-/// A stable wire code identifying an asset-movement blocker.
+/// A stable transport code identifying an asset-movement blocker.
 const KYC_SHARE_NEEDED: &str = "KEETA_ANCHOR_ASSET_MOVEMENT_KYC_SHARE_NEEDED";
-/// The additional-KYC-needed wire code.
+/// The additional-KYC-needed transport code.
 const ADDITIONAL_KYC_NEEDED: &str = "KEETA_ANCHOR_ASSET_MOVEMENT_ADDITIONAL_KYC_NEEDED";
-/// The operation-not-supported wire code.
+/// The operation-not-supported transport code.
 const OPERATION_NOT_SUPPORTED: &str = "KEETA_ANCHOR_ASSET_MOVEMENT_OPERATION_NOT_SUPPORTED";
-/// The user-action-needed wire code.
+/// The user-action-needed transport code.
 const USER_ACTION_NEEDED: &str = "KEETA_ANCHOR_ASSET_MOVEMENT_USER_ACTION_NEEDED";
 
 /// A blocker an anchor reports that a user must resolve before proceeding.
@@ -74,7 +74,7 @@ pub enum AssetMovementBlocker {
 impl AssetMovementBlocker {
 	/// Rehydrate a blocker from an anchor error envelope
 	/// (`{ ok, name, code, data, error }`).
-	pub fn from_wire(entry: &Value) -> Self {
+	pub fn from_transport(entry: &Value) -> Self {
 		let code = entry.get("code").and_then(Value::as_str);
 		let data = entry.get("data");
 		match code {
@@ -184,7 +184,7 @@ mod tests {
 			"error": "share needed"
 		});
 
-		let blocker = AssetMovementBlocker::from_wire(&entry);
+		let blocker = AssetMovementBlocker::from_transport(&entry);
 		assert_eq!(
 			blocker,
 			AssetMovementBlocker::KycShareNeeded {
@@ -205,7 +205,7 @@ mod tests {
 			"data": { "forAsset": "USD", "forRail": "KEETA_SEND" }
 		});
 
-		let blocker = AssetMovementBlocker::from_wire(&entry);
+		let blocker = AssetMovementBlocker::from_transport(&entry);
 		assert_eq!(
 			blocker,
 			AssetMovementBlocker::OperationNotSupported {
@@ -218,7 +218,7 @@ mod tests {
 	#[test]
 	fn an_unknown_error_is_kept_verbatim() {
 		let entry = json!({ "name": "SomeError", "code": "SOMETHING_ELSE", "error": "boom" });
-		let blocker = AssetMovementBlocker::from_wire(&entry);
+		let blocker = AssetMovementBlocker::from_transport(&entry);
 		assert_eq!(
 			blocker,
 			AssetMovementBlocker::Other {

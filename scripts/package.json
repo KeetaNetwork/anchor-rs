@@ -2,7 +2,7 @@
 	"name": "@keetanetwork/anchor-rs-codegen",
 	"private": true,
 	"type": "module",
-	"description": "Codegen tooling: emit binding DTOs from the @keetanetwork/anchor schemas so language bindings never hand-duplicate the wire types.",
+	"description": "Codegen tooling: emit binding DTOs from the @keetanetwork/anchor schemas so language bindings never hand-duplicate the transport types.",
 	"license": "SEE LICENSE IN LICENSE",
 	"engines": {
 		"node": ">=20"
