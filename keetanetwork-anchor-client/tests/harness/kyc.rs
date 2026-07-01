@@ -28,6 +28,21 @@ pub fn issue_attributes() -> Value {
 		} },
 		{ "name": "entityType", "sensitive": true, "value": {
 			"person": [{ "id": "123-45-6789", "schemeName": "SSN" }]
+		} },
+		{ "name": "documentPassport", "sensitive": true, "value": {
+			"documentNumber": "X1234567",
+			"fullName": "Jane Doe",
+			"issuingCountry": "US",
+			"nationality": "US",
+			"address": { "country": "US", "postalCode": "34677", "townName": "Oldsmar" },
+			"front": {
+				"external": { "url": "https://example.test/doc", "contentType": "image/png" },
+				"digest": {
+					"digestAlgorithm": "sha3-256",
+					"digest": { "type": "Buffer", "data": [1, 2, 3] }
+				},
+				"encryptionAlgorithm": "1.3.6.1.4.1.62675.2"
+			}
 		} }
 	])
 }
@@ -65,6 +80,7 @@ pub fn attribute_cases() -> Vec<AttributeCase> {
 				.expect("attribute sensitive flag");
 			let value = entry.get("value").expect("attribute value");
 			let (semantic, expected) = semantic_and_expected(value);
+
 			AttributeCase { name: name.to_string(), semantic, sensitive, expected }
 		})
 		.collect()
@@ -137,6 +153,7 @@ impl KycAnchor {
 			.and_then(|operations| operations.get(name))
 			.and_then(Value::as_str)
 			.ok_or(HarnessError::MissingField { field: name })?;
+
 		Ok(url.to_string())
 	}
 

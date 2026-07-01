@@ -104,11 +104,9 @@ pub mod codec;
 pub mod error;
 
 #[cfg(feature = "serde")]
-pub mod iso20022_codec;
+pub mod iso20022_engine;
 #[cfg(feature = "serde")]
 pub mod serde;
-#[cfg(feature = "serde")]
-pub mod structured;
 
 #[cfg(all(test, feature = "serde"))]
 mod testing;

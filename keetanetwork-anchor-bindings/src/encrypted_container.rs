@@ -140,7 +140,7 @@ pub fn signing_account(container: &EncryptedContainer) -> Result<Option<Vec<u8>>
 }
 
 /// Reduce a container error to a stable boundary code.
-fn coded(error: EncryptedContainerError) -> CodedError {
+pub fn coded(error: EncryptedContainerError) -> CodedError {
 	let message = error.to_string();
 	let code = match error {
 		EncryptedContainerError::UnsupportedVersion { .. } => UNSUPPORTED_VERSION,

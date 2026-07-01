@@ -36,6 +36,17 @@ pub fn issue_attributes() -> Value {
 		} },
 		{ "name": "entityType", "sensitive": true, "value": {
 			"person": [{ "id": "123-45-6789", "schemeName": "SSN" }]
+		} },
+		{ "name": "documentPassport", "sensitive": true, "value": {
+			"documentNumber": "X1234567",
+			"front": {
+				"external": { "url": "https://example.test/doc", "contentType": "image/png" },
+				"digest": {
+					"digestAlgorithm": "sha3-256",
+					"digest": { "type": "Buffer", "data": [1, 2, 3] }
+				},
+				"encryptionAlgorithm": "1.3.6.1.4.1.62675.2"
+			}
 		} }
 	])
 }
@@ -66,7 +77,12 @@ pub fn attribute_names() -> Vec<String> {
 		.as_array()
 		.into_iter()
 		.flatten()
-		.filter_map(|entry| entry.get("name").and_then(Value::as_str).map(str::to_string))
+		.filter_map(|entry| {
+			entry
+				.get("name")
+				.and_then(Value::as_str)
+				.map(str::to_string)
+		})
 		.collect()
 }
 
@@ -90,9 +106,10 @@ pub fn flatten_proof(nested: &Value) -> Value {
 
 /// The value of a `KEY=VALUE` sentinel line in captured stdout, if present.
 pub fn sentinel<'a>(stdout: &'a str, key: &str) -> Option<&'a str> {
-	stdout
-		.lines()
-		.find_map(|line| line.strip_prefix(key).and_then(|rest| rest.strip_prefix('=')))
+	stdout.lines().find_map(|line| {
+		line.strip_prefix(key)
+			.and_then(|rest| rest.strip_prefix('='))
+	})
 }
 
 /// Locate the compiled KYC harness entry (`dist/kyc.js`).

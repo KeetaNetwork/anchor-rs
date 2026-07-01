@@ -420,6 +420,16 @@ function reviveValue(value: unknown): unknown {
 			return(new Date(dateEntry[1]));
 		}
 
+		// A Node `Buffer` JSON form (`{ type: 'Buffer', data: [..] }`) revives to a
+		// Buffer so an OCTET STRING (e.g. a document reference digest) encodes as
+		// the reference implementation expects.
+		const typeEntry = entries.find(([key]) => key === 'type');
+		const dataEntry = entries.find(([key]) => key === 'data');
+		const data: unknown = dataEntry?.[1];
+		if (typeEntry !== undefined && typeEntry[1] === 'Buffer' && Array.isArray(data) && data.every((byte): byte is number => typeof byte === 'number')) {
+			return(Buffer.from(data));
+		}
+
 		const revived: { [key: string]: unknown } = {};
 		for (const [key, nested] of entries) {
 			revived[key] = reviveValue(nested);

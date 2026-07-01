@@ -183,6 +183,48 @@ interface containers {
 	}
 }
 
+/// Sharable certificate attributes: a selected subset of a leaf's attributes,
+/// proved with the subject and sealed into an encrypted container for a chosen
+/// recipient set. Built on the reused account/certificate primitives and the
+/// KYC leaf certificate.
+interface sharable {
+	use keeta:client/types@0.1.0.{coded-error};
+	use keeta:client/crypto@0.1.0.{account, certificate};
+	use certificates.{kyc-certificate};
+
+	/// A sealed, selectively disclosed subset of a certificate's attributes.
+	resource sharable-certificate-attributes {
+		/// Prove or copy each attribute in `names` from `certificate` using the
+		/// `subject` account, bridging the trust chain with `intermediates`, and
+		/// seal the result. Grant a recipient before exporting.
+		from-certificate: static func(certificate: borrow<kyc-certificate>, subject: borrow<account>, intermediates: list<borrow<certificate>>, names: list<string>) -> result<sharable-certificate-attributes, coded-error>;
+		/// Open a bundle from encoded container bytes, resolved with `principals`.
+		from-encoded: static func(data: list<u8>, principals: list<borrow<account>>) -> result<sharable-certificate-attributes, coded-error>;
+		/// Open a bundle from a PEM envelope, resolved with `principals`.
+		from-pem: static func(pem: string, principals: list<borrow<account>>) -> result<sharable-certificate-attributes, coded-error>;
+		/// Grant `accounts` access, invalidating the cached encoded form.
+		grant-access: func(accounts: list<borrow<account>>) -> result<_, coded-error>;
+		/// Revoke the account identified by its type-prefixed public key.
+		revoke-access: func(public-key: list<u8>) -> result<_, coded-error>;
+		/// The type-prefixed public keys of the accounts that can open the bundle.
+		principals: func() -> result<list<list<u8>>, coded-error>;
+		/// The bundle's DER-encoded container bytes, requiring a granted recipient.
+		export-encoded: func() -> result<list<u8>, coded-error>;
+		/// The bundle exported as a PEM envelope.
+		to-pem: func() -> result<string, coded-error>;
+		/// The embedded leaf certificate.
+		certificate: func() -> result<kyc-certificate, coded-error>;
+		/// The embedded intermediate certificate chain.
+		intermediates: func() -> result<list<certificate>, coded-error>;
+		/// The names of the disclosed attributes.
+		attribute-names: func() -> result<list<string>, coded-error>;
+		/// The validated raw disclosed value for `name`, absent when not disclosed.
+		attribute-buffer: func(name: string) -> result<option<list<u8>>, coded-error>;
+		/// The schema-decoded semantic value for `name`, absent when not disclosed.
+		attribute-value: func(name: string) -> result<option<list<u8>>, coded-error>;
+	}
+}
+
 /// The KYC anchor client: discover providers, then create and track
 /// verifications, signing each request with the bound account over `wasi:http`.
 interface kyc {
@@ -220,5 +262,6 @@ world keeta-anchor-kyc {
 	export keeta:client/crypto@0.1.0;
 	export certificates;
 	export containers;
+	export sharable;
 	export kyc;
 }

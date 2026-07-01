@@ -318,7 +318,7 @@ impl KycAttributesBuilder {
 	///
 	/// #[cfg(feature = "chrono")]
 	/// let birth_info = DateAndPlaceOfBirth::new(
-	///     BirthDate(NaiveDate::from_ymd_opt(1990, 1, 1).unwrap().and_hms_opt(0, 0, 0).unwrap().and_utc().fixed_offset()),
+	///     BirthDate(NaiveDate::from_ymd_opt(1990, 1, 1).unwrap().and_hms_opt(0, 0, 0).unwrap().and_utc().into()),
 	///     TownName("New York".to_string()),
 	///     Country("US".to_string()),
 	///     Some(CountrySubDivision("NY".to_string())),

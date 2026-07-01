@@ -1,6 +1,6 @@
 [package]
 name = "keetanetwork-anchor"
-version.workspace = true
+version = "0.1.0"
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
@@ -67,7 +67,7 @@ keetanetwork-utils = { workspace = true, features = ["build"] }
 serde_json = { workspace = true, features = ["std"] }
 
 [features]
-default = ["std", "serde", "chrono", "signing", "encrypted-container"]
+default = ["std", "serde", "chrono", "signing", "encrypted-container", "sharable-attributes"]
 std = [
 	"alloc",
 	"snafu/std",
@@ -105,4 +105,5 @@ serde = [
 chrono = ["alloc", "dep:chrono"]
 signing = ["alloc", "dep:chrono", "dep:serde_json", "dep:uuid", "dep:url"]
 encrypted-container = ["alloc", "dep:miniz_oxide", "dep:num-bigint"]
+sharable-attributes = ["encrypted-container", "serde"]
 x509 = ["alloc", "dep:chrono"]

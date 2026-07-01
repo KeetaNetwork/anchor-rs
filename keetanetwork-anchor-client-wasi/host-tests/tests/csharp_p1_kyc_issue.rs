@@ -1,4 +1,4 @@
-//! Offline C# KYC builder end-to-end test.
+//! C# KYC builder end-to-end test.
 //!
 //! Runs the C# SDK example in its `KEETA_ISSUE_ONLY` mode against the P1 core
 //! module: issue a leaf through the fluent builder, then read every attribute

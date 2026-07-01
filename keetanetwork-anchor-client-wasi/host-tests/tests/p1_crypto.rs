@@ -1,4 +1,4 @@
-//! Offline C# `crypto` resources end-to-end test.
+//! 	 C# `crypto` resources end-to-end test.
 //!
 //! Runs the C# SDK example in its `KEETA_CRYPTO_ONLY` mode against the P1 core
 //! module: no node, no harness, no network.

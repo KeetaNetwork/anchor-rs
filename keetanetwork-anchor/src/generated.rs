@@ -24,3 +24,6 @@ pub use encrypted_container::{ContainerBox, ContainerPackage, EncryptedBox, KeyS
 pub use kyc_attributes::{AttributeValue, Attribute, KycAttributes};
 #[path = "generated/attribute_types.rs"]
 pub mod attribute_types;
+#[cfg(feature = "serde")]
+#[path = "generated/iso20022_schema.rs"]
+pub mod iso20022_schema;

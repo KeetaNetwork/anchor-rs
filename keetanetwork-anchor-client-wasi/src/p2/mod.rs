@@ -9,9 +9,11 @@ use std::sync::Arc;
 use keetanetwork_account::GenericAccount;
 use keetanetwork_anchor::certificates::KycCertificate as CoreKycCertificate;
 use keetanetwork_anchor::encrypted_container::EncryptedContainer as CoreEncryptedContainer;
+use keetanetwork_anchor::sharable_attributes::SharableCertificateAttributes as CoreSharableCertificateAttributes;
 use keetanetwork_anchor_bindings::certificate as kyc_cert_ops;
 use keetanetwork_anchor_bindings::encrypted_container as ec_ops;
 use keetanetwork_anchor_bindings::error::CodedError as CoreCodedError;
+use keetanetwork_anchor_bindings::sharable_attributes as sharable_ops;
 use keetanetwork_anchor_client::resilience::{ResilientTransport, WasiRuntime};
 use keetanetwork_anchor_client::{
 	AnchorClientError, AnchorContext, AnchorHttpTransport, AnchorOutcome, Certificates, CountryCode, ExpectedCost,
@@ -37,6 +39,10 @@ use exports::keeta::anchor::containers::{
 	EncryptedContainer as WitEncryptedContainer, Guest as ContainersGuest, GuestEncryptedContainer,
 };
 use exports::keeta::anchor::kyc::{Client, Guest as KycGuest, GuestClient};
+use exports::keeta::anchor::sharable::{
+	Guest as SharableGuest, GuestSharableCertificateAttributes, KycCertificateBorrow,
+	SharableCertificateAttributes as WitSharableCertificateAttributes,
+};
 use exports::keeta::client::crypto::{
 	Account as WitAccount, AccountBorrow, Certificate as WitCertificate, CertificateBorrow, Guest as CryptoGuest,
 	GuestAccount, GuestCertificate,
@@ -72,6 +78,10 @@ impl CertificatesGuest for Component {
 
 impl ContainersGuest for Component {
 	type EncryptedContainer = EncryptedContainerResource;
+}
+
+impl SharableGuest for Component {
+	type SharableCertificateAttributes = SharableCertificateAttributesResource;
 }
 
 // ---------------------------------------------------------------------------
@@ -383,6 +393,97 @@ impl GuestEncryptedContainer for EncryptedContainerResource {
 	fn revoke_access(&self, public_key: Vec<u8>) -> Result<(), CodedError> {
 		ec_ops::revoke_access(&mut self.container.borrow_mut(), &public_key)?;
 		Ok(())
+	}
+}
+
+// ---------------------------------------------------------------------------
+// sharable-certificate-attributes resource
+// ---------------------------------------------------------------------------
+
+/// A sealed, selectively disclosed subset of a certificate's attributes.
+struct SharableCertificateAttributesResource {
+	bundle: RefCell<CoreSharableCertificateAttributes>,
+}
+
+impl GuestSharableCertificateAttributes for SharableCertificateAttributesResource {
+	fn from_certificate(
+		certificate: KycCertificateBorrow<'_>,
+		subject: AccountBorrow<'_>,
+		intermediates: Vec<CertificateBorrow<'_>>,
+		names: Vec<String>,
+	) -> Result<WitSharableCertificateAttributes, CodedError> {
+		let certificate = &certificate.get::<KycCertificateResource>().certificate;
+		let subject = Arc::clone(&subject.get::<AccountResource>().account);
+		let intermediates = collect_certificates(&intermediates);
+		let bundle = sharable_ops::from_certificate(certificate, &subject, &intermediates, &names)?;
+
+		Ok(WitSharableCertificateAttributes::new(Self { bundle: RefCell::new(bundle) }))
+	}
+
+	fn from_encoded(
+		data: Vec<u8>,
+		principals: Vec<AccountBorrow<'_>>,
+	) -> Result<WitSharableCertificateAttributes, CodedError> {
+		let principals = collect_accounts(&principals);
+		let bundle = sharable_ops::from_encoded(&data, &principals)?;
+		Ok(WitSharableCertificateAttributes::new(Self { bundle: RefCell::new(bundle) }))
+	}
+
+	fn from_pem(
+		pem: String,
+		principals: Vec<AccountBorrow<'_>>,
+	) -> Result<WitSharableCertificateAttributes, CodedError> {
+		let principals = collect_accounts(&principals);
+		let bundle = sharable_ops::from_pem(&pem, &principals)?;
+		Ok(WitSharableCertificateAttributes::new(Self { bundle: RefCell::new(bundle) }))
+	}
+
+	fn grant_access(&self, accounts: Vec<AccountBorrow<'_>>) -> Result<(), CodedError> {
+		let accounts = collect_accounts(&accounts);
+		sharable_ops::grant_access(&mut self.bundle.borrow_mut(), &accounts)?;
+		Ok(())
+	}
+
+	fn revoke_access(&self, public_key: Vec<u8>) -> Result<(), CodedError> {
+		sharable_ops::revoke_access(&mut self.bundle.borrow_mut(), &public_key)?;
+		Ok(())
+	}
+
+	fn principals(&self) -> Result<Vec<Vec<u8>>, CodedError> {
+		Ok(sharable_ops::principals(&self.bundle.borrow())?)
+	}
+
+	fn export_encoded(&self) -> Result<Vec<u8>, CodedError> {
+		Ok(sharable_ops::export(&mut self.bundle.borrow_mut())?)
+	}
+
+	fn to_pem(&self) -> Result<String, CodedError> {
+		Ok(sharable_ops::to_pem(&mut self.bundle.borrow_mut())?)
+	}
+
+	fn certificate(&self) -> Result<WitKycCertificate, CodedError> {
+		let certificate = sharable_ops::certificate(&mut self.bundle.borrow_mut())?;
+		Ok(WitKycCertificate::new(KycCertificateResource { certificate }))
+	}
+
+	fn intermediates(&self) -> Result<Vec<WitCertificate>, CodedError> {
+		let intermediates = sharable_ops::intermediates(&mut self.bundle.borrow_mut())?;
+		Ok(intermediates
+			.into_iter()
+			.map(|certificate| WitCertificate::new(CertificateResource { certificate }))
+			.collect())
+	}
+
+	fn attribute_names(&self) -> Result<Vec<String>, CodedError> {
+		Ok(sharable_ops::attribute_names(&mut self.bundle.borrow_mut())?)
+	}
+
+	fn attribute_buffer(&self, name: String) -> Result<Option<Vec<u8>>, CodedError> {
+		Ok(sharable_ops::attribute_buffer(&mut self.bundle.borrow_mut(), &name)?)
+	}
+
+	fn attribute_value(&self, name: String) -> Result<Option<Vec<u8>>, CodedError> {
+		Ok(sharable_ops::attribute_value(&mut self.bundle.borrow_mut(), &name)?)
 	}
 }
 

@@ -157,11 +157,7 @@ async fn a_signed_container_verifies_and_recovers_its_signer() -> Result<(), Box
 		.await?
 		.map_err(coded)?;
 	let signer_key = crypto.account().call_public_key(&mut store, signer).await?;
-	assert_eq!(
-		recovered.map(hex_lower),
-		Some(signer_key),
-		"the recovered signer key must match the signing account"
-	);
+	assert_eq!(recovered.map(hex_lower), Some(signer_key), "the recovered signer key must match the signing account");
 
 	Ok(())
 }

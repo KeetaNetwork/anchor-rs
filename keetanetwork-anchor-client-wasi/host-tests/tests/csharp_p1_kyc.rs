@@ -1,4 +1,4 @@
-//! C# KYC SDK <-> TypeScript anchor conformance, end-to-end over real services
+//! C# KYC SDK <-> TypeScript anchor compatibility, end-to-end over real services
 //!
 //! It covers the full cross-implementation matrix for KYC certificates, both
 //! directions, using only the real anchor, the real C# SDK, and the real
@@ -30,13 +30,13 @@ const WRONG_NAME: &str = "fullName";
 fn csharp_sdk_conforms_with_typescript_anchor() -> Result<(), BoxError> {
 	// Platform-specific: skip locally without the .NET SDK, but enforce in CI.
 	if std::env::var_os("CI").is_none() && !dotnet_available() {
-		eprintln!("skipping C# conformance: the .NET SDK was not found (set CI to require it)");
+		eprintln!("skipping C# compatibility: the .NET SDK was not found (set CI to require it)");
 		return Ok(());
 	}
 
 	let module = module_path();
 	if !module.exists() {
-		eprintln!("skipping C# conformance: build the wasm32-wasip1 module first ({})", module.display());
+		eprintln!("skipping C# compatibility: build the wasm32-wasip1 module first ({})", module.display());
 		return Ok(());
 	}
 
@@ -62,10 +62,8 @@ fn csharp_sdk_conforms_with_typescript_anchor() -> Result<(), BoxError> {
 
 	// The TypeScript reader proves an attribute on the anchor leaf; the C# SDK
 	// must validate that proof (TS proves -> C# validates).
-	let ts_proof = harness.request(
-		"proveAttribute",
-		json!({ "leaf": anchor_leaf, "subjectSeed": SUBJECT_SEED, "name": PROOF_NAME }),
-	)?;
+	let ts_proof = harness
+		.request("proveAttribute", json!({ "leaf": anchor_leaf, "subjectSeed": SUBJECT_SEED, "name": PROOF_NAME }))?;
 	let ts_proof_flat = flatten_proof(
 		ts_proof
 			.get("proof")
@@ -84,7 +82,7 @@ fn csharp_sdk_conforms_with_typescript_anchor() -> Result<(), BoxError> {
 		.env("KEETA_LEAF_PEM", &anchor_leaf)
 		.env("KEETA_ATTRIBUTES_JSON", &reference_json)
 		.env("KEETA_SUBJECT_SEED", SUBJECT_SEED)
-		.env("KEETA_CONFORMANCE", "1")
+		.env("KEETA_COMPATIBILITY", "1")
 		.env("KEETA_ISSUE_JSON", issue_attributes().to_string())
 		.env("KEETA_TS_PROOF_JSON", ts_proof_flat.to_string())
 		.env("KEETA_TS_PROOF_NAME", PROOF_NAME)
@@ -96,7 +94,7 @@ fn csharp_sdk_conforms_with_typescript_anchor() -> Result<(), BoxError> {
 	let context = || format!("STDOUT:\n{stdout}\nSTDERR:\n{stderr}");
 
 	assert!(output.status.success(), "the C# SDK must exit zero\n{}", context());
-	for marker in ["KYC_OK", "ATTRIBUTES_OK", "CONFORMANCE_OK"] {
+	for marker in ["KYC_OK", "ATTRIBUTES_OK", "COMPATIBILITY_OK"] {
 		assert!(stdout.contains(marker), "the C# SDK must print `{marker}`\n{}", context());
 	}
 
@@ -112,9 +110,8 @@ fn csharp_sdk_conforms_with_typescript_anchor() -> Result<(), BoxError> {
 
 	// The C#-issued leaf and the proof it generated for it.
 	let csharp_leaf = parse_csharp_leaf(&stdout).ok_or_else(|| format!("missing CS_LEAF\n{}", context()))?;
-	let csharp_proof_flat: Value = serde_json::from_str(
-		sentinel(&stdout, "CS_PROOF").ok_or_else(|| format!("missing CS_PROOF\n{}", context()))?,
-	)?;
+	let csharp_proof_flat: Value =
+		serde_json::from_str(sentinel(&stdout, "CS_PROOF").ok_or_else(|| format!("missing CS_PROOF\n{}", context()))?)?;
 
 	// C# issues (encrypts) -> TS decrypts: the reference reader recovers every
 	// attribute the C# SDK embedded.
@@ -156,10 +153,8 @@ impl KycHarness {
 /// Validate a nested `proof` for sensitive attribute `name` on `leaf` through the
 /// reference reader.
 fn validate_proof(harness: &mut KycHarness, leaf: &str, name: &str, proof: &Value) -> Result<bool, BoxError> {
-	let response = harness.request(
-		"validateProof",
-		json!({ "leaf": leaf, "subjectSeed": SUBJECT_SEED, "name": name, "proof": proof }),
-	)?;
+	let response = harness
+		.request("validateProof", json!({ "leaf": leaf, "subjectSeed": SUBJECT_SEED, "name": name, "proof": proof }))?;
 	response
 		.get("valid")
 		.and_then(Value::as_bool)

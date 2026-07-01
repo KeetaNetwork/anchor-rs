@@ -9,6 +9,7 @@
 
 mod driver;
 mod kyc;
+mod sharable;
 mod signing;
 
 pub use driver::HarnessError;
@@ -16,4 +17,5 @@ pub use kyc::{
 	attribute_cases, decoded_to_value, issue_attributes, signed_request_body, AttributeCase, KycAnchor, KycHarness,
 	PublishedRoot, SUBJECT_SEED,
 };
+pub use sharable::SharableHarness;
 pub use signing::{HarnessSignature, SigningHarness};
