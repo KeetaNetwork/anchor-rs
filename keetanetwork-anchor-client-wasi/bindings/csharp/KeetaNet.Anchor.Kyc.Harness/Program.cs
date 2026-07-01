@@ -69,6 +69,16 @@ if (Environment.GetEnvironmentVariable("KEETA_CONTAINER_COMPATIBILITY") is not n
 	return;
 }
 
+// Drive the asset-movement SDK end-to-end against the live reference anchor:
+// discover the provider, then simulate (unsigned), initiate (signed), read the
+// signed-URL status, and the account status, across signing algorithms.
+if (Environment.GetEnvironmentVariable("KEETA_ASSET") is not null)
+{
+	AssetMovementSelfTest(runtime);
+	Console.WriteLine("ASSET_OK");
+	return;
+}
+
 string nodeApi = RequireEnv("KEETA_NODE_API");
 string root = RequireEnv("KEETA_ROOT");
 string providerId = RequireEnv("KEETA_PROVIDER_ID");
@@ -249,6 +259,61 @@ static bool JsonEqual(JsonElement left, JsonElement right)
 			return left.GetRawText() == right.GetRawText();
 		default:
 			return true;
+	}
+}
+
+// Drive the asset-movement SDK against the live reference anchor across signing
+// algorithms: discover the advertised provider, simulate a transfer (published
+// unauthenticated), initiate one (signed body), read its signed-URL status, and
+// the signer's account status.
+static void AssetMovementSelfTest(WasmRuntime runtime)
+{
+	string nodeApi = RequireEnv("KEETA_NODE_API");
+	string root = RequireEnv("KEETA_ROOT");
+	string providerId = RequireEnv("KEETA_PROVIDER_ID");
+	string asset = RequireEnv("KEETA_ASSET_ID");
+	string seed = Environment.GetEnvironmentVariable("KEETA_SEED") ?? new string('1', 64);
+
+	string[] algorithms = { "ed25519", "ecdsa_secp256k1", "ecdsa_secp256r1" };
+
+	AssetTransferRequest request = new(
+		asset,
+		new AssetTransferSource("chain:keeta:100"),
+		new AssetTransferDestination("chain:evm:100", "recipient-123"),
+		"100");
+
+	foreach (string algorithm in algorithms)
+	{
+		using Account signer = Account.FromSeed(runtime, seed, 0, algorithm);
+		using var client = AssetMovementClient.WithAccount(runtime, nodeApi, root, signer);
+
+		IReadOnlyList<AssetProvider> providers = client.Providers();
+		Require(
+			providers.Any(candidate => candidate.Id == providerId),
+			$"{algorithm}: discovery must surface the harness provider");
+
+		AssetProvider provider = client.ProviderById(providerId)
+			?? throw new InvalidOperationException($"{algorithm}: provider `{providerId}` was not advertised");
+
+		AssetSimulatedTransfer simulated = client.SimulateTransfer(provider, request);
+		Require(simulated.InstructionChoices.Count > 0, $"{algorithm}: the simulation must carry instruction choices");
+		Require(
+			simulated.InstructionChoices[0].GetProperty("type").GetString() == "KEETA_SEND",
+			$"{algorithm}: the first instruction choice must be a KEETA_SEND");
+
+		AssetTransfer transfer = client.InitiateTransfer(provider, request);
+		Require(transfer.Id == "123", $"{algorithm}: the initiated transfer must carry its id");
+		Require(transfer.InstructionChoices.Count > 0, $"{algorithm}: the transfer must carry instruction choices");
+
+		AssetTransferStatus status = client.TransferStatus(provider, transfer.Id);
+		Require(
+			status.Transaction.GetProperty("id").GetString() == "123",
+			$"{algorithm}: the status must report the harness transaction");
+
+		AssetAccountStatus accountStatus = client.AccountStatus(provider);
+		Require(!accountStatus.ActionRequired, $"{algorithm}: a ready account must report actionRequired false");
+
+		Console.WriteLine($"{algorithm}: OK");
 	}
 }
 

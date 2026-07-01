@@ -1,8 +1,8 @@
-//! Shared JSON-lines driver for the live TypeScript KYC anchor harness.
+//! Shared JSON-lines driver for the live TypeScript node harnesses.
 //!
-//! Both the P2 wasmtime e2e and the bound-language e2e boot the same harness
-//! (`node-harness/dist/kyc.js`), publish signed service metadata on-chain, and
-//! serve the production `KeetaNetKYCAnchorHTTPServer`.
+//! Every harness (KYC, `EncryptedContainer`, asset-movement) speaks the same
+//! `ready`/command/response protocol over stdio, so the P2 wasmtime e2e and the
+//! bound-language e2e drive them all through one [`Harness`] type.
 
 #![allow(dead_code)]
 
@@ -53,7 +53,7 @@ pub fn issue_attributes() -> Value {
 
 /// The reference value a reader recovers for each issued attribute: a scalar is
 /// its string, a `{ "__date": "<ISO>" }` is that ISO string, and a structured
-/// value is its object unchanged. Mirrors the reference reader's `getValue`.
+/// value is its object unchanged.
 pub fn expected_attributes() -> Map<String, Value> {
 	let mut expected = Map::new();
 	for entry in issue_attributes().as_array().into_iter().flatten() {
@@ -112,24 +112,15 @@ pub fn sentinel<'a>(stdout: &'a str, key: &str) -> Option<&'a str> {
 	})
 }
 
-/// Locate the compiled KYC harness entry (`dist/kyc.js`).
-pub fn harness_path() -> PathBuf {
-	if let Ok(path) = std::env::var("KYC_HARNESS") {
+/// Locate a compiled node-harness entry at `dist/<default_file>`, letting
+/// `env_var` override the path when the build places it elsewhere.
+pub fn harness_path(env_var: &str, default_file: &str) -> PathBuf {
+	if let Ok(path) = std::env::var(env_var) {
 		return PathBuf::from(path);
 	}
 
 	let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-	manifest_dir.join("../../keetanetwork-anchor-client/node-harness/dist/kyc.js")
-}
-
-/// Locate the compiled `EncryptedContainer` harness entry (`dist/container.js`).
-pub fn container_harness_path() -> PathBuf {
-	if let Ok(path) = std::env::var("CONTAINER_HARNESS") {
-		return PathBuf::from(path);
-	}
-
-	let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-	manifest_dir.join("../../keetanetwork-anchor-client/node-harness/dist/container.js")
+	manifest_dir.join(format!("../../keetanetwork-anchor-client/node-harness/dist/{default_file}"))
 }
 
 /// Spawn a JSON-lines node harness at `script` and consume its `ready` line.
@@ -192,17 +183,35 @@ pub fn field_str(value: &Value, field: &str) -> Result<String, BoxError> {
 		.ok_or_else(|| format!("harness response missing field `{field}`").into())
 }
 
-/// A live KYC anchor harness driven over JSON lines.
-pub struct KycHarness {
+/// A live node-harness anchor driven over JSON lines. Every harness speaks the
+/// same protocol, so one type serves KYC, `EncryptedContainer`, and
+/// asset-movement; the constructors differ only in which script they spawn.
+pub struct Harness {
 	child: Child,
 	stdin: ChildStdin,
 	lines: Lines<BufReader<ChildStdout>>,
 }
 
-impl KycHarness {
-	/// Spawn `node dist/kyc.js` and wait for its `ready` line.
-	pub fn start() -> Result<Self, BoxError> {
-		let (child, stdin, lines) = spawn_harness(harness_path())?;
+impl Harness {
+	/// Spawn the KYC harness (`dist/kyc.js`) and wait for its `ready` line.
+	pub fn kyc() -> Result<Self, BoxError> {
+		Self::spawn("KYC_HARNESS", "kyc.js")
+	}
+
+	/// Spawn the `EncryptedContainer` harness (`dist/container.js`).
+	pub fn container() -> Result<Self, BoxError> {
+		Self::spawn("CONTAINER_HARNESS", "container.js")
+	}
+
+	/// Spawn the asset-movement harness (`dist/asset.js`).
+	pub fn asset() -> Result<Self, BoxError> {
+		Self::spawn("ASSET_HARNESS", "asset.js")
+	}
+
+	/// Spawn the harness `default_file` (overridable via `env_var`) and consume
+	/// its `ready` line.
+	fn spawn(env_var: &str, default_file: &str) -> Result<Self, BoxError> {
+		let (child, stdin, lines) = spawn_harness(harness_path(env_var, default_file))?;
 		Ok(Self { child, stdin, lines })
 	}
 
@@ -219,41 +228,7 @@ impl KycHarness {
 	}
 }
 
-impl Drop for KycHarness {
-	fn drop(&mut self) {
-		let _ = self.child.kill();
-		let _ = self.child.wait();
-	}
-}
-
-/// A live `EncryptedContainer` reference harness driven over JSON lines.
-pub struct ContainerHarness {
-	child: Child,
-	stdin: ChildStdin,
-	lines: Lines<BufReader<ChildStdout>>,
-}
-
-impl ContainerHarness {
-	/// Spawn `node dist/container.js` and wait for its `ready` line.
-	pub fn start() -> Result<Self, BoxError> {
-		let (child, stdin, lines) = spawn_harness(container_harness_path())?;
-		Ok(Self { child, stdin, lines })
-	}
-
-	/// Send a command with object params and return its response.
-	pub fn request(&mut self, command: &str, params: Value) -> Result<Value, BoxError> {
-		harness_request(&mut self.stdin, &mut self.lines, command, params)
-	}
-
-	/// Stop the harness and wait for it to exit.
-	pub fn shutdown(mut self) -> Result<(), BoxError> {
-		self.request("shutdown", Value::Object(Map::new()))?;
-		self.child.wait()?;
-		Ok(())
-	}
-}
-
-impl Drop for ContainerHarness {
+impl Drop for Harness {
 	fn drop(&mut self) {
 		let _ = self.child.kill();
 		let _ = self.child.wait();

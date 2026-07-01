@@ -255,6 +255,56 @@ interface kyc {
 	}
 }
 
+/// The asset-movement anchor client: discover providers, then move assets,
+/// manage persistent forwarding, and share KYC over `wasi:http`, signing each
+/// request with the bound account.
+interface asset-movement {
+	use keeta:client/types@0.1.0.{coded-error};
+	use keeta:client/crypto@0.1.0.{account};
+
+	/// An asset-movement client bound to a signer and a metadata root.
+	resource asset-client {
+		/// Build a client that resolves providers from the `root` account's
+		/// on-chain service metadata, read via the node API at `node-url`, and
+		/// signs each request with `signer`.
+		with-account: static func(node-url: string, root: string, signer: borrow<account>) -> result<asset-client, coded-error>;
+		/// Every advertised provider, as a JSON array.
+		providers: func() -> result<string, coded-error>;
+		/// The provider with `id` as a JSON document, or JSON `null` when absent.
+		provider-by-id: func(id: string) -> result<string, coded-error>;
+		/// The provider signed by `account` as a JSON document, or JSON `null`.
+		provider-by-account: func(account: string) -> result<string, coded-error>;
+		/// Simulate a transfer, returning a JSON simulated transfer.
+		simulate-transfer: func(provider: string, request: string) -> result<string, coded-error>;
+		/// Initiate a transfer, returning a JSON transfer.
+		initiate-transfer: func(provider: string, request: string) -> result<string, coded-error>;
+		/// Execute a pull instruction, returning a JSON transfer status.
+		execute-transfer: func(provider: string, request: string) -> result<string, coded-error>;
+		/// The JSON status of transfer `id`.
+		transfer-status: func(provider: string, id: string) -> result<string, coded-error>;
+		/// The signer's JSON account status with the provider.
+		account-status: func(provider: string) -> result<string, coded-error>;
+		/// Open a persistent-forwarding template session, returning JSON.
+		initiate-forwarding-template: func(provider: string, request: string) -> result<string, coded-error>;
+		/// Create a persistent-forwarding template, returning JSON.
+		create-forwarding-template: func(provider: string, request: string) -> result<string, coded-error>;
+		/// List persistent-forwarding templates, returning a JSON page.
+		list-forwarding-templates: func(provider: string, request: string) -> result<string, coded-error>;
+		/// Create a persistent-forwarding address, returning JSON.
+		create-forwarding-address: func(provider: string, request: string) -> result<string, coded-error>;
+		/// List persistent-forwarding addresses, returning a JSON page.
+		list-forwarding-addresses: func(provider: string, request: string) -> result<string, coded-error>;
+		/// Deactivate a persistent-forwarding template by id.
+		deactivate-forwarding-template: func(provider: string, id: string) -> result<string, coded-error>;
+		/// Deactivate a persistent-forwarding address by id.
+		deactivate-forwarding-address: func(provider: string, id: string) -> result<string, coded-error>;
+		/// List asset-movement transactions, returning a JSON page.
+		list-transactions: func(provider: string, request: string) -> result<string, coded-error>;
+		/// Share KYC attributes with the provider, returning a JSON outcome.
+		share-kyc: func(provider: string, request: string) -> result<string, coded-error>;
+	}
+}
+
 /// The KYC anchor client as a WASI Preview 2 component, networked over
 /// `wasi:http`, re-exporting the shared `keeta:client` `crypto` primitives
 /// (accounts + base certificates) alongside anchor's KYC certificate and client.
@@ -264,4 +314,5 @@ world keeta-anchor-kyc {
 	export containers;
 	export sharable;
 	export kyc;
+	export asset-movement;
 }

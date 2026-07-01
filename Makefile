@@ -144,6 +144,7 @@ test-wasi: build-wasi node-harness
 	WASI_P2_COMPONENT=$(CURDIR)/$(WASI_P2_WASM) \
 	WASI_P1_MODULE=$(CURDIR)/$(WASI_P1_WASM) \
 	KYC_HARNESS=$(CURDIR)/$(HARNESS_DIR)/dist/kyc.js \
+	ASSET_HARNESS=$(CURDIR)/$(HARNESS_DIR)/dist/asset.js \
 		cargo test --manifest-path $(WASI_CRATE)/host-tests/Cargo.toml -- --include-ignored
 
 test-all: test test-feat test-wasi

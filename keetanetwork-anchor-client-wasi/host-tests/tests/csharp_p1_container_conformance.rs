@@ -15,7 +15,7 @@ use base64::engine::general_purpose::STANDARD;
 use base64::Engine as _;
 use serde_json::{json, Value};
 
-use common::{sentinel, BoxError, ContainerHarness};
+use common::{sentinel, BoxError, Harness};
 use dotnet::{dotnet_available, harness_dir, module_path};
 
 /// The seed the encryption principal derives from on both sides.
@@ -56,7 +56,7 @@ fn csharp_container_conforms_with_typescript_anchor() -> Result<(), BoxError> {
 		return Ok(());
 	}
 
-	let mut harness = ContainerHarness::start()?;
+	let mut harness = Harness::container()?;
 
 	// TS encrypts + signs a container our C# SDK must decrypt and verify.
 	let ts_plaintext = STANDARD.encode(b"typescript encrypted and signed container");

@@ -42,9 +42,22 @@ pub use resilience::TokioRuntime;
 pub use resolver::{decode_base64, parse_metadata, CountryCode, KycOperations, KycProvider, Resolver, ServiceQuery};
 
 #[cfg(feature = "service")]
-pub use service::{AnchorCaller, AnchorContext, AnchorOutcome, Auth, Call, Endpoint, Method};
+pub use service::{AnchorCaller, AnchorContext, AnchorOutcome, Auth, BodyEnvelope, Call, Endpoint, Method};
 
 #[cfg(feature = "kyc")]
 pub use services::kyc::{
 	Certificate, Certificates, ExpectedCost, KycClient, KycQuery, Verification, VerificationStatus,
+};
+
+#[cfg(feature = "asset")]
+pub use services::asset_movement::{
+	canonicalize_asset, canonicalize_location, AccountStatus, AddressPage, AssetLocation, AssetMovementBlocker,
+	AssetMovementClient, AssetMovementOperations, AssetMovementProvider, AssetMovementQuery, AssetOrPair,
+	ChainLocation, CreateForwardingAddressRequest, CreateForwardingTemplateRequest, EndpointAuth,
+	ExecuteTransferRequest, ForwardingAddressFilter, ForwardingDestination, ForwardingTemplate,
+	InitiateForwardingTemplateRequest, ListForwardingAddressesRequest, ListForwardingTemplatesRequest,
+	ListTransactionsRequest, OperationEndpoint, Pagination, PersistentAddressFilter, ProviderFilter, ShareKycOutcome,
+	ShareKycRequest, SimulatedTransfer, TemplatePage, TemplateSession, TransactionEndpointFilter, TransactionPage,
+	TransactionRefFilter, Transfer, TransferDestination, TransferRequest, TransferSource, TransferStatus,
+	OPERATION_NAMES,
 };

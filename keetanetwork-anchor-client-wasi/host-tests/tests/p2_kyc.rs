@@ -5,7 +5,7 @@ use serde_json::{json, Value};
 mod common;
 mod wasmtime_p2;
 
-use common::{field_str, issue_attributes, BoxError, KycHarness, SUBJECT_SEED};
+use common::{field_str, issue_attributes, BoxError, Harness, SUBJECT_SEED};
 use wasmtime_p2::bindings::exports::keeta::anchor::certificates::IssueAttribute;
 use wasmtime_p2::bindings::exports::keeta::anchor::kyc::{
 	CertificatesOutcome, KycProvider, StatusOutcome, VerificationOutcome,
@@ -27,7 +27,7 @@ fn decoded_to_value(expected: &Value, bytes: Vec<u8>) -> Result<Value, BoxError>
 #[tokio::test]
 #[ignore = "requires `make node-harness` and the built wasm32-wasip2 component"]
 async fn p2_kyc_signs_against_live_anchor() -> Result<(), BoxError> {
-	let mut harness = KycHarness::start()?;
+	let mut harness = Harness::kyc()?;
 
 	// Boot the real KYC anchor advertising a signed, US-bound provider, with its
 	// metadata published on-chain to a root account.
@@ -204,7 +204,7 @@ async fn p2_kyc_issues_a_leaf_across_algorithms() -> Result<(), BoxError> {
 #[tokio::test]
 #[ignore = "requires `make node-harness` and the built wasm32-wasip2 component"]
 async fn p2_kyc_decrypts_issued_leaf_to_reference_values() -> Result<(), BoxError> {
-	let mut harness = KycHarness::start()?;
+	let mut harness = Harness::kyc()?;
 	harness.request("startKycAnchor", json!({ "sign": true, "countryCodes": ["US"] }))?;
 
 	// The reference anchor issues a populated leaf for our subject and returns the

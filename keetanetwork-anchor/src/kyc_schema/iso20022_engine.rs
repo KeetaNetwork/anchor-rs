@@ -272,9 +272,9 @@ fn decode_date(_time: &keetanetwork_asn1::Asn1Time) -> Result<Value, AnchorAsn1E
 
 // -- OID and buffer helpers -------------------------------------------------
 
-/// The reference OID <-> symbolic-name table, mirroring the TypeScript
-/// `oidMapDB`. A decoded OID renders as its symbolic name when known (else its
-/// dotted-decimal form), and a symbolic name resolves back to its OID on encode.
+/// The OID <-> symbolic-name table. A decoded OID renders as its symbolic name
+/// when known (else its dotted-decimal form), and a symbolic name resolves back
+/// to its OID on encode.
 const OID_NAME_TABLE: [(&str, &str); 14] = [
 	("sha256", "2.16.840.1.101.3.4.2.1"),
 	("sha3-256", "2.16.840.1.101.3.4.2.8"),

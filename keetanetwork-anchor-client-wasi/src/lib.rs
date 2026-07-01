@@ -20,6 +20,10 @@ compile_error!("enable exactly one of the `p1` or `p2` features for a wasi build
 #[cfg(all(feature = "p1", target_os = "wasi"))]
 extern crate keetanetwork_client_wasi;
 
+// The asset-movement JSON contract shared by both bindings.
+#[cfg(all(target_os = "wasi", any(feature = "p1", feature = "p2")))]
+mod asset_json;
+
 #[cfg(all(feature = "p2", target_os = "wasi"))]
 mod p2;
 

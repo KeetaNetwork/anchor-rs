@@ -262,6 +262,7 @@ impl P1 {
 		func.call(&mut self.store, (a, b, c, d, e))
 	}
 
+	#[allow(clippy::too_many_arguments)]
 	fn call6(&mut self, name: &str, a: i32, b: i32, c: i32, d: i32, e: i32, f: i32) -> wasmtime::Result<i32> {
 		let func = self
 			.instance
