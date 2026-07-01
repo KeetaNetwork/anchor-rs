@@ -172,7 +172,7 @@ where
 }
 
 /// Prove a sensitive attribute for an erased account, dispatching on its signing
-/// algorithm. Mirrors [`decrypt_attribute_with_account`] for the proof path.
+/// algorithm.
 pub fn prove_attribute_with_account<N>(
 	certificate: &KycCertificate,
 	name: N,

@@ -223,7 +223,7 @@ fn build_client(node_url: String, root: String, signer: Arc<GenericAccount>) -> 
 /// Store `client` under a fresh handle and return it.
 fn insert(client: KycClient) -> i32 {
 	SESSIONS.with_borrow_mut(|sessions| {
-		sessions.next += 1;
+		sessions.next = sessions.next.wrapping_add(1).max(1);
 		let handle = sessions.next;
 		sessions.clients.insert(handle, client);
 		handle

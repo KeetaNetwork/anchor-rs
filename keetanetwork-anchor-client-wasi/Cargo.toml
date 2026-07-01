@@ -20,6 +20,7 @@ p2 = ["dep:wstd", "dep:wit-bindgen"]
 [dependencies]
 keetanetwork-anchor-client = { path = "../keetanetwork-anchor-client", default-features = false, features = [
 	"kyc",
+	"asset",
 ] }
 keetanetwork-anchor-bindings = { path = "../keetanetwork-anchor-bindings" }
 keetanetwork-account = { workspace = true, default-features = false, features = [
@@ -32,6 +33,7 @@ hex = { workspace = true, features = ["alloc"] }
 [target.'cfg(target_os = "wasi")'.dependencies]
 keetanetwork-anchor-client = { path = "../keetanetwork-anchor-client", default-features = false, features = [
 	"kyc",
+	"asset",
 	"wasi",
 	"resilience",
 ] }

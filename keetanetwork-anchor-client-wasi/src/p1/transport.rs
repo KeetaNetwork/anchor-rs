@@ -90,6 +90,14 @@ impl ResilienceRuntime for HostRuntime {
 	}
 }
 
+/// Block the guest for `millis` milliseconds through the host timer import.
+///
+/// Backs the share-KYC promise poll: the host sleep is synchronous, so an
+/// `async` caller awaiting it resolves on the first poll under [`block_on`].
+pub(super) fn host_sleep_ms(millis: u64) {
+	unsafe { keeta_anchor_host_sleep(millis) };
+}
+
 /// The resilient host transport the KYC client runs on: the host fetch shim
 /// wrapped in the shared retry/backoff policy driven by the host timer.
 pub(super) fn host_transport() -> Arc<dyn AnchorHttpTransport> {

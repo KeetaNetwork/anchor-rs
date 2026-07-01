@@ -69,6 +69,16 @@ if (Environment.GetEnvironmentVariable("KEETA_CONTAINER_COMPATIBILITY") is not n
 	return;
 }
 
+// Drive the asset-movement SDK end-to-end against the live reference anchor:
+// discover the provider, then simulate (unsigned), initiate (signed), read the
+// signed-URL status, and the account status, across signing algorithms.
+if (Environment.GetEnvironmentVariable("KEETA_ASSET") is not null)
+{
+	AssetMovementSelfTest(runtime);
+	Console.WriteLine("ASSET_OK");
+	return;
+}
+
 string nodeApi = RequireEnv("KEETA_NODE_API");
 string root = RequireEnv("KEETA_ROOT");
 string providerId = RequireEnv("KEETA_PROVIDER_ID");
@@ -249,6 +259,165 @@ static bool JsonEqual(JsonElement left, JsonElement right)
 			return left.GetRawText() == right.GetRawText();
 		default:
 			return true;
+	}
+}
+
+// Drive the full asset-movement SDK against the live reference anchor across
+// signing algorithms: discovery, the transfer lifecycle, account status, the
+// persistent-forwarding lifecycle, the transaction query, and both share-KYC
+// paths.
+static void AssetMovementSelfTest(WasmRuntime runtime)
+{
+	string nodeApi = RequireEnv("KEETA_NODE_API");
+	string root = RequireEnv("KEETA_ROOT");
+	string providerId = RequireEnv("KEETA_PROVIDER_ID");
+	string asset = RequireEnv("KEETA_ASSET_ID");
+	string providerAccount = RequireEnv("KEETA_PROVIDER_ACCOUNT");
+	string sendTo = RequireEnv("KEETA_SEND_TO");
+	string seed = Environment.GetEnvironmentVariable("KEETA_SEED") ?? new string('1', 64);
+
+	string[] algorithms = { "ed25519", "ecdsa_secp256k1", "ecdsa_secp256r1" };
+
+	AssetTransferRequest request = new(
+		asset,
+		new AssetTransferSource("chain:keeta:100"),
+		new AssetTransferDestination("chain:evm:100", "recipient-123"),
+		"100");
+
+	foreach (string algorithm in algorithms)
+	{
+		using Account signer = Account.FromSeed(runtime, seed, 0, algorithm);
+		using var client = AssetMovementClient.WithAccount(runtime, nodeApi, root, signer);
+
+		IReadOnlyList<AssetProvider> providers = client.Providers();
+		Require(
+			providers.Any(candidate => candidate.Id == providerId),
+			$"{algorithm}: discovery must surface the harness provider");
+
+		AssetProvider provider = client.ProviderById(providerId)
+			?? throw new InvalidOperationException($"{algorithm}: provider `{providerId}` was not advertised");
+
+		// Provider search over the advertised evm->keeta KEETA_SEND path: a
+		// directional search surfaces the provider.
+		AssetProviderSearch search = new(
+			asset,
+			From: "chain:evm:100",
+			To: "chain:keeta:100",
+			InboundRails: new[] { "KEETA_SEND" },
+			OutboundRails: new[] { "KEETA_SEND" });
+		Require(
+			client.GetProvidersForTransfer(search).Any(candidate => candidate.Id == providerId),
+			$"{algorithm}: provider search must surface the matching provider");
+		Require(
+			client.GetProvidersForTransfer(new AssetProviderSearch(asset, From: "chain:evm:1"))
+				.All(candidate => candidate.Id != providerId),
+			$"{algorithm}: a search over an unadvertised location must exclude the provider");
+
+		// The advertised operation map answers support queries without a round trip.
+		Require(
+			client.IsOperationSupported(provider, "initiateTransfer"),
+			$"{algorithm}: the provider must advertise initiateTransfer");
+		Require(
+			!client.IsOperationSupported(provider, "operationThatDoesNotExist"),
+			$"{algorithm}: an unadvertised operation must report unsupported");
+
+		AssetSimulatedTransfer simulated = client.SimulateTransfer(provider, request);
+		Require(simulated.InstructionChoices.Count > 0, $"{algorithm}: the simulation must carry instruction choices");
+		Require(
+			simulated.InstructionChoices[0].GetProperty("type").GetString() == "KEETA_SEND",
+			$"{algorithm}: the first instruction choice must be a KEETA_SEND");
+
+		// Fluent promotion: the simulated handle initiates the same transfer.
+		AssetTransfer created = simulated.CreateTransfer();
+		Require(created.Id == "123", $"{algorithm}: the fluent CreateTransfer must initiate the transfer");
+
+		AssetTransfer transfer = client.InitiateTransfer(provider, request);
+		Require(transfer.Id == "123", $"{algorithm}: the initiated transfer must carry its id");
+		Require(transfer.InstructionChoices.Count > 0, $"{algorithm}: the transfer must carry instruction choices");
+
+		// Fluent status binds the provider and id for the caller.
+		AssetTransferStatus fluentStatus = transfer.GetStatus();
+		Require(
+			fluentStatus.Transaction.GetProperty("id").GetString() == "123",
+			$"{algorithm}: the fluent status must report the harness transaction");
+
+		AssetTransferStatus status = client.TransferStatus(provider, transfer.Id);
+		Require(
+			status.Transaction.GetProperty("id").GetString() == "123",
+			$"{algorithm}: the status must report the harness transaction");
+
+		AssetAccountStatus accountStatus = client.AccountStatus(provider);
+		Require(!accountStatus.ActionRequired, $"{algorithm}: a ready account must report actionRequired false");
+
+		// Account-based discovery: the provider's entry is signed by the harness
+		// metadata signer, so a lookup by that account surfaces it.
+		Require(
+			client.ProviderByAccount(providerAccount)?.Id == providerId,
+			$"{algorithm}: provider-by-account must surface the signed provider");
+
+		// Execute a fiat pull instruction (the only shape executeTransfer
+		// accepts) through the fluent handle; the harness reports it executed.
+		AssetTransferStatus executed = transfer.Execute(new AssetPullInstruction(
+			"ACH_DEBIT",
+			new { type = "persistent-address", persistentAddressId = "pa-1" }));
+		Require(
+			executed.Transaction.GetProperty("status").GetString() == "EXECUTED",
+			$"{algorithm}: execute must report the executed transaction");
+
+		// Persistent-forwarding lifecycle: open a template session, create a
+		// template directly, list templates, create an address for a destination
+		// pair, list addresses, then deactivate both.
+		AssetTemplateSession session = client.InitiateForwardingTemplate(
+			provider, new AssetInitiateTemplateRequest(asset, "chain:evm:100"));
+		Require(session.Id == "test-session-id", $"{algorithm}: the template session must carry the harness id");
+		Require(
+			session.Data.GetProperty("type").GetString() == "plaid",
+			$"{algorithm}: the template session must carry the provider-specific data");
+
+		AssetForwardingTemplate template = client.CreateForwardingTemplate(
+			provider, new AssetCreateTemplateRequest(Asset: asset, Location: "chain:evm:100", Address: sendTo));
+		Require(template.Id == "template-id", $"{algorithm}: the created template must carry the harness id");
+
+		AssetTemplatePage templates = client.ListForwardingTemplates(provider, new AssetListTemplatesRequest());
+		Require(templates.Templates.Count == 1, $"{algorithm}: the template list must carry the harness template");
+		Require(templates.Total == "1", $"{algorithm}: the template list must carry its total");
+
+		JsonElement forwarding = client.CreateForwardingAddress(provider, new AssetCreateAddressRequest(
+			"chain:evm:100",
+			asset,
+			DestinationLocation: "chain:keeta:100",
+			DestinationAddress: sendTo));
+		Require(
+			forwarding.TryGetProperty("address", out _),
+			$"{algorithm}: the created forwarding address must carry its address");
+
+		AssetAddressPage addresses = client.ListForwardingAddresses(provider, new AssetListAddressesRequest());
+		Require(addresses.Addresses.Count == 1, $"{algorithm}: the address list must carry the harness address");
+
+		client.DeactivateForwardingTemplate(provider, "template-id");
+		client.DeactivateForwardingAddress(provider, "template-id");
+
+		// The transaction query returns the canonical harness transaction.
+		AssetTransactionPage transactions = client.ListTransactions(provider, new AssetListTransactionsRequest());
+		Require(
+			transactions.Transactions.Count == 1
+				&& transactions.Transactions[0].GetProperty("id").GetString() == "123",
+			$"{algorithm}: list-transactions must carry the harness transaction");
+
+		// A settled share resolves immediately; a pending share hands back a
+		// promise URL, which the await variant polls (202s then 200) to the
+		// settled outcome.
+		AssetShareKycOutcome shared = client.ShareKyc(provider, new AssetShareKycRequest("immediate-attributes"));
+		Require(!shared.IsPending, $"{algorithm}: a settled share must not be pending");
+
+		AssetShareKycOutcome awaited = client.ShareKycAndWait(
+			provider,
+			new AssetShareKycRequest($"{algorithm}-promise"),
+			pollInterval: TimeSpan.FromMilliseconds(50),
+			timeout: TimeSpan.FromSeconds(30));
+		Require(!awaited.IsPending, $"{algorithm}: an awaited pending share must settle");
+
+		Console.WriteLine($"{algorithm}: OK");
 	}
 }
 

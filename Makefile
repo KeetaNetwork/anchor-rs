@@ -1,4 +1,4 @@
-.PHONY: build clean do-docs do-docs-ci do-lint do-lint-ci test test-feat test-all all help check release coverage coverage-check coverage-ci coverage-setup audit docs developer node-harness build-wasi test-wasi wit-sync
+.PHONY: build clean do-docs do-docs-ci do-lint do-lint-ci test test-feat test-all all help check release coverage coverage-check coverage-ci coverage-setup audit docs developer node-harness build-wasi test-wasi wit-sync dtos
 
 # TypeScript anchor interop harnesses (wrap @keetanetwork/anchor)
 HARNESS_DIR := keetanetwork-anchor-client/node-harness
@@ -54,12 +54,14 @@ do-docs-ci:
 # Lint code (Rust + the TypeScript harnesses, one command)
 do-lint: do-docs-ci node-harness
 	cd $(HARNESS_DIR) && npm run lint
+	cd $(CODEGEN_DIR) && npm install && npm run lint
 	cargo clippy --fix --allow-staged --allow-dirty
 	cargo fmt
 
 # Lint code for CI (check only, no fixes)
 do-lint-ci: node-harness
 	cd $(HARNESS_DIR) && npm run lint
+	cd $(CODEGEN_DIR) && npm install && npm run lint
 	cargo check --all-targets --all-features
 	cargo fmt --all -- --check
 	cargo clippy --all-targets --all-features -- -D warnings
@@ -144,9 +146,18 @@ test-wasi: build-wasi node-harness
 	WASI_P2_COMPONENT=$(CURDIR)/$(WASI_P2_WASM) \
 	WASI_P1_MODULE=$(CURDIR)/$(WASI_P1_WASM) \
 	KYC_HARNESS=$(CURDIR)/$(HARNESS_DIR)/dist/kyc.js \
+	ASSET_HARNESS=$(CURDIR)/$(HARNESS_DIR)/dist/asset.js \
 		cargo test --manifest-path $(WASI_CRATE)/host-tests/Cargo.toml -- --include-ignored
 
 test-all: test test-feat test-wasi
+
+CODEGEN_DIR := scripts
+
+# Regenerate every binding's various DTOs
+dtos: node-harness
+	cd $(CODEGEN_DIR) && npm install
+	cd $(CODEGEN_DIR) && npm run build
+	cd $(CODEGEN_DIR) && npm run gen
 
 # Set up coverage tools (internal helper target)
 coverage-setup:

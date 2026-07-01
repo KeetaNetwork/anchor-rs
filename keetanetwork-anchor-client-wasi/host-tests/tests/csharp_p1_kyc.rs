@@ -17,7 +17,7 @@ use serde_json::{json, Value};
 
 use common::{
 	attribute_names, expected_attributes, field_str, flatten_proof, issue_attributes, nest_proof, sentinel, BoxError,
-	KycHarness, SUBJECT_SEED,
+	Harness, SUBJECT_SEED,
 };
 use dotnet::{dotnet_available, harness_dir, module_path};
 
@@ -40,7 +40,7 @@ fn csharp_sdk_conforms_with_typescript_anchor() -> Result<(), BoxError> {
 		return Ok(());
 	}
 
-	let mut harness = KycHarness::start()?;
+	let mut harness = Harness::kyc()?;
 
 	// Boot the real KYC anchor advertising a signed, US-bound provider, with its
 	// metadata published on-chain to a root account the SDK resolves over HTTP.
@@ -140,7 +140,7 @@ fn csharp_sdk_conforms_with_typescript_anchor() -> Result<(), BoxError> {
 	Ok(())
 }
 
-impl KycHarness {
+impl Harness {
 	/// Read `attributes` back from an externally issued `leaf` using `subject_seed`.
 	fn decode_certificate(&mut self, leaf: &str, subject_seed: &str, attributes: &[&str]) -> Result<Value, BoxError> {
 		self.request(
@@ -152,7 +152,7 @@ impl KycHarness {
 
 /// Validate a nested `proof` for sensitive attribute `name` on `leaf` through the
 /// reference reader.
-fn validate_proof(harness: &mut KycHarness, leaf: &str, name: &str, proof: &Value) -> Result<bool, BoxError> {
+fn validate_proof(harness: &mut Harness, leaf: &str, name: &str, proof: &Value) -> Result<bool, BoxError> {
 	let response = harness
 		.request("validateProof", json!({ "leaf": leaf, "subjectSeed": SUBJECT_SEED, "name": name, "proof": proof }))?;
 	response

@@ -14,20 +14,31 @@ use super::envelope::{classify, AnchorOutcome};
 use crate::error::AnchorClientError;
 use crate::transport::{AnchorHttpTransport, HttpResponse};
 
-/// The KYC auth flows sign the empty payload; no request data is signed.
-const EMPTY: &[Signable] = &[];
-
 /// How a request authenticates to the anchor.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Auth {
 	/// No signature.
 	None,
 
-	/// Sign the empty payload and attach it to the URL query.
+	/// Sign the [`Call::signed`] payload and attach it to the URL query.
 	SignedUrl,
 
-	/// Sign the empty payload and carry `{ account, signed }` in the body.
+	/// Sign the [`Call::signed`] payload and carry the signature in the body.
 	SignedBody,
+}
+
+/// How a `POST` body is shaped around the request fields.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BodyEnvelope {
+	/// Wrap the fields as `{ "request": <fields> }`, merging `account` and
+	/// `signed` into `<fields>` when the request is signed. The KYC anchor's
+	/// shape.
+	Request,
+
+	/// Send the fields as-is, merging `signed` at the top level when the
+	/// request is signed. The `account` is expected to already sit in the
+	/// fields. The asset-movement anchor's shape.
+	Flat,
 }
 
 /// The HTTP method an operation uses.
@@ -55,10 +66,17 @@ pub struct Call<'a> {
 	/// The authentication mode.
 	pub auth: Auth,
 
-	/// The service-specific request fields, as a JSON object. Anchors wrap a
-	/// `POST` body as `{ "request": <fields> }`; [`Auth::SignedBody`] merges
-	/// `account` and `signed` into `<fields>` before wrapping. Ignored for a
-	/// `GET`.
+	/// The payload signed when [`auth`](Self::auth) is
+	/// [`SignedUrl`](Auth::SignedUrl) or [`SignedBody`](Auth::SignedBody).
+	/// Empty for the KYC auth flows; a canonical object or a fixed string tuple
+	/// for asset-movement operations.
+	pub signed: &'a [Signable<'a>],
+
+	/// How the `POST` body is shaped. Ignored for a `GET`.
+	pub envelope: BodyEnvelope,
+
+	/// The service-specific request fields, as a JSON object. See
+	/// [`BodyEnvelope`] for how they are wrapped. Ignored for a `GET`.
 	pub body: Option<Value>,
 }
 
@@ -98,75 +116,105 @@ impl AnchorCaller {
 		T: DeserializeOwned,
 	{
 		let url = call.endpoint.url(call.params)?;
-		let response = self
-			.dispatch(call.method, call.auth, url, call.body)
-			.await?;
+		let response = self.dispatch(&call, url).await?;
 		classify(response)
 	}
 
-	async fn dispatch(
-		&self,
-		method: Method,
-		auth: Auth,
-		url: Url,
-		body: Option<Value>,
-	) -> Result<HttpResponse, AnchorClientError> {
-		match method {
-			Method::Get => self.send_get(auth, url).await,
-			Method::Post => self.send_post(auth, url, body).await,
+	/// Fill, authenticate, and send `call`, returning the raw response without
+	/// classifying it.
+	///
+	/// Most operations want [`invoke`](Self::invoke), which turns a non-2xx or
+	/// `ok: false` response into an error. An operation whose failure body is
+	/// itself meaningful (e.g. an account-status blocker returned with a `403`)
+	/// reads the raw response instead.
+	///
+	/// # Errors
+	///
+	/// Returns [`AnchorClientError`] when the endpoint is not a valid URL, the
+	/// signature cannot be produced, or the transport fails.
+	pub async fn send(&self, call: Call<'_>) -> Result<HttpResponse, AnchorClientError> {
+		let url = call.endpoint.url(call.params)?;
+		self.dispatch(&call, url).await
+	}
+
+	async fn dispatch(&self, call: &Call<'_>, url: Url) -> Result<HttpResponse, AnchorClientError> {
+		match call.method {
+			Method::Get => self.send_get(call.auth, call.signed, url).await,
+			Method::Post => self.send_post(call, url).await,
 		}
 	}
 
-	async fn send_get(&self, auth: Auth, url: Url) -> Result<HttpResponse, AnchorClientError> {
-		let target = self.authenticated_url(auth, url)?;
+	async fn send_get(&self, auth: Auth, signed: &[Signable<'_>], url: Url) -> Result<HttpResponse, AnchorClientError> {
+		let target = self.authenticated_url(auth, signed, url)?;
 		let response = self.transport.get(target.as_str()).await?;
 		Ok(response)
 	}
 
-	async fn send_post(&self, auth: Auth, url: Url, body: Option<Value>) -> Result<HttpResponse, AnchorClientError> {
-		let payload = self.request_body(auth, body)?;
+	async fn send_post(&self, call: &Call<'_>, url: Url) -> Result<HttpResponse, AnchorClientError> {
+		let payload = self.request_body(call.auth, call.envelope, call.signed, call.body.clone())?;
 		let response = self.transport.post(url.as_str(), &payload).await?;
 		Ok(response)
 	}
 
 	/// Attach a query signature when the [`Auth`] mode calls for it.
-	fn authenticated_url(&self, auth: Auth, url: Url) -> Result<Url, AnchorClientError> {
+	fn authenticated_url(&self, auth: Auth, signed: &[Signable<'_>], url: Url) -> Result<Url, AnchorClientError> {
 		match auth {
 			Auth::SignedUrl => {
-				let signed = self.sign_empty()?;
-				let signed_url = add_signature_to_url(&url, &self.account, &signed)?;
+				let envelope = self.sign(signed)?;
+				let signed_url = add_signature_to_url(&url, &self.account, &envelope)?;
 				Ok(signed_url)
 			}
 			_ => Ok(url),
 		}
 	}
 
-	/// Build the wrapped `POST` body `{ "request": <fields> }`. For
-	/// [`Auth::SignedBody`], `account` and the signed empty-payload envelope are
-	/// merged into `<fields>` first.
-	fn request_body(&self, auth: Auth, body: Option<Value>) -> Result<Vec<u8>, AnchorClientError> {
+	/// Shape the `POST` body per [`BodyEnvelope`], merging the signature (and,
+	/// for [`BodyEnvelope::Request`], the `account`) when the request is signed.
+	fn request_body(
+		&self,
+		auth: Auth,
+		envelope: BodyEnvelope,
+		signed: &[Signable<'_>],
+		body: Option<Value>,
+	) -> Result<Vec<u8>, AnchorClientError> {
 		let mut fields = match body {
 			Some(Value::Object(map)) => map,
 			_ => Map::new(),
 		};
 
-		if let Auth::SignedBody = auth {
-			let signed = self.sign_empty()?;
-			fields.insert("account".into(), Value::String(self.account.clone()));
-			fields.insert(
-				"signed".into(),
-				json!({ "nonce": signed.nonce, "timestamp": signed.timestamp, "signature": signed.signature }),
-			);
-		}
+		let signature = match auth {
+			Auth::SignedBody => Some(self.sign(signed)?),
+			_ => None,
+		};
 
-		let envelope = json!({ "request": Value::Object(fields) });
-		let bytes = serde_json::to_vec(&envelope)?;
+		let shaped = match envelope {
+			BodyEnvelope::Request => {
+				if let Some(signature) = signature {
+					fields.insert("account".into(), Value::String(self.account.clone()));
+					fields.insert("signed".into(), signed_field(&signature));
+				}
+				json!({ "request": Value::Object(fields) })
+			}
+			BodyEnvelope::Flat => {
+				if let Some(signature) = signature {
+					fields.insert("signed".into(), signed_field(&signature));
+				}
+				Value::Object(fields)
+			}
+		};
+
+		let bytes = serde_json::to_vec(&shaped)?;
 		Ok(bytes)
 	}
 
-	fn sign_empty(&self) -> Result<Signed, AnchorClientError> {
+	fn sign(&self, payload: &[Signable<'_>]) -> Result<Signed, AnchorClientError> {
 		let params = SignParams::generate();
-		let signed = sign_with(self.signer.as_ref(), EMPTY, &params)?;
+		let signed = sign_with(self.signer.as_ref(), payload, &params)?;
 		Ok(signed)
 	}
+}
+
+/// The wire `{ nonce, timestamp, signature }` object for a signature.
+fn signed_field(signed: &Signed) -> Value {
+	json!({ "nonce": signed.nonce, "timestamp": signed.timestamp, "signature": signed.signature })
 }
