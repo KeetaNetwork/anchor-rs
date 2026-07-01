@@ -1,4 +1,4 @@
-//! Offline C# `encrypted-container` end-to-end test.
+//! C# `encrypted-container` end-to-end test.
 //!
 //! Runs the C# SDK harness in its `KEETA_CONTAINER_ONLY` mode against the P1
 //! core module: no node, no harness server, no network.

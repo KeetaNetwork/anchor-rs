@@ -4,4 +4,5 @@
 mod encrypted_container;
 mod kyc;
 mod kyc_certificate;
+mod sharable;
 mod transport;

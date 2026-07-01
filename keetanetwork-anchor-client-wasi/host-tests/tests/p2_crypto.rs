@@ -153,17 +153,32 @@ async fn certificate_reports_metadata() -> Result<(), BoxError> {
 		.await?
 		.map_err(coded)?;
 
-	let subject = crypto.certificate().call_subject(&mut store, certificate).await?;
+	let subject = crypto
+		.certificate()
+		.call_subject(&mut store, certificate)
+		.await?;
 	assert!(subject.contains("Test Subject"), "the subject DN must name the fixture subject");
 
-	let issuer = crypto.certificate().call_issuer(&mut store, certificate).await?;
+	let issuer = crypto
+		.certificate()
+		.call_issuer(&mut store, certificate)
+		.await?;
 	assert!(issuer.contains("Test Issuer"), "the issuer DN must name the fixture issuer");
 
-	let serial = crypto.certificate().call_serial(&mut store, certificate).await?;
+	let serial = crypto
+		.certificate()
+		.call_serial(&mut store, certificate)
+		.await?;
 	assert_eq!(serial, "12345", "the serial must decode to its base-10 form");
 
-	let not_before = crypto.certificate().call_not_before(&mut store, certificate).await?;
-	let not_after = crypto.certificate().call_not_after(&mut store, certificate).await?;
+	let not_before = crypto
+		.certificate()
+		.call_not_before(&mut store, certificate)
+		.await?;
+	let not_after = crypto
+		.certificate()
+		.call_not_after(&mut store, certificate)
+		.await?;
 	assert!(not_before < not_after, "the validity window must be ordered");
 	assert!(
 		not_before <= VALID_AT && VALID_AT <= not_after,
@@ -177,7 +192,10 @@ async fn certificate_reports_metadata() -> Result<(), BoxError> {
 		.call_from_seed(&mut store, SUBJECT_SEED, 0, ALGORITHM)
 		.await?
 		.map_err(coded)?;
-	let account_key = crypto.account().call_public_key(&mut store, account).await?;
+	let account_key = crypto
+		.account()
+		.call_public_key(&mut store, account)
+		.await?;
 	let subject_key = crypto
 		.certificate()
 		.call_subject_public_key(&mut store, certificate)

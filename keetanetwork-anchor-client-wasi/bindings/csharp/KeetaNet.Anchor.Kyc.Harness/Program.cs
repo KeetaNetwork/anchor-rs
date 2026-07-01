@@ -12,12 +12,13 @@ using CryptoCertificate = KeetaNet.Anchor.Kyc.Crypto.Certificate;
 using EncryptedContainer = KeetaNet.Anchor.Kyc.Crypto.EncryptedContainer;
 using KycCertificate = KeetaNet.Anchor.Kyc.Crypto.KycCertificate;
 using KycCertificateBuilder = KeetaNet.Anchor.Kyc.Crypto.KycCertificateBuilder;
+using SharableCertificateAttributes = KeetaNet.Anchor.Kyc.Crypto.SharableCertificateAttributes;
 
 string wasmPath = RequireEnv("KEETA_ANCHOR_P1_WASM");
 
 using var runtime = WasmRuntime.Load(wasmPath);
 
-// Offline mode: exercise the `crypto` resources only, needing no node or harness.
+// Exercise the `crypto` resources only, needing no node or harness.
 if (Environment.GetEnvironmentVariable("KEETA_CRYPTO_ONLY") is not null)
 {
 	CryptoSelfTest(runtime);
@@ -25,7 +26,7 @@ if (Environment.GetEnvironmentVariable("KEETA_CRYPTO_ONLY") is not null)
 	return;
 }
 
-// Offline mode: issue a leaf through the builder, then read it back. No node.
+// Issue a leaf through the builder, then read it back.
 if (Environment.GetEnvironmentVariable("KEETA_ISSUE_ONLY") is not null)
 {
 	IssueSelfTest(runtime);
@@ -33,7 +34,7 @@ if (Environment.GetEnvironmentVariable("KEETA_ISSUE_ONLY") is not null)
 	return;
 }
 
-// Offline mode: issue a leaf, then prove and validate a sensitive attribute.
+// Issue a leaf, then prove and validate a sensitive attribute.
 if (Environment.GetEnvironmentVariable("KEETA_PROVE_ONLY") is not null)
 {
 	ProveSelfTest(runtime);
@@ -41,7 +42,7 @@ if (Environment.GetEnvironmentVariable("KEETA_PROVE_ONLY") is not null)
 	return;
 }
 
-// Offline mode: build, encode, decode, sign, and re-key an encrypted container.
+// Build, encode, decode, sign, and re-key an encrypted container.
 if (Environment.GetEnvironmentVariable("KEETA_CONTAINER_ONLY") is not null)
 {
 	ContainerSelfTest(runtime);
@@ -49,13 +50,22 @@ if (Environment.GetEnvironmentVariable("KEETA_CONTAINER_ONLY") is not null)
 	return;
 }
 
-// Cross-implementation conformance against the reference TypeScript anchor:
+// Seal a subset of a leaf's attributes for a recipient, then open
+// the PEM envelope and read the disclosed values back.
+if (Environment.GetEnvironmentVariable("KEETA_SHARABLE_ONLY") is not null)
+{
+	SharableSelfTest(runtime);
+	Console.WriteLine("SHARABLE_OK");
+	return;
+}
+
+// Cross-implementation compatibility against the reference TypeScript anchor:
 // decode and verify a TS-produced container, then emit a C#-produced one for the
 // TS reader to decode and verify.
-if (Environment.GetEnvironmentVariable("KEETA_CONTAINER_CONFORMANCE") is not null)
+if (Environment.GetEnvironmentVariable("KEETA_CONTAINER_COMPATIBILITY") is not null)
 {
-	ContainerConformance(runtime);
-	Console.WriteLine("CONTAINER_CONFORMANCE_OK");
+	ContainerCompatibility(runtime);
+	Console.WriteLine("CONTAINER_COMPATIBILITY_OK");
 	return;
 }
 
@@ -105,13 +115,13 @@ if (Environment.GetEnvironmentVariable("KEETA_LEAF_PEM") is { } leafPem)
 	Console.WriteLine("ATTRIBUTES_OK");
 }
 
-// Cross-implementation conformance against the live TypeScript anchor: validate
+// Cross-implementation compatibility against the live TypeScript anchor: validate
 // a TS-produced proof for the anchor leaf, then issue a leaf and prove an
 // attribute on the C# side for the TS reader to read back and validate.
-if (Environment.GetEnvironmentVariable("KEETA_CONFORMANCE") is not null)
+if (Environment.GetEnvironmentVariable("KEETA_COMPATIBILITY") is not null)
 {
-	Conformance(runtime);
-	Console.WriteLine("CONFORMANCE_OK");
+	Compatibility(runtime);
+	Console.WriteLine("COMPATIBILITY_OK");
 }
 
 // Decrypt and decode every attribute of an issued leaf, asserting each matches
@@ -134,11 +144,11 @@ static void CheckAttributes(WasmRuntime runtime, string leafPem, string attribut
 	}
 }
 
-// Cross-implementation conformance against the live TypeScript anchor:
+// Cross-implementation compatibility against the live TypeScript anchor:
 //  1. validate a proof the TS reader produced for the anchor-issued leaf,
 //  2. issue a leaf on the C# side and prove an attribute on it, emitting both
 //     for the Rust orchestrator to hand to the TS reader to read and validate.
-static void Conformance(WasmRuntime runtime)
+static void Compatibility(WasmRuntime runtime)
 {
 	string subjectSeed = RequireEnv("KEETA_SUBJECT_SEED");
 	string proveName = RequireEnv("KEETA_TS_PROOF_NAME");
@@ -473,12 +483,84 @@ static void ContainerSelfTest(WasmRuntime runtime)
 	}
 }
 
-// Cross-implementation conformance against the reference TypeScript anchor,
+// Exercise the offline sharable-attributes surface: issue a leaf, seal a subset
+// of its attributes for a recipient, reject an export with no recipient, then
+// open the PEM envelope and read the disclosed values, embedded leaf, principal
+// set, and disclosed names back.
+static void SharableSelfTest(WasmRuntime runtime)
+{
+	const string subjectSeed = "1111111111111111111111111111111111111111111111111111111111111111";
+	const string issuerSeed = "2222222222222222222222222222222222222222222222222222222222222222";
+	const string recipientSeed = "3333333333333333333333333333333333333333333333333333333333333333";
+	const string algorithm = "ecdsa_secp256k1";
+
+	using Account subject = Account.FromSeed(runtime, subjectSeed, 0, algorithm);
+	using Account issuer = Account.FromSeed(runtime, issuerSeed, 0, algorithm);
+	using Account recipient = Account.FromSeed(runtime, recipientSeed, 0, algorithm);
+
+	using KycCertificate leaf = KycCertificate.Builder(runtime)
+		.Subject(subject)
+		.Issuer(issuer)
+		.SubjectName("Subject")
+		.IssuerName("Issuer")
+		.Serial(7)
+		.Validity(DateTimeOffset.FromUnixTimeSeconds(1_700_000_000), DateTimeOffset.FromUnixTimeSeconds(1_900_000_000))
+		.SetAttribute("postalCode", sensitive: false, "12345")
+		.SetAttribute("email", sensitive: true, "john@example.com")
+		.Issue();
+
+	// Sealing binds the disclosure, but exporting without a recipient is rejected.
+	using (SharableCertificateAttributes noRecipient =
+		SharableCertificateAttributes.FromCertificate(runtime, leaf, subject, names: new[] { "email" }))
+	{
+		bool rejected = false;
+		try
+		{
+			noRecipient.Export();
+		}
+		catch (KeetaException)
+		{
+			rejected = true;
+		}
+
+		Require(rejected, "exporting a bundle with no recipient must be rejected");
+	}
+
+	// Seal both attributes for the recipient, then export the PEM envelope.
+	using SharableCertificateAttributes bundle =
+		SharableCertificateAttributes.FromCertificate(runtime, leaf, subject, names: new[] { "postalCode", "email" });
+	bundle.GrantAccess(new[] { recipient });
+	string pem = bundle.ToPem();
+
+	// The recipient opens the envelope and reads both disclosed values back.
+	using SharableCertificateAttributes opened = SharableCertificateAttributes.FromPem(runtime, pem, new[] { recipient });
+	Require(
+		Encoding.UTF8.GetString(opened.AttributeValue("postalCode")!) == "12345",
+		"the recipient must read the disclosed plain attribute");
+	Require(
+		Encoding.UTF8.GetString(opened.AttributeValue("email")!) == "john@example.com",
+		"the recipient must read the disclosed sensitive attribute");
+	Require(opened.AttributeBuffer("doesNotExist") is null, "a missing attribute must disclose nothing");
+
+	// The embedded leaf, principal set, and disclosed names survive the round trip.
+	using KycCertificate embedded = opened.LeafCertificate();
+	Require(embedded.Pem().Contains("BEGIN CERTIFICATE"), "the embedded leaf must encode to PEM");
+
+	IReadOnlyList<byte[]> principals = opened.Principals();
+	Require(principals.Count == 1, "the granted recipient must be the sole principal");
+	Require(
+		Convert.ToHexString(principals[0]).Equals(recipient.PublicKey, StringComparison.OrdinalIgnoreCase),
+		"the sole principal must be the granted recipient");
+
+	Require(opened.AttributeNames().Count == 2, "the bundle must disclose exactly two attributes");
+}
+
+// Cross-implementation compatibility against the reference TypeScript anchor,
 // both directions, for the encrypted container:
 //  1. TS encrypts and signs -> C# decrypts and verifies (`TS_DECODE/VERIFY/SIGNER`),
 //  2. C# encrypts and signs -> emit the blob for the TS reader to decode and
 //     verify (`CS_CONTAINER`, `CS_PLAINTEXT`, `CS_SIGNER_KEY`).
-static void ContainerConformance(WasmRuntime runtime)
+static void ContainerCompatibility(WasmRuntime runtime)
 {
 	const string algorithm = "ecdsa_secp256k1";
 	using Account principal = Account.FromSeed(runtime, RequireEnv("KEETA_PRINCIPAL_SEED"), 0, algorithm);

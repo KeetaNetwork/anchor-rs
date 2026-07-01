@@ -77,7 +77,12 @@ pub fn attribute_names() -> Vec<String> {
 		.as_array()
 		.into_iter()
 		.flatten()
-		.filter_map(|entry| entry.get("name").and_then(Value::as_str).map(str::to_string))
+		.filter_map(|entry| {
+			entry
+				.get("name")
+				.and_then(Value::as_str)
+				.map(str::to_string)
+		})
 		.collect()
 }
 
@@ -101,9 +106,10 @@ pub fn flatten_proof(nested: &Value) -> Value {
 
 /// The value of a `KEY=VALUE` sentinel line in captured stdout, if present.
 pub fn sentinel<'a>(stdout: &'a str, key: &str) -> Option<&'a str> {
-	stdout
-		.lines()
-		.find_map(|line| line.strip_prefix(key).and_then(|rest| rest.strip_prefix('=')))
+	stdout.lines().find_map(|line| {
+		line.strip_prefix(key)
+			.and_then(|rest| rest.strip_prefix('='))
+	})
 }
 
 /// Locate the compiled KYC harness entry (`dist/kyc.js`).

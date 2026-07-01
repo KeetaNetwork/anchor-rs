@@ -425,8 +425,9 @@ function reviveValue(value: unknown): unknown {
 		// the reference implementation expects.
 		const typeEntry = entries.find(([key]) => key === 'type');
 		const dataEntry = entries.find(([key]) => key === 'data');
-		if (typeEntry !== undefined && typeEntry[1] === 'Buffer' && dataEntry !== undefined && Array.isArray(dataEntry[1])) {
-			return(Buffer.from(dataEntry[1] as number[]));
+		const data: unknown = dataEntry?.[1];
+		if (typeEntry !== undefined && typeEntry[1] === 'Buffer' && Array.isArray(data) && data.every((byte): byte is number => typeof byte === 'number')) {
+			return(Buffer.from(data));
 		}
 
 		const revived: { [key: string]: unknown } = {};

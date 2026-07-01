@@ -249,7 +249,10 @@ fn encode_date(iso: &str) -> Result<Asn1, AnchorAsn1Error> {
 /// Render a decoded date leaf as an ISO-8601 string with millisecond precision.
 #[cfg(feature = "chrono")]
 fn decode_date(time: &keetanetwork_asn1::Asn1Time) -> Result<Value, AnchorAsn1Error> {
-	let iso = time.as_datetime().format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string();
+	let iso = time
+		.as_datetime()
+		.format("%Y-%m-%dT%H:%M:%S%.3fZ")
+		.to_string();
 	Ok(Value::String(iso))
 }
 
@@ -415,6 +418,7 @@ mod tests {
 		);
 	}
 
+	#[cfg(feature = "chrono")]
 	#[test]
 	fn date_and_place_of_birth_round_trips() {
 		round_trip(
@@ -438,14 +442,8 @@ mod tests {
 
 	#[test]
 	fn unmapped_token_errors_for_raw_fallback() {
-		assert!(matches!(
-			encode_structured("Nonexistent", b"{}"),
-			Err(AnchorAsn1Error::Asn1EncodeError { .. })
-		));
-		assert!(matches!(
-			decode_structured("Nonexistent", [0x30, 0x00]),
-			Err(AnchorAsn1Error::Asn1DecodeError { .. })
-		));
+		assert!(matches!(encode_structured("Nonexistent", b"{}"), Err(AnchorAsn1Error::Asn1EncodeError { .. })));
+		assert!(matches!(decode_structured("Nonexistent", [0x30, 0x00]), Err(AnchorAsn1Error::Asn1DecodeError { .. })));
 	}
 
 	/// Live `Address` attribute DER issued by the reference TypeScript harness.

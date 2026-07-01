@@ -343,7 +343,7 @@ where
 
 /// Reduce a KYC certificate error to a stable boundary code, deferring the
 /// X.509 case to the base certificate mapping so granular codes survive.
-fn coded(error: KycCertificateError) -> CodedError {
+pub fn coded(error: KycCertificateError) -> CodedError {
 	let message = error.to_string();
 	match error {
 		KycCertificateError::X509Error { source } => CodedError::from(source),

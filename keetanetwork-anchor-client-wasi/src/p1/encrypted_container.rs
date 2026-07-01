@@ -286,7 +286,7 @@ fn encode_principals(keys: &[Vec<u8>]) -> Result<Vec<u8>, CodedError> {
 /// # Safety
 ///
 /// `(ptr, len)` MUST describe an initialized, readable guest buffer.
-unsafe fn resolve_accounts(ptr: i32, len: i32) -> Option<Vec<Arc<GenericAccount>>> {
+pub(crate) unsafe fn resolve_accounts(ptr: i32, len: i32) -> Option<Vec<Arc<GenericAccount>>> {
 	let bytes = unsafe { bytes_in(ptr, len) };
 	if !bytes.len().is_multiple_of(4) {
 		fail(CodedError::new("INVALID_HANDLE_LIST", "handle list must be 4-byte aligned"));

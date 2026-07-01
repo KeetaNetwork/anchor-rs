@@ -433,9 +433,8 @@ fn ensure_generated_module_serde(module: &str) {
 	}
 
 	let mut updated = current_content.trim_end().to_string();
-	updated.push_str(&format!(
-		"\n#[cfg(feature = \"serde\")]\n#[path = \"generated/{module}.rs\"]\npub mod {module};\n"
-	));
+	updated
+		.push_str(&format!("\n#[cfg(feature = \"serde\")]\n#[path = \"generated/{module}.rs\"]\npub mod {module};\n"));
 
 	fs::write(generated_rs_path, updated).expect("Failed to update generated.rs");
 }

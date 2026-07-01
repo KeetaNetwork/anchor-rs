@@ -30,7 +30,7 @@ version = "0.2.1"
 default-features = false
 
 [workspace.dependencies.keetanetwork-asn1]
-version = "0.2.3"
+version = "0.2.4"
 default-features = false
 
 [workspace.dependencies.keetanetwork-account]
@@ -45,14 +45,14 @@ default-features = false
 version = "0.3.0"
 
 [workspace.dependencies.keetanetwork-vote]
-version = "0.3.0"
+version = "0.3.1"
 
 [workspace.dependencies.keetanetwork-bindings]
 version = "0.3.0"
 default-features = false
 
 [workspace.dependencies.keetanetwork-client-wasi]
-version = "0.3.0"
+version = "0.3.1"
 default-features = false
 
 [workspace.dependencies.rasn]

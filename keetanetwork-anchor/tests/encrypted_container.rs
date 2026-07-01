@@ -1,4 +1,4 @@
-//! Cross-language `EncryptedContainer` conformance against the reference.
+//! Cross-language `EncryptedContainer` compatibility against the reference.
 //!
 //! The Rust core encodes blobs the reference opens and verifies, and decodes
 //! blobs the reference produced. Principals and signers are derived from
@@ -52,7 +52,7 @@ impl Algorithm {
 
 const ALGORITHMS: [Algorithm; 3] = [Algorithm::Secp256k1, Algorithm::Ed25519, Algorithm::Secp256r1];
 
-/// One conformance case: the container shape plus the key algorithm used for its
+/// One compatibility case: the container shape plus the key algorithm used for its
 /// principal (when encrypted) and signer (when signed).
 struct Case {
 	label: &'static str,
