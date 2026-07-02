@@ -6,6 +6,7 @@ import type * as CertificatesModule from '@keetanetwork/anchor/lib/certificates.
 import type * as KeetaNetModule from '@keetanetwork/keetanet-client';
 
 import type { HarnessResponse } from './core.js';
+import { accountFromSeed } from './accounts.js';
 import { referenceResolver, runHarness } from './core.js';
 
 const refs = referenceResolver();
@@ -13,10 +14,8 @@ const certificates = await refs.anchor<typeof CertificatesModule>('lib/certifica
 const KeetaNet = refs.client<typeof KeetaNetModule>();
 
 const Account = KeetaNet.lib.Account;
-const KeyAlgorithm = Account.AccountKeyAlgorithm;
 const SharableCertificateAttributes = certificates.SharableCertificateAttributes;
 
-type SigningAccount = ReturnType<typeof Account.fromSeed>;
 type BaseCertificate = InstanceType<typeof KeetaNet.lib.Utils.Certificate.Certificate>;
 
 /**
@@ -62,28 +61,6 @@ type SharableRequest =
 	BuildSharableRequest |
 	ReadSharableRequest |
 	ShutdownRequest;
-
-function keyAlgorithm(name: string | undefined): number | undefined {
-	if (name === undefined) {
-		return(undefined);
-	}
-
-	switch (name) {
-		case 'secp256k1': return(KeyAlgorithm.ECDSA_SECP256K1);
-		case 'ed25519': return(KeyAlgorithm.ED25519);
-		case 'secp256r1': return(KeyAlgorithm.ECDSA_SECP256R1);
-		default: throw(new Error(`unsupported key algorithm: ${name}`));
-	}
-}
-
-function accountFromSeed(seed: string, algorithm: string | undefined): SigningAccount {
-	const algorithmId = keyAlgorithm(algorithm);
-	if (algorithmId === undefined) {
-		return(Account.fromSeed(seed, 0));
-	}
-
-	return(Account.fromSeed(seed, 0, algorithmId));
-}
 
 /**
  * Read each named attribute buffer back through a populated bundle, encoding it
