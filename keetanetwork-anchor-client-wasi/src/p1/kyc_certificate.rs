@@ -30,9 +30,11 @@ struct Leaves {
 /// Store `certificate` under a fresh handle and return it.
 pub(crate) fn store_leaf(certificate: KycCertificate) -> i32 {
 	LEAVES.with_borrow_mut(|leaves| {
-		leaves.next += 1;
+		leaves.next = leaves.next.wrapping_add(1).max(1);
+
 		let handle = leaves.next;
 		leaves.certificates.insert(handle, certificate);
+
 		handle
 	})
 }

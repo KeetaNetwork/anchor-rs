@@ -11,6 +11,12 @@ description = "Transport-agnostic KeetaNet anchor client: request signing byte-c
 [lib]
 path = "src/lib.rs"
 
+# The integration suite drives the feature-gated asset-movement surface, so a
+# default-feature `cargo check --tests` skips it instead of failing.
+[[test]]
+name = "asset_movement"
+required-features = ["asset"]
+
 [features]
 default = ["std"]
 codec = ["dep:serde", "dep:serde_json"]
@@ -39,7 +45,7 @@ wasm = ["http"]
 wasi = ["service"]
 
 [dependencies]
-keetanetwork-anchor = { path = "../keetanetwork-anchor", default-features = false, features = [
+keetanetwork-anchor = { workspace = true, features = [
 	"signing",
 ] }
 keetanetwork-account = { workspace = true, default-features = false, features = [
@@ -78,7 +84,7 @@ web-sys = { workspace = true, features = ["Window", "Performance"] }
 wstd = { workspace = true }
 
 [dev-dependencies]
-keetanetwork-anchor = { path = "../keetanetwork-anchor", features = [
+keetanetwork-anchor = { workspace = true, default-features = true, features = [
 	"std",
 	"signing",
 	"serde",

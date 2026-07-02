@@ -14,9 +14,9 @@ import type * as KycCommonModule from '@keetanetwork/anchor/services/kyc/common.
 import type * as KycStatusModule from '@keetanetwork/anchor/services/kyc/status.js';
 import type * as CertificatesModule from '@keetanetwork/anchor/lib/certificates.js';
 import type * as KeetaNetModule from '@keetanetwork/keetanet-client';
-import type * as NodeClientModule from '@keetanetwork/keetanet-node/dist/client';
-import type * as NodeTestingModule from '@keetanetwork/keetanet-node/dist/lib/utils/helper_testing.js';
 
+import type { ChainNode, ServiceMetadata } from './chain.js';
+import { bootChainNode } from './chain.js';
 import type { HarnessResponse } from './core.js';
 import { referenceResolver, runHarness } from './core.js';
 
@@ -27,40 +27,17 @@ const kycCommon = await refs.anchor<typeof KycCommonModule>('services/kyc/common
 const kycStatus = await refs.anchor<typeof KycStatusModule>('services/kyc/status.js');
 const certificates = await refs.anchor<typeof CertificatesModule>('lib/certificates.js');
 const KeetaNet = refs.client<typeof KeetaNetModule>();
-const NodeClient = refs.node<typeof NodeClientModule>('@keetanetwork/keetanet-node/dist/client');
-const nodeTesting = refs.node<typeof NodeTestingModule>('@keetanetwork/keetanet-node/dist/lib/utils/helper_testing.js');
 
 const KeetaNetLib = KeetaNet.lib;
 const Account = KeetaNetLib.Account;
-const Permissions = KeetaNetLib.Permissions;
 const Metadata = resolver.default.Metadata;
 
 const metadataSigner = Account.fromSeed(Account.generateRandomSeed(), 0);
 
 type CertificateAuthority = Awaited<ReturnType<InstanceType<typeof KeetaNetLib.Utils.Certificate.CertificateBuilder>['build']>>;
-type ReferenceNode = Awaited<ReturnType<typeof nodeTesting.createTestNode>>;
-type UserClient = InstanceType<typeof KeetaNet.UserClient>;
-type GenericAccount = InstanceType<typeof KeetaNetLib.Account>;
 type SigningAccount = ReturnType<typeof KeetaNetLib.Account.fromSeed>;
 type KycServerConfig = ConstructorParameters<typeof kycServer.KeetaNetKYCAnchorHTTPServer>[0];
 type KycServerInstance = InstanceType<typeof kycServer.KeetaNetKYCAnchorHTTPServer>;
-type ServiceMetadata = Parameters<typeof Metadata.formatMetadata>[0];
-
-/**
- * A reference node with an initialized chain, plus the helpers needed to fund
- * accounts and publish service metadata on-chain.
- */
-interface ChainNode {
-	node: ReferenceNode;
-	/* The node API base URL, e.g. `http://127.0.0.1:<port>`. */
-	api: string;
-	/* A UserClient for the funded representative account. */
-	repClient: UserClient;
-	/* Send `amount` of the base token to `account`. */
-	give(account: GenericAccount, amount: bigint): Promise<void>;
-	/* Publish `metadata` on-chain to a fresh funded account; return its key. */
-	publish(metadata: ServiceMetadata): Promise<string>;
-}
 
 /**
  * A self-signed CA together with the account that owns its signing key, so the
@@ -194,96 +171,6 @@ async function buildCertificateAuthority(): Promise<CertificateAuthorityWithKey>
 	return({ ca: await builder.build(), account: caAccount });
 }
 
-/**
- * Boot an in-memory reference node and initialize its chain (base token, supply,
- * delegation) so accounts can publish on-chain metadata. The resolver reads that
- * metadata back through the node API, exactly as the reference client does.
- */
-async function bootChainNode(): Promise<ChainNode> {
-	const seed = Account.generateRandomSeed({ asString: true });
-	const repNodeAccount = NodeClient.lib.Account.fromSeed(seed, 0);
-	const repClientAccount = Account.fromSeed(seed, 0);
-
-	/* Fees start disabled so the network can be initialized for free. */
-	const feeFreeAccounts = new Set<string>();
-	let feesEnabled = false;
-
-	const node = await nodeTesting.createTestNode(repNodeAccount, {
-		createInitialVoteStaple: false,
-		nodeConfig: { nodeAlias: 'TEST' },
-		ledger: {
-			computeFeeFromBlocks: function(_ignore_ledger, blocks, _ignore_effects) {
-				if (!feesEnabled) {
-					return(null);
-				}
-				for (const block of blocks) {
-					if (feeFreeAccounts.has(block.account.publicKeyString.get())) {
-						return(null);
-					}
-				}
-
-				return({ amount: 1n });
-			}
-		}
-	});
-
-	const endpoints = node.config.endpoints;
-	if (endpoints?.api === undefined || endpoints.p2p === undefined) {
-		throw(new Error('reference node did not expose its API and P2P endpoints'));
-	}
-
-	const client = new KeetaNet.Client([{ endpoints: { api: endpoints.api, p2p: endpoints.p2p }, key: repClientAccount }]);
-	const repClient = new KeetaNet.UserClient({
-		client,
-		network: node.config.network,
-		networkAlias: node.config.networkAlias,
-		signer: repClientAccount,
-		usePublishAid: false
-	});
-
-	/*
-	 * Manually initialize the chain: mint the base token, add supply, and
-	 * delegate voting weight to the representative.
-	 */
-	const { networkAddress } = Account.generateBaseAddresses(node.config.network);
-	await repClient.initializeNetwork({
-		addSupplyAmount: 10_000_000_000_000n,
-		delegateTo: repClientAccount,
-		voteSerial: BigInt('999999999999999999'),
-		baseTokenInfo: { name: 'KeetaNet Test Token', currencyCode: 'KTA', decimalPlaces: 9 }
-	}, { account: repClientAccount, usePublishAid: false });
-	await repClient.setInfo({
-		name: 'KEETANET',
-		description: 'Network Address For KeetaNet',
-		metadata: '',
-		defaultPermission: new Permissions(['TOKEN_ADMIN_CREATE', 'STORAGE_CREATE', 'ACCESS'])
-	}, { account: networkAddress });
-
-	feesEnabled = true;
-
-	const give = async function(account: GenericAccount, amount: bigint): Promise<void> {
-		await repClient.send(account, amount, repClient.baseToken, undefined, { account: repClientAccount });
-	};
-
-	const publish = async function(metadata: ServiceMetadata): Promise<string> {
-		const rootAccount = Account.fromSeed(Account.generateRandomSeed(), 0);
-		await give(rootAccount, 1_000n);
-
-		const rootClient = new KeetaNet.UserClient({
-			client,
-			network: node.config.network,
-			networkAlias: node.config.networkAlias,
-			signer: rootAccount,
-			usePublishAid: false
-		});
-		await rootClient.setInfo({ name: '', description: '', metadata: Metadata.formatMetadata(metadata) });
-
-		return(rootAccount.publicKeyString.get());
-	};
-
-	return({ node, api: endpoints.api, repClient, give, publish });
-}
-
 function kycCallbacks(
 	ca: CertificateAuthority,
 	issued: Map<string, string[]>,
@@ -311,7 +198,14 @@ function kycCallbacks(
 			return(await Promise.resolve([{ certificate: ca.toPEM() }]));
 		},
 		getVerificationStatus: async function() {
-			return(await Promise.resolve({ status: kycStatus.KYCVerificationStatus.PENDING }));
+			/*
+			 * The manual-review flag exercises the optional
+			 * `requiresManualVerification` response field end to end.
+			 */
+			return(await Promise.resolve({
+				status: kycStatus.KYCVerificationStatus.PENDING,
+				requiresManualVerification: true
+			}));
 		}
 	};
 

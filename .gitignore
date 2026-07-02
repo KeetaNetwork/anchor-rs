@@ -1,10 +1,13 @@
 target/
-node_modules/
 *.lcov
 
 # .NET binding build artifacts
 bin/
 obj/
+
+# JS
+node_modules/
+dist/
 
 # Added by cargo
 #

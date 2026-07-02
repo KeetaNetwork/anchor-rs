@@ -34,7 +34,7 @@ struct Sharable {
 /// Store `bundle` under a fresh handle and return it.
 fn store(bundle: SharableCertificateAttributes) -> i32 {
 	SHARABLE.with_borrow_mut(|state| {
-		state.next += 1;
+		state.next = state.next.wrapping_add(1).max(1);
 		let handle = state.next;
 		state.bundles.insert(handle, bundle);
 		handle

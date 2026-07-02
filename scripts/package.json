@@ -1,0 +1,22 @@
+{
+	"name": "@keetanetwork/anchor-rs-codegen",
+	"private": true,
+	"type": "module",
+	"description": "Codegen tooling: emit binding DTOs from the @keetanetwork/anchor schemas so language bindings never hand-duplicate the transport types.",
+	"license": "SEE LICENSE IN LICENSE",
+	"engines": {
+		"node": ">=20"
+	},
+	"scripts": {
+		"build": "tsc",
+		"gen": "node dist/gen-dtos.js",
+		"lint": "eslint"
+	},
+	"devDependencies": {
+		"@keetanetwork/eslint-config-typescript": "1.4.7",
+		"@types/node": "20.17.6",
+		"eslint": "9.13.0",
+		"quicktype": "23.2.6",
+		"typescript": "5.6.3"
+	}
+}

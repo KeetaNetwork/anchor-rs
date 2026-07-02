@@ -20,7 +20,7 @@ keetanetwork-account = { workspace = true, default-features = false, features = 
 	"rasn",
 ] }
 keetanetwork-bindings = { workspace = true }
-keetanetwork-anchor = { path = "../keetanetwork-anchor", default-features = false, features = [
+keetanetwork-anchor = { workspace = true, features = [
 	"alloc",
 	"x509",
 	"encrypted-container",
@@ -37,7 +37,7 @@ keetanetwork-crypto = { workspace = true, default-features = false, features = [
 chrono = { workspace = true, default-features = false, features = ["alloc"] }
 
 [dev-dependencies]
-keetanetwork-anchor = { path = "../keetanetwork-anchor", features = [
+keetanetwork-anchor = { workspace = true, default-features = true, features = [
 	"std",
 	"signing",
 ] }

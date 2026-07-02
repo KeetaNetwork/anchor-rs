@@ -25,6 +25,9 @@ impl<T> AnchorOutcome<T> {
 
 pub(crate) use decode::classify;
 
+#[cfg(feature = "asset")]
+pub(crate) use decode::pending_delay;
+
 mod decode {
 	use serde::de::DeserializeOwned;
 	use serde::Deserialize;
@@ -39,6 +42,11 @@ mod decode {
 	/// The status a provider returns while a polled resource is not yet ready.
 	const NOT_FOUND: u16 = 404;
 
+	/// The status a provider returns while an accepted operation is still
+	/// processing (the reference share-KYC promise protocol polls until the
+	/// `202` becomes a `200`).
+	const ACCEPTED: u16 = 202;
+
 	/// The common response fields every anchor operation shares.
 	#[derive(Debug, Default, Deserialize)]
 	struct Envelope {
@@ -50,7 +58,7 @@ mod decode {
 
 	/// Decode `response` into an [`AnchorOutcome`].
 	///
-	/// A `404`, or any response carrying `retryAfter`, becomes
+	/// A `202`, a `404`, or any response carrying `retryAfter`, becomes
 	/// [`AnchorOutcome::Retry`]. Any other non-2xx status, or an `ok: false`
 	/// envelope, becomes [`AnchorClientError::Service`]. A successful body
 	/// decodes into `T`.
@@ -76,9 +84,19 @@ mod decode {
 		Ok(AnchorOutcome::Ready(value))
 	}
 
+	/// The retry delay when `response` reports a pending resource, or [`None`]
+	/// when it is settled. Unlike [`classify`], the body is only consulted for
+	/// its optional `retryAfter` hint, so a settled response with an opaque
+	/// body still resolves.
+	#[cfg(feature = "asset")]
+	pub(crate) fn pending_delay(response: &HttpResponse) -> Option<u32> {
+		let envelope = serde_json::from_slice::<Envelope>(&response.body).unwrap_or_default();
+		retry_delay(response, &envelope)
+	}
+
 	/// The retry delay for a pending resource: an explicit body `retryAfter`,
 	/// otherwise the response's `Retry-After` header, otherwise a default for a
-	/// `404`.
+	/// `202` or a `404`.
 	fn retry_delay(response: &HttpResponse, envelope: &Envelope) -> Option<u32> {
 		if let Some(after_ms) = envelope.retry_after {
 			return Some(after_ms);
@@ -88,7 +106,7 @@ mod decode {
 			return Some(after_ms);
 		}
 
-		if response.status == NOT_FOUND {
+		if response.status == NOT_FOUND || response.status == ACCEPTED {
 			return Some(DEFAULT_RETRY_MS);
 		}
 
@@ -128,6 +146,13 @@ mod decode {
 		#[test]
 		fn a_not_found_without_a_hint_uses_the_default_delay() {
 			let response = HttpResponse::new(NOT_FOUND, b"{}".to_vec());
+			let outcome = classify::<Value>(response);
+			assert!(matches!(outcome, Ok(AnchorOutcome::Retry { after_ms: DEFAULT_RETRY_MS })));
+		}
+
+		#[test]
+		fn an_accepted_status_is_pending_even_with_an_opaque_body() {
+			let response = HttpResponse::new(202, b"pending".to_vec());
 			let outcome = classify::<Value>(response);
 			assert!(matches!(outcome, Ok(AnchorOutcome::Retry { after_ms: DEFAULT_RETRY_MS })));
 		}

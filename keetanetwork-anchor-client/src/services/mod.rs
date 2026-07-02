@@ -3,3 +3,6 @@
 
 #[cfg(feature = "kyc")]
 pub mod kyc;
+
+#[cfg(feature = "asset")]
+pub mod asset_movement;

@@ -59,6 +59,11 @@ pub struct ExpectedCost {
 pub struct VerificationStatus {
 	/// The provider-reported status (e.g. `pending`).
 	pub status: String,
+
+	/// Whether the provider requires a manual review to complete, when
+	/// reported.
+	#[serde(rename = "requiresManualVerification", default)]
+	pub requires_manual_verification: Option<bool>,
 }
 
 /// A single issued certificate.
@@ -89,7 +94,7 @@ mod client {
 	use super::{Certificates, KycQuery, Verification, VerificationStatus};
 	use crate::error::AnchorClientError;
 	use crate::resolver::{CountryCode, KycProvider};
-	use crate::service::{AnchorContext, AnchorOutcome, Auth, Call, Endpoint, Method};
+	use crate::service::{AnchorContext, AnchorOutcome, Auth, BodyEnvelope, Call, Endpoint, Method};
 
 	/// A KYC anchor client over a shared [`AnchorContext`].
 	///
@@ -142,7 +147,15 @@ mod client {
 			let method = Method::Post;
 			let auth = Auth::SignedBody;
 
-			let call = Call { endpoint: &endpoint, params: &[], method, auth, body: Some(body) };
+			let call = Call {
+				endpoint: &endpoint,
+				params: &[],
+				method,
+				auth,
+				signed: &[],
+				envelope: BodyEnvelope::Request,
+				body: Some(body),
+			};
 			let outcome = self.context.caller().invoke(call).await?;
 			Ok(outcome)
 		}
@@ -166,7 +179,15 @@ mod client {
 			let auth = Auth::None;
 			let body = None;
 
-			let call = Call { endpoint: &endpoint, params: &params, method, auth, body };
+			let call = Call {
+				endpoint: &endpoint,
+				params: &params,
+				method,
+				auth,
+				signed: &[],
+				envelope: BodyEnvelope::Request,
+				body,
+			};
 			let outcome = self.context.caller().invoke(call).await?;
 			Ok(outcome)
 		}
@@ -189,7 +210,15 @@ mod client {
 			let auth = Auth::SignedUrl;
 			let body = None;
 
-			let call = Call { endpoint: &endpoint, params: &params, method, auth, body };
+			let call = Call {
+				endpoint: &endpoint,
+				params: &params,
+				method,
+				auth,
+				signed: &[],
+				envelope: BodyEnvelope::Request,
+				body,
+			};
 			let outcome = self.context.caller().invoke(call).await?;
 			Ok(outcome)
 		}
