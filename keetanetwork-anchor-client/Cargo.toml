@@ -45,7 +45,7 @@ wasm = ["http"]
 wasi = ["service"]
 
 [dependencies]
-keetanetwork-anchor = { path = "../keetanetwork-anchor", default-features = false, features = [
+keetanetwork-anchor = { workspace = true, features = [
 	"signing",
 ] }
 keetanetwork-account = { workspace = true, default-features = false, features = [
@@ -84,7 +84,7 @@ web-sys = { workspace = true, features = ["Window", "Performance"] }
 wstd = { workspace = true }
 
 [dev-dependencies]
-keetanetwork-anchor = { path = "../keetanetwork-anchor", features = [
+keetanetwork-anchor = { workspace = true, default-features = true, features = [
 	"std",
 	"signing",
 	"serde",

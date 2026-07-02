@@ -18,11 +18,11 @@ p1 = ["dep:keetanetwork-client-wasi", "keetanetwork-client-wasi/p1"]
 p2 = ["dep:wstd", "dep:wit-bindgen"]
 
 [dependencies]
-keetanetwork-anchor-client = { path = "../keetanetwork-anchor-client", default-features = false, features = [
+keetanetwork-anchor-client = { workspace = true, features = [
 	"kyc",
 	"asset",
 ] }
-keetanetwork-anchor-bindings = { path = "../keetanetwork-anchor-bindings" }
+keetanetwork-anchor-bindings = { workspace = true, default-features = true }
 keetanetwork-account = { workspace = true, default-features = false, features = [
 	"rasn",
 ] }
@@ -31,14 +31,14 @@ hex = { workspace = true, features = ["alloc"] }
 # On a wasi target the networked KYC surface adds the transport and resilience.
 # P1 reaches HTTP through host imports; P2 reaches it through `wasi:http`.
 [target.'cfg(target_os = "wasi")'.dependencies]
-keetanetwork-anchor-client = { path = "../keetanetwork-anchor-client", default-features = false, features = [
+keetanetwork-anchor-client = { workspace = true, features = [
 	"kyc",
 	"asset",
 	"wasi",
 	"resilience",
 ] }
 
-keetanetwork-anchor = { path = "../keetanetwork-anchor", default-features = false, features = [
+keetanetwork-anchor = { workspace = true, features = [
 	"alloc",
 	"x509",
 	"chrono",
