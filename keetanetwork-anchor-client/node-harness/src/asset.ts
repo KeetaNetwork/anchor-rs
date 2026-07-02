@@ -32,6 +32,10 @@ type TokenAccount = UserClient['baseToken'];
 type AssetServerInstance = InstanceType<typeof assetServer.KeetaNetAssetMovementAnchorHTTPServer>;
 type AssetServerConfig = ConstructorParameters<typeof assetServer.KeetaNetAssetMovementAnchorHTTPServer>[0];
 type AssetMovementConfig = AssetServerConfig['assetMovement'];
+type SimulateRequest = Parameters<NonNullable<AssetMovementConfig['simulateTransfer']>>[0];
+type InitiateRequest = Parameters<NonNullable<AssetMovementConfig['initiateTransfer']>>[0];
+type SimulateResponse = Awaited<ReturnType<NonNullable<AssetMovementConfig['simulateTransfer']>>>;
+type InitiateResponse = Awaited<ReturnType<NonNullable<AssetMovementConfig['initiateTransfer']>>>;
 
 /** The running asset-movement anchor together with the node it is backed by. */
 let assetAnchor: {
@@ -62,14 +66,57 @@ type AssetRequest =
  * The full asset-movement callback surface, exercising every operation a binding
  * can drive. `authenticationRequired` forces a signature on every operation
  * except `simulateTransfer` (which the server publishes unauthenticated), so the
- * signed/unsigned split matches the Rust client. `baseToken` stands in for the
- * moved asset and `sendToAddress` for a resolved KEETA_SEND recipient; both are
- * branded public-key strings so the fixtures satisfy the reference types. The
- * fixtures are ported from the reference `client.test.ts`.
+ * signed/unsigned split matches the Rust client.
  */
 function assetCallbacks(baseTokenAccount: TokenAccount, sendToAccount: GenericAccount, moment: string): AssetMovementConfig {
 	const baseToken = baseTokenAccount.publicKeyString.get();
 	const sendToAddress = sendToAccount.publicKeyString.get();
+
+	/*
+	 * The shared simulate/initiate handler: a fiat pull (`ACH_DEBIT`) when the
+	 * source is a persistent-address reference at the bank location, otherwise a
+	 * crypto push (`KEETA_SEND`) to the resolved recipient. A simulated push
+	 * omits `sendToAddress`, matching `SimulatedAssetTransferInstructions`.
+	 */
+	function transferHandler(simulate: true, request: SimulateRequest): SimulateResponse;
+	function transferHandler(simulate: false, request: InitiateRequest): InitiateResponse;
+	function transferHandler(simulate: boolean, request: SimulateRequest | InitiateRequest): SimulateResponse | InitiateResponse {
+		if (request.from.location === 'bank-account:us') {
+			const source = request.from.source;
+			if (!source || typeof source !== 'object' || !('type' in source)) {
+				throw(new TypeError('from.source must be a persistent address reference'));
+			}
+			if (source.type !== 'persistent-address' && source.type !== 'persistent-address-template') {
+				throw(new TypeError('from.source must reference a persistent address or template'));
+			}
+
+			return({
+				...(simulate ? {} : { id: '123' }),
+				instructionChoices: [{
+					type: 'ACH_DEBIT',
+					pullFrom: source,
+					assetFee: '0'
+				}]
+			});
+		}
+
+		if (typeof request.to.recipient !== 'string') {
+			throw(new TypeError('recipient must be a string'));
+		}
+
+		return({
+			...(simulate ? {} : { id: '123' }),
+			instructionChoices: [{
+				type: 'KEETA_SEND',
+				location: request.from.location,
+				...(simulate ? {} : { sendToAddress }),
+				value: String(request.value),
+				tokenAddress: baseToken,
+				external: `123:${request.to.recipient}`,
+				assetFee: '10'
+			}]
+		});
+	}
 
 	/*
 	 * The canonical transaction the status/list/execute operations report.
@@ -114,43 +161,26 @@ function assetCallbacks(baseTokenAccount: TokenAccount, sendToAccount: GenericAc
 						]
 					}
 				]
+			},
+			{
+				asset: [ baseToken, 'USD' ],
+				paths: [
+					{
+						pair: [
+							{ id: 'USD', location: 'bank-account:us', rails: { inbound: [ 'ACH_DEBIT' ] }},
+							{ id: baseToken, location: 'chain:keeta:100', rails: { outbound: [ 'KEETA_SEND' ] }}
+						]
+					}
+				]
 			}
 		],
 
 		simulateTransfer: async function(request) {
-			if (typeof request.to.recipient !== 'string') {
-				throw(new TypeError('recipient must be a string'));
-			}
-
-			return({
-				instructionChoices: [{
-					type: 'KEETA_SEND',
-					location: request.from.location,
-					value: String(request.value),
-					tokenAddress: baseToken,
-					external: `123:${request.to.recipient}`,
-					assetFee: '10'
-				}]
-			});
+			return(await Promise.resolve(transferHandler(true, request)));
 		},
 
 		initiateTransfer: async function(request) {
-			if (typeof request.to.recipient !== 'string') {
-				throw(new TypeError('recipient must be a string'));
-			}
-
-			return({
-				id: '123',
-				instructionChoices: [{
-					type: 'KEETA_SEND',
-					location: request.from.location,
-					sendToAddress,
-					value: String(request.value),
-					tokenAddress: baseToken,
-					external: `123:${request.to.recipient}`,
-					assetFee: '10'
-				}]
-			});
+			return(await Promise.resolve(transferHandler(false, request)));
 		},
 
 		executeTransfer: async function(request) {

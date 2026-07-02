@@ -1,421 +1,402 @@
-//! Full asset-movement client path over a capturing transport: discover the
-//! provider from published metadata, then run operations end to end, asserting
-//! each one shapes its flat body/URL and decodes its typed response through the
-//! public [`AssetMovementClient`] surface.
+//! Full asset-movement client path against the live harness anchor: discover
+//! the provider from on-chain metadata through the real node API, then drive
+//! every advertised operation end to end over the reqwest transport, through
+//! the public [`AssetMovementClient`] surface.
 
 mod common;
+mod harness;
 
 use core::sync::atomic::{AtomicU32, Ordering};
-use std::collections::VecDeque;
 use std::error::Error;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
-use async_trait::async_trait;
-use base64::engine::general_purpose::STANDARD;
-use base64::Engine;
 use common::account_from_seed;
+use harness::{AssetAnchor, AssetHarness, HarnessError};
 use keetanetwork_account::GenericAccount;
-use keetanetwork_anchor_client::error::TransportError;
 use keetanetwork_anchor_client::{
-	AccountStatus, AnchorClientError, AnchorContext, AnchorHttpTransport, AssetMovementClient, AssetOrPair,
-	HttpResponse, PollOptions, Resolver, ShareKycRequest, TransferDestination, TransferRequest, TransferSource,
+	parse_total, AccountStatus, AnchorClientError, AnchorContext, AssetMovementClient, AssetMovementProvider,
+	AssetOrPair, CreateForwardingAddressRequest, CreateForwardingTemplateRequest, ExecuteTransferRequest,
+	ForwardingAddressFilter, ForwardingDestination, InitiateForwardingTemplateRequest, ListForwardingAddressesRequest,
+	ListForwardingTemplatesRequest, ListTransactionsRequest, Pagination, PersistentAddressFilter, PollOptions,
+	ProviderSearch, ReqwestTransport, Resolver, ShareKycRequest, TransactionEndpointFilter, TransferDestination,
+	TransferRequest, TransferSource,
 };
 use serde_json::{json, Value};
 
 type TestResult = Result<(), Box<dyn Error>>;
 
-/// The node API the resolver reads roots through.
-const API: &str = "http://node.test";
-/// The root account whose on-chain metadata advertises the provider.
-const ROOT: &str = "keeta_root";
-/// The provider id under `services.assetMovement`.
-const PROVIDER_ID: &str = "am_test";
+/// The canonical bank source location the pull fixtures use.
+const BANK_LOCATION: &str = "bank-account:us";
+/// The canonical EVM source location the push fixtures use.
+const EVM_LOCATION: &str = "chain:evm:100";
+/// The canonical Keeta destination location the fixtures use.
+const KEETA_LOCATION: &str = "chain:keeta:100";
 
-/// A transport that serves the published metadata for discovery, records every
-/// request, and replays a queued response per operation call.
-#[derive(Debug)]
-struct MockTransport {
-	metadata: String,
-	responses: Mutex<VecDeque<HttpResponse>>,
-	posts: Mutex<Vec<(String, Value)>>,
-	gets: Mutex<Vec<String>>,
-}
-
-impl MockTransport {
-	/// A transport publishing `document` as the root's on-chain metadata, with
-	/// `responses` replayed (in order) for the operation calls.
-	fn new(document: &Value, responses: impl IntoIterator<Item = HttpResponse>) -> Self {
-		let metadata = STANDARD.encode(serde_json::to_vec(document).expect("metadata serializes"));
-		Self {
-			metadata,
-			responses: Mutex::new(responses.into_iter().collect()),
-			posts: Mutex::new(Vec::new()),
-			gets: Mutex::new(Vec::new()),
-		}
-	}
-
-	/// The account-state body the resolver reads a root's metadata from.
-	fn ledger_state(&self) -> HttpResponse {
-		let state = json!({ "info": { "metadata": self.metadata } });
-		HttpResponse::new(200, serde_json::to_vec(&state).expect("state serializes"))
-	}
-
-	/// The next queued operation response, or a service error when exhausted.
-	fn next_response(&self) -> HttpResponse {
-		self.responses
-			.lock()
-			.expect("responses lock")
-			.pop_front()
-			.unwrap_or_else(|| HttpResponse::new(500, b"{\"ok\":false}".to_vec()))
-	}
-
-	/// The single recorded POST body, by operation URL suffix.
-	fn post_body(&self, suffix: &str) -> Option<Value> {
-		self.posts
-			.lock()
-			.expect("posts lock")
-			.iter()
-			.find(|(url, _)| url.contains(suffix))
-			.map(|(_, body)| body.clone())
-	}
-
-	/// The single recorded GET URL, by operation URL suffix.
-	fn get_url(&self, suffix: &str) -> Option<String> {
-		self.gets
-			.lock()
-			.expect("gets lock")
-			.iter()
-			.find(|url| url.contains(suffix))
-			.cloned()
-	}
-}
-
-#[cfg_attr(not(target_family = "wasm"), async_trait)]
-#[cfg_attr(target_family = "wasm", async_trait(?Send))]
-impl AnchorHttpTransport for MockTransport {
-	async fn get(&self, url: &str) -> Result<HttpResponse, TransportError> {
-		if url.contains("/node/ledger/account/") {
-			return Ok(self.ledger_state());
-		}
-
-		self.gets.lock().expect("gets lock").push(url.to_string());
-		Ok(self.next_response())
-	}
-
-	async fn post(&self, url: &str, body: &[u8]) -> Result<HttpResponse, TransportError> {
-		let parsed = serde_json::from_slice(body).unwrap_or(Value::Null);
-		self.posts
-			.lock()
-			.expect("posts lock")
-			.push((url.to_string(), parsed));
-		Ok(self.next_response())
-	}
-}
-
-/// The metadata document a full-featured provider publishes.
-fn provider_metadata() -> Value {
-	json!({
-		"version": 1,
-		"services": {
-			"assetMovement": {
-				PROVIDER_ID: {
-					"operations": {
-						"simulateTransfer": "http://anchor.test/api/simulateTransfer",
-						"initiateTransfer": {
-							"url": "http://anchor.test/api/initiateTransfer",
-							"options": { "authentication": { "type": "required" } }
-						},
-						"getTransferStatus": {
-							"url": "http://anchor.test/api/getTransferStatus/{id}",
-							"options": { "authentication": { "type": "required" } }
-						},
-						"getAccountStatus": "http://anchor.test/api/getAccountStatus"
-					}
-				}
-			}
-		}
-	})
-}
-
-/// A client and its transport over `document` with the given queued responses.
-fn client_over(
-	document: &Value,
-	responses: impl IntoIterator<Item = HttpResponse>,
-) -> (AssetMovementClient, Arc<MockTransport>) {
-	let transport = Arc::new(MockTransport::new(document, responses));
-	let resolver = Resolver::new(transport.clone(), API, [ROOT.to_string()]);
+/// An asset-movement client whose resolver reads the `root` account's on-chain
+/// metadata through the node API at `api`, and whose caller signs with a
+/// deterministic account over the live reqwest transport.
+fn client_for(api: &str, root: &str) -> Result<AssetMovementClient, Box<dyn Error>> {
+	let transport = Arc::new(ReqwestTransport::try_default()?);
+	let resolver = Resolver::new(transport.clone(), api, [root.to_string()]);
 	let signer = Arc::new(GenericAccount::EcdsaSecp256k1(account_from_seed(0x11)));
-	let context = AnchorContext::new(resolver, transport.clone(), signer);
-	(AssetMovementClient::new(context), transport)
+	let context = AnchorContext::new(resolver, transport, signer);
+
+	Ok(AssetMovementClient::new(context))
 }
 
-/// A transfer request moving USD from a bank account to an EVM address.
-fn transfer_request(recipient: Option<Value>) -> TransferRequest {
+/// The single provider the running anchor publishes.
+async fn discovered_provider(
+	client: &AssetMovementClient,
+	anchor: &AssetAnchor,
+) -> Result<AssetMovementProvider, Box<dyn Error>> {
+	let provider = client
+		.provider_by_id(&anchor.provider_id)
+		.await?
+		.ok_or(HarnessError::MissingField { field: "asset provider" })?;
+	Ok(provider)
+}
+
+/// A push transfer moving the base token from the EVM location to Keeta.
+fn push_transfer(anchor: &AssetAnchor, recipient: Option<Value>) -> TransferRequest {
 	TransferRequest {
-		asset: AssetOrPair::from("USD"),
-		from: TransferSource { location: "bank-account:CHECKING".to_string(), source: None },
-		to: TransferDestination { location: "chain:evm:1".to_string(), recipient, deposit_message: None },
-		value: "1000".to_string(),
+		asset: AssetOrPair::from(anchor.asset.clone()),
+		from: TransferSource { location: EVM_LOCATION.to_string(), source: None },
+		to: TransferDestination { location: KEETA_LOCATION.to_string(), recipient, deposit_message: None },
+		value: "100".to_string(),
 		allowed_rails: Vec::new(),
 	}
 }
 
+/// A pull transfer debiting a persistent bank address into the base token.
+fn pull_transfer(anchor: &AssetAnchor) -> TransferRequest {
+	let source = json!({ "type": "persistent-address", "persistentAddressId": "TEST_PERSISTENT_ADDRESS_ID" });
+	TransferRequest {
+		asset: AssetOrPair::Pair { from: "USD".to_string(), to: anchor.asset.clone() },
+		from: TransferSource { location: BANK_LOCATION.to_string(), source: Some(source) },
+		to: TransferDestination {
+			location: KEETA_LOCATION.to_string(),
+			recipient: Some(Value::String(anchor.send_to_address.clone())),
+			deposit_message: Some("integration".to_string()),
+		},
+		value: "100".to_string(),
+		allowed_rails: Vec::new(),
+	}
+}
+
+/// The share-KYC request the poll tests submit, with `attributes` selecting the
+/// harness fixture path (any value containing `promise` reports pending).
+fn share_kyc_request(attributes: &str) -> ShareKycRequest {
+	ShareKycRequest { attributes: attributes.to_string(), tos_agreement: None }
+}
+
 #[tokio::test]
 async fn discovery_reads_the_published_provider() -> TestResult {
-	let (client, _transport) = client_over(&provider_metadata(), []);
+	let mut harness = AssetHarness::start()?;
+	let anchor = harness.start_asset_anchor(true)?;
+	let client = client_for(&anchor.api, &anchor.root)?;
 
 	let providers = client.providers().await?;
 	assert_eq!(providers.len(), 1, "exactly one provider is published");
+	assert_eq!(providers[0].id, anchor.provider_id, "discovered provider id diverges");
+	assert!(client.is_operation_supported(&providers[0], "simulateTransfer"), "simulateTransfer must be advertised");
 
-	let provider = &providers[0];
-	assert_eq!(provider.id, PROVIDER_ID, "discovered provider id diverges");
-	assert!(client.is_operation_supported(provider, "simulateTransfer"), "simulateTransfer must be advertised");
-	assert!(!client.is_operation_supported(provider, "shareKYC"), "shareKYC is not advertised by this provider");
-
-	Ok(())
-}
-
-#[tokio::test]
-async fn simulate_transfer_sends_an_unsigned_flat_body() -> TestResult {
-	let response = HttpResponse::new(200, br#"{"ok":true,"instructionChoices":[{"type":"ACH"}]}"#.to_vec());
-	let (client, transport) = client_over(&provider_metadata(), [response]);
-
-	let provider = client
-		.provider_by_id(PROVIDER_ID)
-		.await?
-		.ok_or("provider missing")?;
-	let simulated = client
-		.simulate_transfer(&provider, &transfer_request(None))
+	let by_account = client
+		.provider_by_account(
+			anchor
+				.signer
+				.clone()
+				.ok_or(HarnessError::MissingField { field: "signer" })?,
+		)
 		.await?;
-	assert_eq!(simulated.instruction_choices.len(), 1, "the simulated choices decode from the body");
+	assert!(by_account.is_some(), "the provider must resolve by its signing account");
 
-	let body = transport
-		.post_body("simulateTransfer")
-		.ok_or("simulateTransfer was not called")?;
-	assert_eq!(body["value"], json!("1000"), "the transfer value is carried verbatim");
-	assert_eq!(body["asset"], json!("USD"), "a single asset serializes as a bare string");
-	assert_eq!(body["from"]["location"], json!("bank-account:CHECKING"), "the source location is carried");
-	assert_eq!(body["account"].as_str(), Some(provider_signer().as_str()), "the signer account is injected");
-	assert!(body.get("signed").is_none(), "an unauthenticated operation carries no signature");
+	let search = ProviderSearch::for_asset(anchor.asset.clone())
+		.from(EVM_LOCATION)
+		.to(KEETA_LOCATION);
+	let matches = client.providers_for_transfer(&search).await?;
+	assert_eq!(matches.len(), 1, "the provider must satisfy a search over its published path");
 
-	Ok(())
-}
-
-#[tokio::test]
-async fn initiate_transfer_signs_the_flat_body() -> TestResult {
-	let response = HttpResponse::new(200, br#"{"ok":true,"id":"tx_1","instructionChoices":[]}"#.to_vec());
-	let (client, transport) = client_over(&provider_metadata(), [response]);
-
-	let provider = client
-		.provider_by_id(PROVIDER_ID)
-		.await?
-		.ok_or("provider missing")?;
-	let recipient = json!({ "address": "0xabc" });
-	let transfer = client
-		.initiate_transfer(&provider, &transfer_request(Some(recipient.clone())))
+	let none = client
+		.providers_for_transfer(&ProviderSearch::for_asset("evm:0xdeadbeef"))
 		.await?;
-	assert_eq!(transfer.id, "tx_1", "the transfer id decodes from the body");
+	assert!(none.is_empty(), "an unadvertised asset must match no provider");
 
-	let body = transport
-		.post_body("initiateTransfer")
-		.ok_or("initiateTransfer was not called")?;
-	assert_eq!(body["to"]["recipient"], recipient, "the recipient is carried in the destination");
-
-	let signed = body
-		.get("signed")
-		.ok_or("a required operation must carry a signature")?;
-	assert!(signed["nonce"].is_string(), "the signature carries a nonce");
-	assert!(signed["timestamp"].is_string(), "the signature carries a timestamp");
-	assert!(signed["signature"].is_string(), "the signature carries signature bytes");
-
+	harness.shutdown()?;
 	Ok(())
 }
 
 #[tokio::test]
-async fn initiate_transfer_requires_a_recipient() -> TestResult {
-	let (client, _transport) = client_over(&provider_metadata(), []);
-
-	let provider = client
-		.provider_by_id(PROVIDER_ID)
-		.await?
-		.ok_or("provider missing")?;
-	let outcome = client
-		.initiate_transfer(&provider, &transfer_request(None))
-		.await;
-	assert!(outcome.is_err(), "initiating a transfer without a recipient must fail before any request");
-
-	Ok(())
-}
-
-#[tokio::test]
-async fn transfer_status_signs_the_url() -> TestResult {
-	let response = HttpResponse::new(200, br#"{"ok":true,"transaction":{"id":"tx_1"}}"#.to_vec());
-	let (client, transport) = client_over(&provider_metadata(), [response]);
-
-	let provider = client
-		.provider_by_id(PROVIDER_ID)
-		.await?
-		.ok_or("provider missing")?;
-	let status = client.transfer_status(&provider, "tx_1").await?;
-	assert_eq!(status.transaction["id"], json!("tx_1"), "the transaction decodes from the body");
-
-	let url = transport
-		.get_url("getTransferStatus/tx_1")
-		.ok_or("getTransferStatus was not called with the id")?;
-	assert!(url.contains("signed.signature="), "a signed GET carries its signature on the URL");
-	assert!(url.contains("account="), "a signed GET carries the account on the URL");
-
-	Ok(())
-}
-
-#[tokio::test]
-async fn account_status_resolves_ready_and_blocked() -> TestResult {
-	let ready = HttpResponse::new(200, br#"{"ok":true,"actionRequired":false}"#.to_vec());
-	let (client, _transport) = client_over(&provider_metadata(), [ready]);
-
-	let provider = client
-		.provider_by_id(PROVIDER_ID)
-		.await?
-		.ok_or("provider missing")?;
-	assert_eq!(client.account_status(&provider).await?, AccountStatus::Ready, "a ready account resolves to Ready");
-
-	let blocked = HttpResponse::new(200, br#"{"ok":true,"actionRequired":true,"errors":[{"name":"n","code":"KEETA_ANCHOR_ASSET_MOVEMENT_ADDITIONAL_KYC_NEEDED","error":"e","data":{"toCompleteFlow":null}}]}"#.to_vec());
-	let (client, _transport) = client_over(&provider_metadata(), [blocked]);
-	let provider = client
-		.provider_by_id(PROVIDER_ID)
-		.await?
-		.ok_or("provider missing")?;
+async fn transfers_run_end_to_end_against_the_live_anchor() -> TestResult {
+	let mut harness = AssetHarness::start()?;
+	let anchor = harness.start_asset_anchor(true)?;
+	let client = client_for(&anchor.api, &anchor.root)?;
+	let provider = discovered_provider(&client, &anchor).await?;
 
 	let status = client.account_status(&provider).await?;
-	assert!(
-		matches!(status, AccountStatus::ActionRequired { blockers } if blockers.len() == 1),
-		"a blocked account lists its blockers"
+	assert_eq!(status, AccountStatus::Ready, "the fixture account must be ready");
+
+	let recipient = Value::String(anchor.send_to_address.clone());
+	let simulated = client
+		.simulate_transfer(&provider, &push_transfer(&anchor, Some(recipient.clone())))
+		.await?;
+	assert_eq!(simulated.instruction_choices.len(), 1, "the simulation must offer one instruction");
+	assert_eq!(
+		simulated.instruction_choices[0]["type"],
+		json!("KEETA_SEND"),
+		"a push transfer must simulate to a crypto send"
 	);
 
+	let transfer = client
+		.initiate_transfer(&provider, &push_transfer(&anchor, Some(recipient)))
+		.await?;
+	assert_eq!(transfer.id, "123", "the anchor must assign the fixture transfer id");
+	assert_eq!(
+		transfer.instruction_choices[0]["sendToAddress"],
+		json!(anchor.send_to_address),
+		"the initiated instruction must resolve the send-to address"
+	);
+
+	let missing_recipient = client
+		.initiate_transfer(&provider, &push_transfer(&anchor, None))
+		.await;
+	assert!(missing_recipient.is_err(), "initiating without a recipient must fail before any request");
+
+	let status = client.transfer_status(&provider, &transfer.id).await?;
+	assert_eq!(status.transaction["id"], json!("123"), "the signed status URL must serve the transaction");
+	assert_eq!(status.transaction["status"], json!("COMPLETED"), "the fixture transaction reports completed");
+
+	let pull = client
+		.initiate_transfer(&provider, &pull_transfer(&anchor))
+		.await?;
+	let instruction = pull
+		.instruction_choices
+		.first()
+		.cloned()
+		.ok_or(HarnessError::MissingField { field: "pull instruction" })?;
+	assert_eq!(instruction["type"], json!("ACH_DEBIT"), "a bank-sourced transfer must offer a fiat pull");
+
+	let executed = client
+		.execute_transfer(&provider, &ExecuteTransferRequest { id: pull.id.clone(), instruction })
+		.await?;
+	assert_eq!(
+		executed.transaction["status"],
+		json!("EXECUTED"),
+		"executing the pull instruction must report the executed transaction"
+	);
+
+	harness.shutdown()?;
 	Ok(())
 }
 
-/// The metadata document a share-KYC provider publishes.
-fn kyc_provider_metadata() -> Value {
-	json!({
-		"version": 1,
-		"services": {
-			"assetMovement": {
-				PROVIDER_ID: {
-					"operations": {
-						"shareKYC": {
-							"url": "http://anchor.test/api/shareKYC",
-							"options": { "authentication": { "type": "required" } }
-						}
-					}
-				}
-			}
-		}
-	})
-}
+#[tokio::test]
+async fn forwarding_and_listing_run_against_the_live_anchor() -> TestResult {
+	let mut harness = AssetHarness::start()?;
+	let anchor = harness.start_asset_anchor(true)?;
+	let client = client_for(&anchor.api, &anchor.root)?;
+	let provider = discovered_provider(&client, &anchor).await?;
+	let asset = AssetOrPair::from(anchor.asset.clone());
 
-/// The share-KYC request the poll tests submit.
-fn share_kyc_request() -> ShareKycRequest {
-	ShareKycRequest { attributes: "exported-attributes".to_string(), tos_agreement: None }
+	let session = client
+		.initiate_forwarding_template(
+			&provider,
+			&InitiateForwardingTemplateRequest { asset: asset.clone(), location: EVM_LOCATION.to_string() },
+		)
+		.await?;
+	assert_eq!(session.id, "test-session-id", "the anchor must open the fixture session");
+	assert_eq!(session.data["plaidLinkToken"], json!("link-sandbox-test-token"), "the session data must decode");
+
+	let template = client
+		.create_forwarding_template(
+			&provider,
+			&CreateForwardingTemplateRequest::Direct {
+				asset: asset.clone(),
+				location: EVM_LOCATION.to_string(),
+				address: Value::String(anchor.send_to_address.clone()),
+			},
+		)
+		.await?;
+	assert_eq!(template.id, "template-id", "a direct create must return the fixture template");
+
+	let completed = client
+		.create_forwarding_template(
+			&provider,
+			&CreateForwardingTemplateRequest::Completion {
+				id: Some(session.id.clone()),
+				data: json!({
+					"type": "plaid",
+					"plaidPublicToken": "public-sandbox-token",
+					"plaidAccountId": "account-1",
+				}),
+			},
+		)
+		.await?;
+	assert_eq!(completed.id, "template-id", "a session completion must return the fixture template");
+
+	let templates = client
+		.list_forwarding_templates(
+			&provider,
+			&ListForwardingTemplatesRequest {
+				asset: Some(vec![anchor.asset.clone()]),
+				location: Some(vec![EVM_LOCATION.to_string()]),
+			},
+		)
+		.await?;
+	assert_eq!(templates.templates.len(), 1, "the template listing must serve the fixture page");
+	assert_eq!(parse_total(&templates.total), Some(1), "the template listing must carry its total");
+
+	let created = client
+		.create_forwarding_address(
+			&provider,
+			&CreateForwardingAddressRequest {
+				source_location: EVM_LOCATION.to_string(),
+				asset: asset.clone(),
+				outgoing_rail: Some("KEETA_SEND".to_string()),
+				incoming_rail: None,
+				destination: ForwardingDestination::Address {
+					location: KEETA_LOCATION.to_string(),
+					address: Value::String(anchor.send_to_address.clone()),
+				},
+			},
+		)
+		.await?;
+	assert_eq!(created["address"], json!(anchor.send_to_address), "the created address must decode");
+	assert_eq!(created["fees"]["total"], json!("10"), "the created address must carry its fee total");
+
+	let from_template = client
+		.create_forwarding_address(
+			&provider,
+			&CreateForwardingAddressRequest {
+				source_location: EVM_LOCATION.to_string(),
+				asset: asset.clone(),
+				outgoing_rail: None,
+				incoming_rail: None,
+				destination: ForwardingDestination::Template { persistent_address_template_id: template.id.clone() },
+			},
+		)
+		.await?;
+	assert_eq!(from_template["address"], json!(anchor.send_to_address), "a template-backed create must decode");
+
+	let addresses = client
+		.list_forwarding_addresses(
+			&provider,
+			&ListForwardingAddressesRequest {
+				search: Some(vec![ForwardingAddressFilter {
+					source_location: Some(EVM_LOCATION.to_string()),
+					asset: Some(anchor.asset.clone()),
+					..ForwardingAddressFilter::default()
+				}]),
+				pagination: Pagination { limit: Some(10), offset: Some(0) },
+			},
+		)
+		.await?;
+	assert_eq!(addresses.addresses.len(), 1, "the address listing must serve the fixture page");
+	assert_eq!(parse_total(&addresses.total), Some(1), "the address listing must carry its total");
+
+	let transactions = client
+		.list_transactions(
+			&provider,
+			&ListTransactionsRequest {
+				persistent_addresses: Some(vec![PersistentAddressFilter {
+					location: EVM_LOCATION.to_string(),
+					persistent_address: Some(anchor.send_to_address.clone()),
+					persistent_address_template: None,
+				}]),
+				from: Some(TransactionEndpointFilter {
+					location: EVM_LOCATION.to_string(),
+					user_address: Some(anchor.send_to_address.clone()),
+					asset: Some(anchor.asset.clone()),
+				}),
+				to: None,
+				transactions: None,
+				pagination: Pagination { limit: Some(10), offset: None },
+			},
+		)
+		.await?;
+	assert_eq!(transactions.transactions.len(), 1, "the transaction listing must serve the fixture page");
+	assert_eq!(
+		transactions.transactions[0]["id"],
+		json!("123"),
+		"the listed transaction must be the fixture transaction"
+	);
+
+	client
+		.deactivate_forwarding_template(&provider, &template.id)
+		.await?;
+	client
+		.deactivate_forwarding_address(&provider, &template.id)
+		.await?;
+
+	let missing = client
+		.deactivate_forwarding_template(&provider, "does-not-exist")
+		.await;
+	assert!(missing.is_err(), "deactivating an unknown template must surface the anchor error");
+
+	let mut narrowed = provider.clone();
+	narrowed.operations = narrowed
+		.operations
+		.iter()
+		.filter(|(name, _)| *name != "listTransactions")
+		.map(|(name, endpoint)| (name.to_string(), endpoint.clone()))
+		.collect();
+	let unadvertised = client
+		.list_transactions(&narrowed, &ListTransactionsRequest::default())
+		.await;
+	assert!(
+		matches!(unadvertised, Err(AnchorClientError::UnsupportedOperation { .. })),
+		"an unadvertised operation must surface a typed error, got {unadvertised:?}"
+	);
+
+	harness.shutdown()?;
+	Ok(())
 }
 
 #[tokio::test]
-async fn share_kyc_await_polls_a_pending_promise_to_completion() -> TestResult {
-	// The share reports pending; the promise stays pending (202, opaque body)
-	// for two polls and then settles with a 200 whose body is not JSON.
-	let responses = [
-		HttpResponse::new(200, br#"{"ok":true,"isPending":true,"promiseURL":"/_promises/p1"}"#.to_vec()),
-		HttpResponse::new(202, b"pending".to_vec()),
-		HttpResponse::new(202, b"pending".to_vec()),
-		HttpResponse::new(200, b"ok".to_vec()),
-	];
-	let (client, transport) = client_over(&kyc_provider_metadata(), responses);
-	let provider = client
-		.provider_by_id(PROVIDER_ID)
-		.await?
-		.ok_or("provider missing")?;
+async fn share_kyc_settles_and_polls_against_the_live_anchor() -> TestResult {
+	let mut harness = AssetHarness::start()?;
+	let anchor = harness.start_asset_anchor(true)?;
+	let client = client_for(&anchor.api, &anchor.root)?;
+	let provider = discovered_provider(&client, &anchor).await?;
 
+	let settled = client
+		.share_kyc(&provider, &share_kyc_request("exported-attributes"))
+		.await?;
+	assert!(!settled.is_pending, "a plain share must settle immediately");
+
+	let without_polling = client
+		.share_kyc_await(
+			&provider,
+			&share_kyc_request("exported-attributes"),
+			PollOptions::default(),
+			|_millis| async { panic!("a settled share must not sleep") },
+		)
+		.await?;
+	assert!(!without_polling.is_pending, "a settled share must return without polling");
+
+	// The promise route reports pending (202 + Retry-After) for the first two
+	// polls and settles on the third, so the await must sleep exactly twice.
 	let polls = Arc::new(AtomicU32::new(0));
 	let counter = Arc::clone(&polls);
 	let options = PollOptions { interval_ms: 1, timeout_ms: 60_000 };
 	let outcome = client
-		.share_kyc_await(&provider, &share_kyc_request(), options, move |_millis| {
+		.share_kyc_await(&provider, &share_kyc_request("promise-flow"), options, move |_millis| {
 			let counter = Arc::clone(&counter);
 			async move {
 				counter.fetch_add(1, Ordering::Relaxed);
 			}
 		})
 		.await?;
-	assert!(!outcome.is_pending, "the settled outcome must not be pending");
+	assert!(!outcome.is_pending, "the polled promise must settle");
 	assert_eq!(polls.load(Ordering::Relaxed), 2, "the poll must sleep once per pending response");
 
-	let url = transport
-		.get_url("/_promises/p1")
-		.ok_or("the promise URL was not polled")?;
-	assert!(url.starts_with("http://anchor.test/"), "a root-relative promise URL resolves against the endpoint");
-
-	Ok(())
-}
-
-#[tokio::test]
-async fn share_kyc_await_times_out_on_an_unsettled_promise() -> TestResult {
-	let responses = [
-		HttpResponse::new(200, br#"{"ok":true,"isPending":true,"promiseURL":"/_promises/p2"}"#.to_vec()),
-		HttpResponse::new(202, b"pending".to_vec()),
-	];
-	let (client, _transport) = client_over(&kyc_provider_metadata(), responses);
-	let provider = client
-		.provider_by_id(PROVIDER_ID)
-		.await?
-		.ok_or("provider missing")?;
-
 	let options = PollOptions { interval_ms: 1_000, timeout_ms: 500 };
-	let outcome = client
-		.share_kyc_await(&provider, &share_kyc_request(), options, |_millis| async {})
+	let timed_out = client
+		.share_kyc_await(&provider, &share_kyc_request("promise-stall"), options, |_millis| async {})
 		.await;
 	assert!(
-		matches!(outcome, Err(AnchorClientError::Timeout { .. })),
-		"an unsettled promise must surface a typed timeout, got {outcome:?}"
+		matches!(timed_out, Err(AnchorClientError::Timeout { .. })),
+		"an unsettled promise must surface a typed timeout, got {timed_out:?}"
 	);
 
+	harness.shutdown()?;
 	Ok(())
-}
-
-#[tokio::test]
-async fn a_settled_share_kyc_returns_without_polling() -> TestResult {
-	let responses = [HttpResponse::new(200, br#"{"ok":true}"#.to_vec())];
-	let (client, transport) = client_over(&kyc_provider_metadata(), responses);
-	let provider = client
-		.provider_by_id(PROVIDER_ID)
-		.await?
-		.ok_or("provider missing")?;
-
-	let outcome = client
-		.share_kyc_await(&provider, &share_kyc_request(), PollOptions::default(), |_millis| async {})
-		.await?;
-	assert!(!outcome.is_pending, "an immediately settled share must not be pending");
-	assert!(transport.get_url("_promises").is_none(), "a settled share must not poll any promise URL");
-
-	Ok(())
-}
-
-#[tokio::test]
-async fn an_unadvertised_operation_is_rejected() -> TestResult {
-	let (client, _transport) = client_over(&provider_metadata(), []);
-
-	let provider = client
-		.provider_by_id(PROVIDER_ID)
-		.await?
-		.ok_or("provider missing")?;
-	let outcome = client
-		.list_transactions(&provider, &Default::default())
-		.await;
-	assert!(outcome.is_err(), "an operation the provider does not advertise must surface a typed error");
-
-	Ok(())
-}
-
-/// The deterministic signer's account string, used to assert body injection.
-fn provider_signer() -> String {
-	GenericAccount::EcdsaSecp256k1(account_from_seed(0x11)).to_string()
 }

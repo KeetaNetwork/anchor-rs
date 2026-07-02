@@ -51,9 +51,9 @@ pub use services::kyc::{
 
 #[cfg(feature = "asset")]
 pub use services::asset_movement::{
-	canonicalize_asset, canonicalize_location, AccountStatus, AddressPage, AssetLocation, AssetMovementBlocker,
-	AssetMovementClient, AssetMovementOperations, AssetMovementProvider, AssetMovementQuery, AssetOrPair,
-	ChainLocation, CreateForwardingAddressRequest, CreateForwardingTemplateRequest, EndpointAuth,
+	canonicalize_asset, canonicalize_location, parse_total, AccountStatus, AddressPage, AssetLocation,
+	AssetMovementBlocker, AssetMovementClient, AssetMovementOperations, AssetMovementProvider, AssetMovementQuery,
+	AssetOrPair, ChainLocation, CreateForwardingAddressRequest, CreateForwardingTemplateRequest, EndpointAuth,
 	ExecuteTransferRequest, ForwardingAddressFilter, ForwardingDestination, ForwardingTemplate,
 	InitiateForwardingTemplateRequest, ListForwardingAddressesRequest, ListForwardingTemplatesRequest,
 	ListTransactionsRequest, OperationEndpoint, Pagination, PersistentAddressFilter, PollOptions, ProviderFilter,
