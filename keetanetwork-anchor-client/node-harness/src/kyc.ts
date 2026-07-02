@@ -320,7 +320,7 @@ function reviveValue(value: unknown): unknown {
 		const typeEntry = entries.find(([key]) => key === 'type');
 		const dataEntry = entries.find(([key]) => key === 'data');
 		const data: unknown = dataEntry?.[1];
-		if (typeEntry !== undefined && typeEntry[1] === 'Buffer' && Array.isArray(data) && data.every((byte): byte is number => typeof byte === 'number')) {
+		if (typeEntry?.[1] === 'Buffer' && Array.isArray(data) && data.every((byte): byte is number => typeof byte === 'number')) {
 			return(Buffer.from(data));
 		}
 
@@ -373,12 +373,12 @@ async function handleIssueCertificate(request: IssueCertificateRequest): Promise
 	for (const attribute of request.attributes) {
 		// eslint-disable-next-line @typescript-eslint/consistent-type-assertions
 		const name = attribute.name as CertificatesModule.CertificateAttributeNames;
-		const value = await reader.getAttributeValue(name);
 		/*
-		 * Round-trip through JSON so each value is the exact form a binding
-		 * compares against (e.g. `Date` becomes its ISO string).
+		 * The response line is JSON-serialized as a whole, which already turns
+		 * each value into the exact form a binding compares against (e.g.
+		 * `Date` becomes its ISO string, `Buffer` its `{ type, data }` form).
 		 */
-		attributes[attribute.name] = JSON.parse(JSON.stringify(value));
+		attributes[attribute.name] = await reader.getAttributeValue(name);
 	}
 
 	const verificationID = request.verificationID ?? subjectAccount.publicKeyString.get();
@@ -407,10 +407,13 @@ async function handleDecodeCertificate(request: DecodeCertificateRequest): Promi
 	for (const name of request.attributes) {
 		// eslint-disable-next-line @typescript-eslint/consistent-type-assertions
 		const attributeName = name as CertificatesModule.CertificateAttributeNames;
-		const value = await reader.getAttributeValue(attributeName);
 
-		/* Round-trip through JSON so a `Date` becomes its ISO string, etc. */
-		attributes[name] = JSON.parse(JSON.stringify(value));
+		/*
+		 * The response line is JSON-serialized as a whole, which already turns
+		 * a `Date` into its ISO string, a `Buffer` into its `{ type, data }`
+		 * form, etc.
+		 */
+		attributes[name] = await reader.getAttributeValue(attributeName);
 	}
 
 	return({ event: 'certificate-decoded', attributes });
