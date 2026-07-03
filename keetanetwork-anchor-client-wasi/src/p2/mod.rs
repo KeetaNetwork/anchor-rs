@@ -83,13 +83,11 @@ fn collect_certificates(borrows: &[CertificateBorrow<'_>]) -> Vec<X509Certificat
 /// the node client's `wasi:http` transport, keyed by its URL (no account).
 fn node_client(node_url: &str) -> KeetaClient {
 	let part = RepPart { key: node_url.to_owned(), url: node_url.to_owned(), weight: BigInt::from(1u8) };
-	KeetaClient::with_parts(
-		[part],
-		Arc::new(WasiTransportFactory),
-		Arc::new(NodeWasiRuntime),
-		ClientConfig::default(),
-		true,
-	)
+	let factory = Arc::new(WasiTransportFactory);
+	let runtime = Arc::new(NodeWasiRuntime);
+	let config = ClientConfig::default();
+
+	KeetaClient::with_parts([part], factory, runtime, config, true)
 }
 
 /// Drive an async client call to completion on the `wstd` reactor, projecting

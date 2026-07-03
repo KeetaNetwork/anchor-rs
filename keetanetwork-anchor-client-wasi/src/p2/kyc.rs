@@ -77,7 +77,8 @@ impl GuestClient for KycSession {
 fn build_client(node_url: String, root: String, signer: Arc<GenericAccount>) -> KycClient {
 	let base: Arc<dyn AnchorHttpTransport> = Arc::new(WasiTransport::default());
 	let transport: Arc<dyn AnchorHttpTransport> = Arc::new(ResilientTransport::new(base, WasiRuntime));
-	let resolver = Resolver::new(super::node_client(&node_url), transport.clone(), [root]);
+	let client = super::node_client(&node_url);
+	let resolver = Resolver::new(client, transport.clone(), [root]);
 	let context = AnchorContext::new(resolver, transport, signer);
 	KycClient::new(context)
 }

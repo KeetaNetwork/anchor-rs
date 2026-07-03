@@ -30,7 +30,9 @@ pub async fn verify_account_certificate_chain(
 	moment: DateTime<Utc>,
 ) -> Result<CertificateChainStatus, ResolverError> {
 	let records = client.certificates(account).await?;
-	Ok(evaluate_published_chain(&records, trusted_issuers, moment))
+	let status = evaluate_published_chain(&records, trusted_issuers, moment);
+
+	Ok(status)
 }
 
 /// Evaluate published `records` against `trusted_issuers` at `moment`.

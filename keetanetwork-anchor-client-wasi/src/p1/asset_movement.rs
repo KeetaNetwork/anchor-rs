@@ -513,7 +513,8 @@ async fn lookup(
 /// Build a networked asset-movement client signed by `signer`.
 fn build_client(node_url: String, root: String, signer: Arc<GenericAccount>) -> AssetMovementClient {
 	let transport = host_transport();
-	let resolver = Resolver::new(super::node::node_client(&node_url), transport.clone(), [root]);
+	let client = super::node::node_client(&node_url);
+	let resolver = Resolver::new(client, transport.clone(), [root]);
 	let context = AnchorContext::new(resolver, transport, signer);
 
 	AssetMovementClient::new(context)

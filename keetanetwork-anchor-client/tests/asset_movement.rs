@@ -40,7 +40,8 @@ const KEETA_LOCATION: &str = "chain:keeta:100";
 /// deterministic account over the live reqwest transport.
 fn client_for(api: &str, root: &str) -> Result<AssetMovementClient, Box<dyn Error>> {
 	let transport = Arc::new(ReqwestTransport::try_default()?);
-	let resolver = Resolver::new(KeetaClient::new(api), transport.clone(), [root.to_string()]);
+	let client = KeetaClient::new(api);
+	let resolver = Resolver::new(client, transport.clone(), [root.to_string()]);
 	let signer = Arc::new(GenericAccount::EcdsaSecp256k1(account_from_seed(0x11)));
 	let context = AnchorContext::new(resolver, transport, signer);
 

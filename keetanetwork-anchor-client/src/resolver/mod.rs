@@ -148,7 +148,9 @@ impl Resolver {
 	///
 	/// Returns [`ResolverError::Node`] when the ledger read fails.
 	pub async fn get_all_certificates(&self, account: &str) -> Result<Vec<AccountCertificate>, ResolverError> {
-		Ok(self.client.certificates(account).await?)
+		let certificates = self.client.certificates(account).await?;
+
+		Ok(certificates)
 	}
 
 	/// The fully-resolved, version-1 document for each readable root, in

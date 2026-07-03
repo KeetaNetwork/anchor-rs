@@ -254,8 +254,9 @@ impl AssetMovementProvider {
 	) -> Option<TokenLocationMetadata> {
 		let per_location = self.location_metadata.as_ref()?.get(location.as_ref())?;
 		let metadata = per_location.get("assets")?.get(asset.as_ref())?;
+		let parsed = serde_json::from_value(metadata.clone());
 
-		serde_json::from_value(metadata.clone()).ok()
+		parsed.ok()
 	}
 }
 

@@ -18,7 +18,8 @@ type TestResult = Result<(), Box<dyn Error>>;
 /// at `api`, over a live reqwest transport for external URLs.
 fn resolver_for(api: &str, root: &str) -> Result<Resolver, Box<dyn Error>> {
 	let transport = Arc::new(ReqwestTransport::try_default()?);
-	let resolver = Resolver::new(KeetaClient::new(api), transport, [root.to_string()]);
+	let client = KeetaClient::new(api);
+	let resolver = Resolver::new(client, transport, [root.to_string()]);
 	Ok(resolver)
 }
 

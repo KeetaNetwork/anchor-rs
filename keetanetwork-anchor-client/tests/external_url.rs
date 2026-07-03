@@ -119,7 +119,9 @@ fn resolve_ids(
 		published.push(root.root);
 	}
 
-	let resolver = Resolver::new(KeetaClient::new(&api), Arc::new(DocHost::new(docs)), published);
+	let client = KeetaClient::new(&api);
+	let host = Arc::new(DocHost::new(docs));
+	let resolver = Resolver::new(client, host, published);
 	let runtime = tokio::runtime::Builder::new_current_thread()
 		.enable_all()
 		.build()?;
@@ -185,7 +187,9 @@ fn a_keetanet_external_url_resolves_through_the_ledger() -> TestResult {
 	let leaf = kyc.publish_metadata(&root_with_kyc("prov_ledger"))?;
 	let root = kyc.publish_metadata(&external(&format!("keetanet://{}/metadata", leaf.root)))?;
 
-	let resolver = Resolver::new(KeetaClient::new(&root.api), Arc::new(DocHost::default()), [root.root]);
+	let client = KeetaClient::new(&root.api);
+	let host = Arc::new(DocHost::default());
+	let resolver = Resolver::new(client, host, [root.root]);
 	let runtime = tokio::runtime::Builder::new_current_thread()
 		.enable_all()
 		.build()?;

@@ -127,7 +127,9 @@ impl AssetMovementClient {
 		id: impl Into<String>,
 	) -> Result<Option<Vec<Disclaimer>>, AnchorClientError> {
 		let provider = self.provider_by_id(id).await?;
-		Ok(provider.and_then(|provider| provider.legal_disclaimers()))
+		let disclaimers = provider.and_then(|provider| provider.legal_disclaimers());
+
+		Ok(disclaimers)
 	}
 
 	/// Whether `provider` advertises `operation`.

@@ -23,7 +23,10 @@ type TestResult = Result<(), Box<dyn Error>>;
 /// A resolver over the live node client at `api`, with no metadata roots.
 fn live_resolver(api: &str) -> Result<Resolver, Box<dyn Error>> {
 	let transport = Arc::new(ReqwestTransport::try_default()?);
-	Ok(Resolver::new(KeetaClient::new(api), transport, Vec::new()))
+	let client = KeetaClient::new(api);
+	let resolver = Resolver::new(client, transport, Vec::new());
+
+	Ok(resolver)
 }
 
 /// A self-signed CA the ledger never saw, to exercise the untrusted path.

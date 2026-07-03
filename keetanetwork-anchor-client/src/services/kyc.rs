@@ -165,7 +165,9 @@ mod client {
 		/// or decoded.
 		pub async fn get_supported_countries(&self) -> Result<SupportedCountries, AnchorClientError> {
 			let providers = self.providers(&[]).await?;
-			Ok(providers.into_iter().collect())
+			let supported = providers.into_iter().collect();
+
+			Ok(supported)
 		}
 
 		/// Begin a verification with `provider` for `countries`, optionally

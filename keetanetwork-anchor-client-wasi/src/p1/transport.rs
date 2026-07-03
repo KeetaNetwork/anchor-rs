@@ -193,10 +193,12 @@ pub(super) fn monotonic_millis() -> u64 {
 pub(super) fn unix_millis() -> i64 {
 	use std::time::{SystemTime, UNIX_EPOCH};
 
-	SystemTime::now()
-		.duration_since(UNIX_EPOCH)
-		.map(|elapsed| i64::try_from(elapsed.as_millis()).unwrap_or(i64::MAX))
-		.unwrap_or_default()
+	let Ok(elapsed) = SystemTime::now().duration_since(UNIX_EPOCH) else {
+		return 0;
+	};
+	let millis = elapsed.as_millis();
+
+	i64::try_from(millis).unwrap_or(i64::MAX)
 }
 
 /// A waker that does nothing: [`block_on`] never parks, so wake-ups are unused.

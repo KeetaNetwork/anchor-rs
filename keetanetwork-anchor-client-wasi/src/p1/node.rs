@@ -131,7 +131,9 @@ impl HostNodeTransport {
 			return Err(HostNodeError::Status { status: response.status }.into());
 		}
 
-		serde_json::from_slice(&response.body).map_err(|error| ClientError::Transport { source: Box::new(error) })
+		let decoded = serde_json::from_slice(&response.body);
+
+		decoded.map_err(|error| ClientError::Transport { source: Box::new(error) })
 	}
 }
 
@@ -252,7 +254,9 @@ struct HostNodeTransportFactory;
 
 impl TransportFactory for HostNodeTransportFactory {
 	fn create(&self, url: &str) -> Arc<dyn NodeTransport> {
-		Arc::new(HostNodeTransport::new(url))
+		let transport = HostNodeTransport::new(url);
+
+		Arc::new(transport)
 	}
 }
 
@@ -274,7 +278,8 @@ struct HostNodeRuntime;
 #[async_trait(?Send)]
 impl Runtime for HostNodeRuntime {
 	async fn sleep(&self, duration: Duration) {
-		let millis = u64::try_from(duration.as_millis()).unwrap_or(u64::MAX);
+		let requested = duration.as_millis();
+		let millis = u64::try_from(requested).unwrap_or(u64::MAX);
 		host_sleep_ms(millis);
 	}
 
@@ -295,11 +300,9 @@ impl Runtime for HostNodeRuntime {
 /// the host fetch import, keyed by its URL (no account).
 pub(super) fn node_client(node_url: &str) -> KeetaClient {
 	let part = RepPart { key: node_url.to_owned(), url: node_url.to_owned(), weight: BigInt::from(1u8) };
-	KeetaClient::with_parts(
-		[part],
-		Arc::new(HostNodeTransportFactory),
-		Arc::new(HostNodeRuntime),
-		ClientConfig::default(),
-		true,
-	)
+	let factory = Arc::new(HostNodeTransportFactory);
+	let runtime = Arc::new(HostNodeRuntime);
+	let config = ClientConfig::default();
+
+	KeetaClient::with_parts([part], factory, runtime, config, true)
 }
