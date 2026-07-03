@@ -5,5 +5,6 @@ mod asset_movement;
 mod encrypted_container;
 mod kyc;
 mod kyc_certificate;
+mod node;
 mod sharable;
 mod transport;

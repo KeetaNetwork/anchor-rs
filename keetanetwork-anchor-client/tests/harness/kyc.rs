@@ -139,6 +139,22 @@ pub struct PublishedRoot {
 	pub root: String,
 }
 
+/// A certificate chain the harness published on-chain for a fresh holder: one
+/// leaf recorded with the anchor's CA as its intermediate bundle and a second
+/// leaf recorded without intermediates.
+pub struct PublishedChain {
+	/// The node API base URL the resolver reads the holder through.
+	pub api: String,
+	/// The holder account the records are published under.
+	pub account: String,
+	/// The leaf recorded with the CA intermediate (PEM).
+	pub leaf: String,
+	/// The leaf recorded without intermediates (PEM).
+	pub bare: String,
+	/// The CA that issued both leaves (PEM).
+	pub ca: String,
+}
+
 impl KycAnchor {
 	/// An operation endpoint the anchor advertises, read from the published
 	/// `blob` so tests never hand-roll `/api/...` paths.
@@ -252,6 +268,24 @@ impl KycHarness {
 		let root = field_str(&response, "root")?.to_string();
 
 		Ok(PublishedRoot { api, root })
+	}
+
+	/// Publish a certificate chain on-chain for a fresh funded holder account
+	/// on the running node: one record carrying the anchor's CA as its
+	/// intermediate bundle and one recorded without intermediates.
+	///
+	/// Requires a running anchor (started via [`start_kyc_anchor`]).
+	pub fn publish_certificate_chain(&mut self) -> Result<PublishedChain, HarnessError> {
+		let response = self
+			.driver
+			.request("publishCertificateChain", Value::Object(Map::new()))?;
+		let api = field_str(&response, "api")?.to_string();
+		let account = field_str(&response, "account")?.to_string();
+		let leaf = field_str(&response, "leaf")?.to_string();
+		let bare = field_str(&response, "bare")?.to_string();
+		let ca = field_str(&response, "ca")?.to_string();
+
+		Ok(PublishedChain { api, account, leaf, bare, ca })
 	}
 
 	/// Stop the running KYC anchor server.

@@ -212,22 +212,22 @@ where
 	Account<T>: TryFrom<Accountable<T>, Error = AccountError>,
 {
 	// Verify certificate has KYC attributes
-	assert!(certificate.has_kyc_attributes(), "KycCertificate should have KYC attributes");
+	assert!(certificate.has_attributes(), "KycCertificate should have KYC attributes");
 
 	// Test attribute access patterns
-	if let Some(_full_name_attr) = certificate.get_kyc_attribute("fullName") {
+	if let Some(_full_name_attr) = certificate.get_attribute("fullName") {
 		// Test decryption with correct private key
-		let decrypted_name = certificate.decrypt_kyc_attribute("fullName", &accounts.subject.keypair)?;
+		let decrypted_name = certificate.decrypt_attribute("fullName", &accounts.subject.keypair)?;
 		assert_eq!(decrypted_name, test_data.full_name.as_bytes());
 
 		// Test that decryption fails with wrong private key
-		let wrong_decrypt_result = certificate.decrypt_kyc_attribute("fullName", &accounts.wrong_account.keypair);
+		let wrong_decrypt_result = certificate.decrypt_attribute("fullName", &accounts.wrong_account.keypair);
 		assert!(wrong_decrypt_result.is_err(), "Decryption should fail with wrong key");
 	}
 
 	// Test email attribute
-	if let Some(_email_attr) = certificate.get_kyc_attribute("email") {
-		let decrypted_email = certificate.decrypt_kyc_attribute("email", &accounts.subject.keypair)?;
+	if let Some(_email_attr) = certificate.get_attribute("email") {
+		let decrypted_email = certificate.decrypt_attribute("email", &accounts.subject.keypair)?;
 		assert_eq!(decrypted_email, test_data.email.as_bytes());
 	}
 
@@ -240,15 +240,15 @@ pub fn test_plain_attributes(
 	test_data: &TestData,
 ) -> Result<(), Box<dyn std::error::Error>> {
 	// Test postal code if present
-	if certificate.get_kyc_attribute("postalCode").is_some() {
-		let postal_code = certificate.get_plain_kyc_attribute("postalCode")?;
+	if certificate.get_attribute("postalCode").is_some() {
+		let postal_code = certificate.get_plain_attribute("postalCode")?;
 		assert_eq!(postal_code, test_data.postal_code.as_bytes());
 	}
 
 	// Test that attempting to decrypt a plain attribute fails
-	if certificate.get_kyc_attribute("postalCode").is_some() {
+	if certificate.get_attribute("postalCode").is_some() {
 		let fake_account = create_account_from_seed::<KeyECDSASECP256K1>(99);
-		let decrypt_result = certificate.decrypt_kyc_attribute("postalCode", &fake_account.keypair);
+		let decrypt_result = certificate.decrypt_attribute("postalCode", &fake_account.keypair);
 		assert!(decrypt_result.is_err(), "Should not be able to decrypt plain text attribute");
 	}
 
@@ -256,23 +256,23 @@ pub fn test_plain_attributes(
 }
 
 /// Helper to assert certificate KYC attribute properties
-pub fn test_has_kyc_attributes(
+pub fn test_has_attributes(
 	cert: &KycCertificate,
 	expected_count: usize,
 	message: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
 	if expected_count == 0 {
-		assert!(!cert.has_kyc_attributes(), "{message} should not have KYC attributes");
+		assert!(!cert.has_attributes(), "{message} should not have KYC attributes");
 	} else {
-		assert!(cert.has_kyc_attributes(), "{message} should have KYC attributes");
+		assert!(cert.has_attributes(), "{message} should have KYC attributes");
 	}
-	assert_eq!(cert.kyc_attribute_count(), expected_count, "{message} should have {expected_count} KYC attributes");
+	assert_eq!(cert.attribute_count(), expected_count, "{message} should have {expected_count} KYC attributes");
 
 	Ok(())
 }
 
 /// Helper to get KYC attribute value, handling both plain and sensitive attributes
-pub fn test_get_kyc_attribute_value<T>(
+pub fn test_get_attribute_value<T>(
 	cert: &KycCertificate,
 	attr_name: &str,
 	keypair: Option<&T>,
@@ -281,17 +281,17 @@ where
 	T: KeyPair,
 {
 	// First check if the attribute exists
-	cert.get_kyc_attribute(attr_name)
+	cert.get_attribute(attr_name)
 		.ok_or_else(|| format!("Attribute '{attr_name}' not found"))?;
 
 	// Try to get as plain text first
-	if let Ok(plain_value) = cert.get_plain_kyc_attribute(attr_name) {
+	if let Ok(plain_value) = cert.get_plain_attribute(attr_name) {
 		return Ok(plain_value);
 	}
 
 	// If plain failed, try to decrypt as sensitive attribute
 	if let Some(key) = keypair {
-		let decrypted_value = cert.decrypt_kyc_attribute(attr_name, key)?;
+		let decrypted_value = cert.decrypt_attribute(attr_name, key)?;
 		return Ok(decrypted_value);
 	}
 

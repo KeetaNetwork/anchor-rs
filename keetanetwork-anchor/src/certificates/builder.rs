@@ -41,8 +41,8 @@
 //!     .build(&subject_account.keypair, &issuer_account.keypair)?;
 //!
 //! // The certificate now contains both standard X.509 fields and KYC attributes
-//! assert!(certificate.has_kyc_attributes());
-//! assert_eq!(certificate.kyc_attribute_count(), 2);
+//! assert!(certificate.has_attributes());
+//! assert_eq!(certificate.attribute_count(), 2);
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 //!
@@ -103,11 +103,11 @@
 //!     .build(&account.keypair, &account.keypair)?;
 //!
 //! // Access plain text attributes directly
-//! let postal_code = certificate.get_plain_kyc_attribute("postalCode")?;
+//! let postal_code = certificate.get_plain_attribute("postalCode")?;
 //! assert_eq!(postal_code, b"12345");
 //!
 //! // Decrypt sensitive attributes using the subject's keypair
-//! let email = certificate.decrypt_kyc_attribute("email", &account.keypair)?;
+//! let email = certificate.decrypt_attribute("email", &account.keypair)?;
 //! assert_eq!(email, b"john@example.com");
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
@@ -229,7 +229,7 @@ use crate::sensitive_attributes::{KycAttributeEntry, SensitiveAttributeBuilder};
 ///     .with_sensitive_attribute("email", b"john@example.com".to_vec().into_secret())
 ///     .build(&subject_account.keypair, &issuer_account.keypair)?;
 ///
-/// assert!(certificate.has_kyc_attributes());
+/// assert!(certificate.has_attributes());
 /// # Ok::<(), Box<dyn std::error::Error>>(())
 /// ```
 ///
@@ -353,18 +353,18 @@ impl KycCertificateBuilder {
 	///
 	/// let builder = KycCertificateBuilder::new()
 	///     // Add plain text attribute
-	///     .with_kyc_attribute(
+	///     .with_attribute(
 	///         "fullName",
 	///         KycAttributeEntry::PlainText(b"John Doe".to_vec())
 	///     )
 	///     // Add sensitive attribute
-	///     .with_kyc_attribute(
+	///     .with_attribute(
 	///         "email",
 	///         KycAttributeEntry::Sensitive(b"john@example.com".to_vec().into_secret())
 	///     );
 	/// // Errors will be reported during build()
 	/// ```
-	pub fn with_kyc_attribute<N: AsRef<str>>(mut self, name: N, entry: KycAttributeEntry) -> Self {
+	pub fn with_attribute<N: AsRef<str>>(mut self, name: N, entry: KycAttributeEntry) -> Self {
 		let name = name.as_ref();
 		let oid = entry.to_oid(name);
 
@@ -390,7 +390,7 @@ impl KycCertificateBuilder {
 	///
 	/// # Arguments
 	///
-	/// - `name` - The attribute name (see [`with_kyc_attribute`](Self::with_kyc_attribute) for supported names)
+	/// - `name` - The attribute name (see [`with_attribute`](Self::with_attribute) for supported names)
 	/// - `value` - The attribute value as bytes or string
 	///
 	/// # Examples
@@ -404,7 +404,7 @@ impl KycCertificateBuilder {
 	/// ```
 	pub fn with_plain_attribute<V: AsRef<[u8]>, N: AsRef<str>>(self, name: N, value: V) -> Self {
 		let entry = KycAttributeEntry::PlainText(value.as_ref().to_vec());
-		self.with_kyc_attribute(name, entry)
+		self.with_attribute(name, entry)
 	}
 
 	/// Set a sensitive (encrypted) KYC attribute.
@@ -416,7 +416,7 @@ impl KycCertificateBuilder {
 	///
 	/// # Arguments
 	///
-	/// - `name` - The attribute name (see [`with_kyc_attribute`](Self::with_kyc_attribute) for supported names)
+	/// - `name` - The attribute name (see [`with_attribute`](Self::with_attribute) for supported names)
 	/// - `value` - The attribute value wrapped in a `SecretBox`
 	///
 	/// # Examples
@@ -432,7 +432,7 @@ impl KycCertificateBuilder {
 	/// ```
 	pub fn with_sensitive_attribute<N: AsRef<str>>(self, name: N, value: SecretBox<Vec<u8>>) -> Self {
 		let entry = KycAttributeEntry::Sensitive(value);
-		self.with_kyc_attribute(name, entry)
+		self.with_attribute(name, entry)
 	}
 
 	/// Set the subject distinguished name.
@@ -773,7 +773,7 @@ impl KycCertificateBuilder {
 	///     .with_subject_public_key(public_key_info)
 	///     .build(&account.keypair, &account.keypair)?;
 	///
-	/// assert!(!certificate.has_kyc_attributes());
+	/// assert!(!certificate.has_attributes());
 	/// # Ok::<(), Box<dyn std::error::Error>>(())
 	/// ```
 	///
@@ -997,7 +997,7 @@ mod tests {
 			.with_sensitive_attribute("email", b"john@example.com".to_vec().into_secret())
 			.build(&subject.keypair, &issuer.keypair)?;
 
-		let decrypted = certificate.decrypt_kyc_attribute("email", &subject.keypair)?;
+		let decrypted = certificate.decrypt_attribute("email", &subject.keypair)?;
 		assert_eq!(decrypted, b"john@example.com");
 		Ok(())
 	}

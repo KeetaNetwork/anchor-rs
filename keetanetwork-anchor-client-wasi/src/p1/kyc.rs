@@ -214,7 +214,7 @@ fn get_verification_status(handle: i32, provider_json: &str, id: &str) -> Result
 /// Build a networked KYC client signed by `signer`.
 fn build_client(node_url: String, root: String, signer: Arc<GenericAccount>) -> KycClient {
 	let transport = host_transport();
-	let resolver = Resolver::new(transport.clone(), node_url, [root]);
+	let resolver = Resolver::new(super::node::node_client(&node_url), transport.clone(), [root]);
 	let context = AnchorContext::new(resolver, transport, signer);
 
 	KycClient::new(context)

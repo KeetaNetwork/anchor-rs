@@ -13,15 +13,16 @@ use std::sync::Arc;
 use keetanetwork_account::GenericAccount;
 use keetanetwork_anchor_bindings::error::CodedError;
 use keetanetwork_anchor_client::{
-	AnchorClientError, AnchorContext, AssetMovementClient, AssetMovementProvider, PollOptions, ProviderFilter, Resolver,
+	AnchorClientError, AnchorContext, AssetMovementClient, AssetMovementProvider, AwaitOptions, ProviderFilter,
+	Resolver,
 };
 use keetanetwork_client_wasi::{account, bytes_result, string_in};
 
 use crate::asset_json::{
 	create_address_request, create_template_request, encode, encode_account_status, encode_ack, encode_provider,
 	encode_providers, execute_request, filter_providers, initiate_template_request, list_addresses_request,
-	list_templates_request, list_transactions_request, parse_provider, parse_provider_search, share_kyc_request,
-	transfer_request,
+	list_templates_request, list_transactions_request, parse_provider, parse_provider_search,
+	share_kyc_attributes_request, transfer_request,
 };
 
 use super::transport::{block_on, host_sleep_ms, host_transport};
@@ -232,7 +233,7 @@ pub unsafe extern "C" fn keeta_asset_account_status(handle: i32, provider_ptr: i
 ///
 /// See [`keeta_asset_with_account`].
 #[no_mangle]
-pub unsafe extern "C" fn keeta_asset_initiate_forwarding_template(
+pub unsafe extern "C" fn keeta_asset_initiate_persistent_forwarding_template(
 	handle: i32,
 	provider_ptr: i32,
 	provider_len: i32,
@@ -241,8 +242,10 @@ pub unsafe extern "C" fn keeta_asset_initiate_forwarding_template(
 ) -> i32 {
 	dispatch2(provider_ptr, provider_len, request_ptr, request_len, |provider, request| {
 		let request = initiate_template_request(request)?;
-		let outcome =
-			with_session(handle, |client| block_on(client.initiate_forwarding_template(&provider, &request)))?;
+		let outcome = with_session(handle, |client| {
+			block_on(client.initiate_persistent_forwarding_template(&provider, &request))
+		})?;
+
 		encode(&outcome)
 	})
 }
@@ -254,7 +257,7 @@ pub unsafe extern "C" fn keeta_asset_initiate_forwarding_template(
 ///
 /// See [`keeta_asset_with_account`].
 #[no_mangle]
-pub unsafe extern "C" fn keeta_asset_create_forwarding_template(
+pub unsafe extern "C" fn keeta_asset_create_persistent_forwarding_template(
 	handle: i32,
 	provider_ptr: i32,
 	provider_len: i32,
@@ -263,7 +266,9 @@ pub unsafe extern "C" fn keeta_asset_create_forwarding_template(
 ) -> i32 {
 	dispatch2(provider_ptr, provider_len, request_ptr, request_len, |provider, request| {
 		let request = create_template_request(request)?;
-		let outcome = with_session(handle, |client| block_on(client.create_forwarding_template(&provider, &request)))?;
+		let outcome =
+			with_session(handle, |client| block_on(client.create_persistent_forwarding_template(&provider, &request)))?;
+
 		encode(&outcome)
 	})
 }
@@ -275,7 +280,7 @@ pub unsafe extern "C" fn keeta_asset_create_forwarding_template(
 ///
 /// See [`keeta_asset_with_account`].
 #[no_mangle]
-pub unsafe extern "C" fn keeta_asset_list_forwarding_templates(
+pub unsafe extern "C" fn keeta_asset_list_forwarding_address_templates(
 	handle: i32,
 	provider_ptr: i32,
 	provider_len: i32,
@@ -284,7 +289,9 @@ pub unsafe extern "C" fn keeta_asset_list_forwarding_templates(
 ) -> i32 {
 	dispatch2(provider_ptr, provider_len, request_ptr, request_len, |provider, request| {
 		let request = list_templates_request(request)?;
-		let outcome = with_session(handle, |client| block_on(client.list_forwarding_templates(&provider, &request)))?;
+		let outcome =
+			with_session(handle, |client| block_on(client.list_forwarding_address_templates(&provider, &request)))?;
+
 		encode(&outcome)
 	})
 }
@@ -296,7 +303,7 @@ pub unsafe extern "C" fn keeta_asset_list_forwarding_templates(
 ///
 /// See [`keeta_asset_with_account`].
 #[no_mangle]
-pub unsafe extern "C" fn keeta_asset_create_forwarding_address(
+pub unsafe extern "C" fn keeta_asset_create_persistent_forwarding_address(
 	handle: i32,
 	provider_ptr: i32,
 	provider_len: i32,
@@ -305,7 +312,9 @@ pub unsafe extern "C" fn keeta_asset_create_forwarding_address(
 ) -> i32 {
 	dispatch2(provider_ptr, provider_len, request_ptr, request_len, |provider, request| {
 		let request = create_address_request(request)?;
-		let details = with_session(handle, |client| block_on(client.create_forwarding_address(&provider, &request)))?;
+		let details =
+			with_session(handle, |client| block_on(client.create_persistent_forwarding_address(&provider, &request)))?;
+
 		encode(&details)
 	})
 }
@@ -338,7 +347,7 @@ pub unsafe extern "C" fn keeta_asset_list_forwarding_addresses(
 ///
 /// See [`keeta_asset_with_account`].
 #[no_mangle]
-pub unsafe extern "C" fn keeta_asset_deactivate_forwarding_template(
+pub unsafe extern "C" fn keeta_asset_deactivate_persistent_forwarding_template(
 	handle: i32,
 	provider_ptr: i32,
 	provider_len: i32,
@@ -346,7 +355,7 @@ pub unsafe extern "C" fn keeta_asset_deactivate_forwarding_template(
 	id_len: i32,
 ) -> i32 {
 	dispatch2(provider_ptr, provider_len, id_ptr, id_len, |provider, id| {
-		with_session(handle, |client| block_on(client.deactivate_forwarding_template(&provider, id)))?;
+		with_session(handle, |client| block_on(client.deactivate_persistent_forwarding_template(&provider, id)))?;
 		encode_ack()
 	})
 }
@@ -358,7 +367,7 @@ pub unsafe extern "C" fn keeta_asset_deactivate_forwarding_template(
 ///
 /// See [`keeta_asset_with_account`].
 #[no_mangle]
-pub unsafe extern "C" fn keeta_asset_deactivate_forwarding_address(
+pub unsafe extern "C" fn keeta_asset_deactivate_persistent_forwarding_address(
 	handle: i32,
 	provider_ptr: i32,
 	provider_len: i32,
@@ -366,7 +375,7 @@ pub unsafe extern "C" fn keeta_asset_deactivate_forwarding_address(
 	id_len: i32,
 ) -> i32 {
 	dispatch2(provider_ptr, provider_len, id_ptr, id_len, |provider, id| {
-		with_session(handle, |client| block_on(client.deactivate_forwarding_address(&provider, id)))?;
+		with_session(handle, |client| block_on(client.deactivate_persistent_forwarding_address(&provider, id)))?;
 		encode_ack()
 	})
 }
@@ -399,7 +408,7 @@ pub unsafe extern "C" fn keeta_asset_list_transactions(
 ///
 /// See [`keeta_asset_with_account`].
 #[no_mangle]
-pub unsafe extern "C" fn keeta_asset_share_kyc(
+pub unsafe extern "C" fn keeta_asset_share_kyc_attributes(
 	handle: i32,
 	provider_ptr: i32,
 	provider_len: i32,
@@ -407,8 +416,8 @@ pub unsafe extern "C" fn keeta_asset_share_kyc(
 	request_len: i32,
 ) -> i32 {
 	dispatch2(provider_ptr, provider_len, request_ptr, request_len, |provider, request| {
-		let request = share_kyc_request(request)?;
-		let outcome = with_session(handle, |client| block_on(client.share_kyc(&provider, &request)))?;
+		let request = share_kyc_attributes_request(request)?;
+		let outcome = with_session(handle, |client| block_on(client.share_kyc_attributes(&provider, &request)))?;
 		encode(&outcome)
 	})
 }
@@ -418,13 +427,13 @@ pub unsafe extern "C" fn keeta_asset_share_kyc(
 /// handle (`0` on error).
 ///
 /// A non-positive `interval_ms` or `timeout_ms` selects that bound's default
-/// ([`PollOptions::default`]).
+/// ([`AwaitOptions::default`]).
 ///
 /// # Safety
 ///
 /// See [`keeta_asset_with_account`].
 #[no_mangle]
-pub unsafe extern "C" fn keeta_asset_share_kyc_await(
+pub unsafe extern "C" fn keeta_asset_share_kyc_attributes_and_wait(
 	handle: i32,
 	provider_ptr: i32,
 	provider_len: i32,
@@ -434,10 +443,10 @@ pub unsafe extern "C" fn keeta_asset_share_kyc_await(
 	timeout_ms: i32,
 ) -> i32 {
 	dispatch2(provider_ptr, provider_len, request_ptr, request_len, |provider, request| {
-		let request = share_kyc_request(request)?;
-		let options = poll_options(interval_ms, timeout_ms);
+		let request = share_kyc_attributes_request(request)?;
+		let options = await_options(interval_ms, timeout_ms);
 		let outcome = with_session(handle, |client| {
-			block_on(client.share_kyc_await(&provider, &request, options, |millis| async move {
+			block_on(client.share_kyc_attributes_and_wait(&provider, &request, options, |millis| async move {
 				host_sleep_ms(u64::from(millis))
 			}))
 		})?;
@@ -448,9 +457,9 @@ pub unsafe extern "C" fn keeta_asset_share_kyc_await(
 
 /// The poll bounds for a share-KYC await: each positive argument overrides its
 /// default.
-fn poll_options(interval_ms: i32, timeout_ms: i32) -> PollOptions {
-	let defaults = PollOptions::default();
-	PollOptions {
+fn await_options(interval_ms: i32, timeout_ms: i32) -> AwaitOptions {
+	let defaults = AwaitOptions::default();
+	AwaitOptions {
 		interval_ms: u32::try_from(interval_ms)
 			.ok()
 			.filter(|value| *value > 0)
@@ -504,7 +513,7 @@ async fn lookup(
 /// Build a networked asset-movement client signed by `signer`.
 fn build_client(node_url: String, root: String, signer: Arc<GenericAccount>) -> AssetMovementClient {
 	let transport = host_transport();
-	let resolver = Resolver::new(transport.clone(), node_url, [root]);
+	let resolver = Resolver::new(super::node::node_client(&node_url), transport.clone(), [root]);
 	let context = AnchorContext::new(resolver, transport, signer);
 
 	AssetMovementClient::new(context)

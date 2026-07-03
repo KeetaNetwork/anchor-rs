@@ -11,7 +11,7 @@ mod common;
 mod wasmtime_p2;
 
 use common::{field_str, BoxError, Harness};
-use wasmtime_p2::bindings::exports::keeta::anchor::asset_movement::PollOptions;
+use wasmtime_p2::bindings::exports::keeta::anchor::asset_movement::AwaitOptions;
 use wasmtime_p2::{coded, instantiate};
 
 /// Parse a JSON document returned across the component boundary.
@@ -246,7 +246,7 @@ async fn p2_asset_movement_signs_against_live_anchor() -> Result<(), BoxError> {
 	let initiate_template = json!({ "asset": asset, "location": "chain:evm:100" }).to_string();
 	let session = asset_movement
 		.asset_client()
-		.call_initiate_forwarding_template(&mut store, client, &provider, &initiate_template)
+		.call_initiate_persistent_forwarding_template(&mut store, client, &provider, &initiate_template)
 		.await?
 		.map_err(coded)?;
 	let session = parse(&session)?;
@@ -267,7 +267,7 @@ async fn p2_asset_movement_signs_against_live_anchor() -> Result<(), BoxError> {
 	let create_template = json!({ "asset": asset, "location": "chain:evm:100", "address": send_to }).to_string();
 	let template = asset_movement
 		.asset_client()
-		.call_create_forwarding_template(&mut store, client, &provider, &create_template)
+		.call_create_persistent_forwarding_template(&mut store, client, &provider, &create_template)
 		.await?
 		.map_err(coded)?;
 	assert_eq!(
@@ -278,7 +278,7 @@ async fn p2_asset_movement_signs_against_live_anchor() -> Result<(), BoxError> {
 
 	let templates = asset_movement
 		.asset_client()
-		.call_list_forwarding_templates(&mut store, client, &provider, "{}")
+		.call_list_forwarding_address_templates(&mut store, client, &provider, "{}")
 		.await?
 		.map_err(coded)?;
 	let templates = parse(&templates)?;
@@ -301,7 +301,7 @@ async fn p2_asset_movement_signs_against_live_anchor() -> Result<(), BoxError> {
 	.to_string();
 	let address = asset_movement
 		.asset_client()
-		.call_create_forwarding_address(&mut store, client, &provider, &create_address)
+		.call_create_persistent_forwarding_address(&mut store, client, &provider, &create_address)
 		.await?
 		.map_err(coded)?;
 	assert!(
@@ -325,12 +325,12 @@ async fn p2_asset_movement_signs_against_live_anchor() -> Result<(), BoxError> {
 
 	asset_movement
 		.asset_client()
-		.call_deactivate_forwarding_template(&mut store, client, &provider, "template-id")
+		.call_deactivate_persistent_forwarding_template(&mut store, client, &provider, "template-id")
 		.await?
 		.map_err(coded)?;
 	asset_movement
 		.asset_client()
-		.call_deactivate_forwarding_address(&mut store, client, &provider, "template-id")
+		.call_deactivate_persistent_forwarding_address(&mut store, client, &provider, "template-id")
 		.await?
 		.map_err(coded)?;
 
@@ -356,7 +356,7 @@ async fn p2_asset_movement_signs_against_live_anchor() -> Result<(), BoxError> {
 	let share = json!({ "attributes": "immediate-attributes" }).to_string();
 	let settled = asset_movement
 		.asset_client()
-		.call_share_kyc(&mut store, client, &provider, &share)
+		.call_share_kyc_attributes(&mut store, client, &provider, &share)
 		.await?
 		.map_err(coded)?;
 	assert_eq!(
@@ -368,10 +368,10 @@ async fn p2_asset_movement_signs_against_live_anchor() -> Result<(), BoxError> {
 	// A pending share hands back a promise URL; the await variant polls it
 	// (two 202s, then a 200) to the settled outcome, paced by the options.
 	let pending_share = json!({ "attributes": "test-promise" }).to_string();
-	let options = PollOptions { interval_ms: 50, timeout_ms: 30_000 };
+	let options = AwaitOptions { interval_ms: 50, timeout_ms: 30_000 };
 	let awaited = asset_movement
 		.asset_client()
-		.call_share_kyc_await(&mut store, client, &provider, &pending_share, Some(options))
+		.call_share_kyc_attributes_and_wait(&mut store, client, &provider, &pending_share, Some(options))
 		.await?
 		.map_err(coded)?;
 	assert_eq!(

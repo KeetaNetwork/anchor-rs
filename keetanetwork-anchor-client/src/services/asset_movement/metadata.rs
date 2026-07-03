@@ -5,6 +5,8 @@
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
+use serde::de::Error as _;
+use serde::{Deserialize, Deserializer};
 use serde_json::Value;
 
 use super::asset::AssetOrPair;
@@ -118,6 +120,77 @@ impl FromIterator<(String, OperationEndpoint)> for AssetMovementOperations {
 	}
 }
 
+/// Content a client may render directly, the reference
+/// `ClientRenderableContent`: markdown or plain text with no display
+/// guarantees, so it must carry context only, never critical information.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(tag = "type", rename_all = "lowercase")]
+pub enum ClientRenderableContent {
+	/// Markdown the client may render.
+	Markdown {
+		/// The markdown source.
+		content: String,
+	},
+	/// Plain text the client shows verbatim.
+	Plaintext {
+		/// The text.
+		content: String,
+	},
+}
+
+/// Why a provider publishes a disclaimer. The reference schema currently
+/// defines only `general`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DisclaimerPurpose {
+	/// A general disclaimer.
+	General,
+}
+
+/// One legal disclaimer a provider publishes under its `legal` metadata.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct Disclaimer {
+	/// Why the provider publishes this disclaimer.
+	pub purpose: DisclaimerPurpose,
+	/// The renderable disclaimer body.
+	pub content: ClientRenderableContent,
+}
+
+/// The token metadata a provider advertises for one asset at one location,
+/// the reference `AnchorTokenLocationMetadata`.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TokenLocationMetadata {
+	/// The token's decimal places (published as a number or numeric string).
+	#[serde(deserialize_with = "decimal_places")]
+	pub decimal_places: u32,
+	/// The token's logo URI, when advertised.
+	#[serde(rename = "logoURI", default)]
+	pub logo_uri: Option<String>,
+	/// The display name, when advertised.
+	#[serde(default)]
+	pub display_name: Option<String>,
+	/// The `$`-prefixed ticker, when advertised.
+	#[serde(default)]
+	pub ticker: Option<String>,
+}
+
+/// Read a `decimalPlaces` value published as a JSON number or numeric string
+/// (the reference `TokenMetadataJSON` allows both).
+fn decimal_places<'de, D: Deserializer<'de>>(deserializer: D) -> Result<u32, D::Error> {
+	#[derive(Deserialize)]
+	#[serde(untagged)]
+	enum Raw {
+		Number(u32),
+		Text(String),
+	}
+
+	match Raw::deserialize(deserializer)? {
+		Raw::Number(value) => Ok(value),
+		Raw::Text(text) => text.trim().parse().map_err(D::Error::custom),
+	}
+}
+
 /// A validated asset-movement provider resolved from service metadata.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AssetMovementProvider {
@@ -156,6 +229,33 @@ impl AssetMovementProvider {
 			.map(str::to_string);
 
 		Self { id, operations, supported_assets, location_metadata, legal, account }
+	}
+
+	/// The legal disclaimers the provider advertises, or [`None`] when its
+	/// metadata carries none. Malformed entries are skipped, mirroring the
+	/// reference `getLegalDisclaimers`.
+	pub fn legal_disclaimers(&self) -> Option<Vec<Disclaimer>> {
+		let disclaimers = self.legal.as_ref()?.get("disclaimers")?.as_array()?;
+		let parsed = disclaimers
+			.iter()
+			.filter_map(|entry| serde_json::from_value(entry.clone()).ok())
+			.collect();
+
+		Some(parsed)
+	}
+
+	/// The token metadata advertised for `asset` at the canonical `location`
+	/// (e.g. `chain:evm:100`), or [`None`] when the provider publishes none.
+	/// Mirrors the reference `getAssetMetadataForLocation`.
+	pub fn asset_metadata_for_location(
+		&self,
+		location: impl AsRef<str>,
+		asset: impl AsRef<str>,
+	) -> Option<TokenLocationMetadata> {
+		let per_location = self.location_metadata.as_ref()?.get(location.as_ref())?;
+		let metadata = per_location.get("assets")?.get(asset.as_ref())?;
+
+		serde_json::from_value(metadata.clone()).ok()
 	}
 }
 
@@ -570,6 +670,72 @@ mod tests {
 	fn a_pair_with_an_unadvertised_leg_is_rejected() {
 		let search = ProviderSearch::for_asset(AssetOrPair::Pair { from: "evm:0x5".into(), to: "unlisted".into() });
 		assert!(!search.accepts(&searchable_provider()));
+	}
+
+	/// A provider publishing one general markdown disclaimer, one malformed
+	/// disclaimer, and per-location token metadata with a string
+	/// `decimalPlaces`.
+	fn decorated_provider() -> AssetMovementProvider {
+		let entry = json!({
+			"operations": {},
+			"legal": {
+				"disclaimers": [
+					{ "purpose": "general", "content": { "type": "markdown", "content": "Read this." } },
+					{ "purpose": "unsupported", "content": { "type": "markdown", "content": "Skipped." } }
+				]
+			},
+			"locationMetadata": {
+				"chain:evm:100": {
+					"assets": {
+						"evm:0x5": {
+							"decimalPlaces": "6",
+							"logoURI": "https://cdn.example/usdc.svg",
+							"displayName": "Circle USDC",
+							"ticker": "$USDC"
+						}
+					}
+				}
+			}
+		});
+		AssetMovementProvider::from_entry("p".into(), &entry)
+	}
+
+	#[test]
+	fn legal_disclaimers_parse_and_skip_malformed_entries() {
+		let disclaimers = decorated_provider().legal_disclaimers();
+		assert!(matches!(disclaimers.as_deref(), Some([Disclaimer {
+			purpose: DisclaimerPurpose::General,
+			content: ClientRenderableContent::Markdown { content },
+		}]) if content == "Read this."));
+	}
+
+	#[test]
+	fn a_provider_without_legal_metadata_has_no_disclaimers() {
+		let provider = AssetMovementProvider::from_entry("p".into(), &json!({ "operations": {} }));
+		assert!(provider.legal_disclaimers().is_none());
+	}
+
+	#[test]
+	fn asset_metadata_resolves_by_location_and_asset() {
+		let metadata = decorated_provider().asset_metadata_for_location("chain:evm:100", "evm:0x5");
+		let expected = TokenLocationMetadata {
+			decimal_places: 6,
+			logo_uri: Some("https://cdn.example/usdc.svg".into()),
+			display_name: Some("Circle USDC".into()),
+			ticker: Some("$USDC".into()),
+		};
+		assert_eq!(metadata, Some(expected));
+	}
+
+	#[test]
+	fn an_unadvertised_location_or_asset_has_no_metadata() {
+		let provider = decorated_provider();
+		assert!(provider
+			.asset_metadata_for_location("chain:evm:1", "evm:0x5")
+			.is_none());
+		assert!(provider
+			.asset_metadata_for_location("chain:evm:100", "evm:0x6")
+			.is_none());
 	}
 
 	#[test]

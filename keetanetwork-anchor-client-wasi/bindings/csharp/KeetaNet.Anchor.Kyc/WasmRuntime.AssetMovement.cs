@@ -62,34 +62,34 @@ public sealed partial class WasmRuntime
 		}
 	}
 
-	internal byte[] AssetInitiateForwardingTemplate(int handle, string providerJson, string requestJson) =>
-		WithProviderAndArg("keeta_asset_initiate_forwarding_template", handle, providerJson, requestJson);
+	internal byte[] AssetInitiatePersistentForwardingTemplate(int handle, string providerJson, string requestJson) =>
+		WithProviderAndArg("keeta_asset_initiate_persistent_forwarding_template", handle, providerJson, requestJson);
 
-	internal byte[] AssetCreateForwardingTemplate(int handle, string providerJson, string requestJson) =>
-		WithProviderAndArg("keeta_asset_create_forwarding_template", handle, providerJson, requestJson);
+	internal byte[] AssetCreatePersistentForwardingTemplate(int handle, string providerJson, string requestJson) =>
+		WithProviderAndArg("keeta_asset_create_persistent_forwarding_template", handle, providerJson, requestJson);
 
-	internal byte[] AssetListForwardingTemplates(int handle, string providerJson, string requestJson) =>
-		WithProviderAndArg("keeta_asset_list_forwarding_templates", handle, providerJson, requestJson);
+	internal byte[] AssetListForwardingAddressTemplates(int handle, string providerJson, string requestJson) =>
+		WithProviderAndArg("keeta_asset_list_forwarding_address_templates", handle, providerJson, requestJson);
 
-	internal byte[] AssetCreateForwardingAddress(int handle, string providerJson, string requestJson) =>
-		WithProviderAndArg("keeta_asset_create_forwarding_address", handle, providerJson, requestJson);
+	internal byte[] AssetCreatePersistentForwardingAddress(int handle, string providerJson, string requestJson) =>
+		WithProviderAndArg("keeta_asset_create_persistent_forwarding_address", handle, providerJson, requestJson);
 
 	internal byte[] AssetListForwardingAddresses(int handle, string providerJson, string requestJson) =>
 		WithProviderAndArg("keeta_asset_list_forwarding_addresses", handle, providerJson, requestJson);
 
-	internal byte[] AssetDeactivateForwardingTemplate(int handle, string providerJson, string id) =>
-		WithProviderAndArg("keeta_asset_deactivate_forwarding_template", handle, providerJson, id);
+	internal byte[] AssetDeactivatePersistentForwardingTemplate(int handle, string providerJson, string id) =>
+		WithProviderAndArg("keeta_asset_deactivate_persistent_forwarding_template", handle, providerJson, id);
 
-	internal byte[] AssetDeactivateForwardingAddress(int handle, string providerJson, string id) =>
-		WithProviderAndArg("keeta_asset_deactivate_forwarding_address", handle, providerJson, id);
+	internal byte[] AssetDeactivatePersistentForwardingAddress(int handle, string providerJson, string id) =>
+		WithProviderAndArg("keeta_asset_deactivate_persistent_forwarding_address", handle, providerJson, id);
 
 	internal byte[] AssetListTransactions(int handle, string providerJson, string requestJson) =>
 		WithProviderAndArg("keeta_asset_list_transactions", handle, providerJson, requestJson);
 
-	internal byte[] AssetShareKyc(int handle, string providerJson, string requestJson) =>
-		WithProviderAndArg("keeta_asset_share_kyc", handle, providerJson, requestJson);
+	internal byte[] AssetShareKycAttributes(int handle, string providerJson, string requestJson) =>
+		WithProviderAndArg("keeta_asset_share_kyc_attributes", handle, providerJson, requestJson);
 
-	internal byte[] AssetShareKycAwait(int handle, string providerJson, string requestJson, int intervalMs, int timeoutMs)
+	internal byte[] AssetShareKycAttributesAndWait(int handle, string providerJson, string requestJson, int intervalMs, int timeoutMs)
 	{
 		var owned = new List<Argument>();
 		try
@@ -97,7 +97,7 @@ public sealed partial class WasmRuntime
 			Argument provider = Write(providerJson, owned);
 			Argument request = Write(requestJson, owned);
 			return TakeBytes(Invoke<int, int, int, int, int, int, int, int>(
-				"keeta_asset_share_kyc_await",
+				"keeta_asset_share_kyc_attributes_and_wait",
 				handle,
 				provider.Pointer, provider.Length,
 				request.Pointer, request.Length,

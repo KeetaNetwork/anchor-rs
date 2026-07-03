@@ -100,6 +100,14 @@ pub enum ResolverError {
 		/// The underlying transport failure.
 		source: TransportError,
 	},
+
+	/// Reading on-chain state through the node client failed.
+	#[cfg(feature = "codec")]
+	#[snafu(display("node read failed: {source}"), context(false))]
+	Node {
+		/// The underlying node-client failure.
+		source: keetanetwork_client::ClientError,
+	},
 }
 
 impl From<base64::DecodeError> for ResolverError {

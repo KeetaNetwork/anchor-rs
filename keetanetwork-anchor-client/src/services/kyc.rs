@@ -25,6 +25,36 @@ impl ServiceQuery for KycQuery {
 	}
 }
 
+/// The countries KYC providers can validate, aggregated across every root
+/// (the result of the reference `getSupportedCountries`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SupportedCountries {
+	/// At least one provider publishes no country list and validates
+	/// worldwide.
+	Worldwide,
+	/// The sorted, deduplicated union of the providers' published country
+	/// codes.
+	Countries(Vec<CountryCode>),
+}
+
+impl FromIterator<KycProvider> for SupportedCountries {
+	fn from_iter<I: IntoIterator<Item = KycProvider>>(providers: I) -> Self {
+		let mut countries: Vec<CountryCode> = Vec::new();
+		for provider in providers {
+			let Some(codes) = provider.country_codes else {
+				return Self::Worldwide;
+			};
+
+			countries.extend(codes);
+		}
+
+		countries.sort_by(|left, right| left.as_str().cmp(right.as_str()));
+		countries.dedup();
+
+		Self::Countries(countries)
+	}
+}
+
 /// An in-progress verification a provider created.
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
 pub struct Verification {
@@ -91,7 +121,7 @@ mod client {
 
 	use serde_json::{Map, Value};
 
-	use super::{Certificates, KycQuery, Verification, VerificationStatus};
+	use super::{Certificates, KycQuery, SupportedCountries, Verification, VerificationStatus};
 	use crate::error::AnchorClientError;
 	use crate::resolver::{CountryCode, KycProvider};
 	use crate::service::{AnchorContext, AnchorOutcome, Auth, BodyEnvelope, Call, Endpoint, Method};
@@ -124,6 +154,18 @@ mod client {
 				.lookup::<KycQuery>(countries)
 				.await?;
 			Ok(providers)
+		}
+
+		/// The countries any provider can validate, folded across every root
+		/// (the reference `getSupportedCountries`).
+		///
+		/// # Errors
+		///
+		/// Returns [`AnchorClientError`] when a metadata root cannot be fetched
+		/// or decoded.
+		pub async fn get_supported_countries(&self) -> Result<SupportedCountries, AnchorClientError> {
+			let providers = self.providers(&[]).await?;
+			Ok(providers.into_iter().collect())
 		}
 
 		/// Begin a verification with `provider` for `countries`, optionally
@@ -188,6 +230,7 @@ mod client {
 				envelope: BodyEnvelope::Request,
 				body,
 			};
+
 			let outcome = self.context.caller().invoke(call).await?;
 			Ok(outcome)
 		}
@@ -246,5 +289,48 @@ mod client {
 		}
 
 		Value::Object(fields)
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use alloc::string::ToString;
+	use alloc::vec;
+
+	use serde_json::json;
+
+	use super::*;
+
+	/// A provider entry advertising the given country codes, or none for a
+	/// worldwide provider.
+	fn provider(id: &str, countries: Option<&[&str]>) -> Option<KycProvider> {
+		let mut entry = json!({ "operations": {}, "ca": "ca-pem" });
+		if let Some(codes) = countries {
+			entry["countryCodes"] = json!(codes);
+		}
+
+		KycProvider::try_from((id.to_string(), &entry)).ok()
+	}
+
+	#[test]
+	fn supported_countries_union_is_sorted_and_deduplicated() {
+		let providers = [provider("a", Some(&["us", "DE"])), provider("b", Some(&["de", "FR"]))];
+		let folded: SupportedCountries = providers.into_iter().flatten().collect();
+		let codes = vec!["DE", "FR", "US"];
+		assert!(matches!(&folded, SupportedCountries::Countries(countries)
+			if countries.iter().map(CountryCode::as_str).eq(codes)));
+	}
+
+	#[test]
+	fn a_worldwide_provider_folds_to_worldwide() {
+		let providers = [provider("a", Some(&["US"])), provider("b", None)];
+		let folded: SupportedCountries = providers.into_iter().flatten().collect();
+		assert_eq!(folded, SupportedCountries::Worldwide);
+	}
+
+	#[test]
+	fn no_providers_fold_to_an_empty_union() {
+		let folded: SupportedCountries = core::iter::empty().collect();
+		assert!(matches!(folded, SupportedCountries::Countries(countries) if countries.is_empty()));
 	}
 }

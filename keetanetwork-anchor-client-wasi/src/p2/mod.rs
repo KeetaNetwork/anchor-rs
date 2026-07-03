@@ -18,8 +18,12 @@ use std::sync::Arc;
 
 use keetanetwork_account::GenericAccount;
 use keetanetwork_anchor_bindings::error::CodedError as CoreCodedError;
+use keetanetwork_anchor_client::keetanetwork_client::{
+	ClientConfig, KeetaClient, RepPart, WasiRuntime as NodeWasiRuntime, WasiTransportFactory,
+};
 use keetanetwork_anchor_client::AnchorClientError;
 use keetanetwork_x509::certificates::Certificate as X509Certificate;
+use num_bigint::BigInt;
 use wstd::runtime::block_on;
 
 wit_bindgen::generate!({
@@ -73,6 +77,19 @@ fn collect_certificates(borrows: &[CertificateBorrow<'_>]) -> Vec<X509Certificat
 		.iter()
 		.map(|borrow| borrow.get::<CertificateResource>().certificate.clone())
 		.collect()
+}
+
+/// An anonymous single-representative node client targeting `node_url` over
+/// the node client's `wasi:http` transport, keyed by its URL (no account).
+fn node_client(node_url: &str) -> KeetaClient {
+	let part = RepPart { key: node_url.to_owned(), url: node_url.to_owned(), weight: BigInt::from(1u8) };
+	KeetaClient::with_parts(
+		[part],
+		Arc::new(WasiTransportFactory),
+		Arc::new(NodeWasiRuntime),
+		ClientConfig::default(),
+		true,
+	)
 }
 
 /// Drive an async client call to completion on the `wstd` reactor, projecting

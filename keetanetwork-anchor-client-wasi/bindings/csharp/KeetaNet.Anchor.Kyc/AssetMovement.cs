@@ -132,34 +132,34 @@ public sealed class AssetMovementClient : IDisposable
 		Read<AssetAccountStatus>(_runtime.AssetAccountStatus(_handle, Serialize(provider)));
 
 	/// <summary>Open a persistent-forwarding template session.</summary>
-	public AssetTemplateSession InitiateForwardingTemplate(AssetProvider provider, AssetInitiateTemplateRequest request) =>
+	public AssetTemplateSession InitiatePersistentForwardingTemplate(AssetProvider provider, AssetInitiateTemplateRequest request) =>
 		Read<AssetTemplateSession>(
-			_runtime.AssetInitiateForwardingTemplate(_handle, Serialize(provider), Serialize(request)));
+			_runtime.AssetInitiatePersistentForwardingTemplate(_handle, Serialize(provider), Serialize(request)));
 
 	/// <summary>Create a persistent-forwarding template.</summary>
-	public AssetForwardingTemplate CreateForwardingTemplate(AssetProvider provider, AssetCreateTemplateRequest request) =>
+	public AssetForwardingTemplate CreatePersistentForwardingTemplate(AssetProvider provider, AssetCreateTemplateRequest request) =>
 		Read<AssetForwardingTemplate>(
-			_runtime.AssetCreateForwardingTemplate(_handle, Serialize(provider), Serialize(request)));
+			_runtime.AssetCreatePersistentForwardingTemplate(_handle, Serialize(provider), Serialize(request)));
 
 	/// <summary>List persistent-forwarding templates.</summary>
-	public AssetTemplatePage ListForwardingTemplates(AssetProvider provider, AssetListTemplatesRequest request) =>
-		Read<AssetTemplatePage>(_runtime.AssetListForwardingTemplates(_handle, Serialize(provider), Serialize(request)));
+	public AssetTemplatePage ListForwardingAddressTemplates(AssetProvider provider, AssetListTemplatesRequest request) =>
+		Read<AssetTemplatePage>(_runtime.AssetListForwardingAddressTemplates(_handle, Serialize(provider), Serialize(request)));
 
 	/// <summary>Create a persistent-forwarding address, returning its (obfuscated) details.</summary>
-	public JsonElement CreateForwardingAddress(AssetProvider provider, AssetCreateAddressRequest request) =>
-		Read<JsonElement>(_runtime.AssetCreateForwardingAddress(_handle, Serialize(provider), Serialize(request)));
+	public JsonElement CreatePersistentForwardingAddress(AssetProvider provider, AssetCreateAddressRequest request) =>
+		Read<JsonElement>(_runtime.AssetCreatePersistentForwardingAddress(_handle, Serialize(provider), Serialize(request)));
 
 	/// <summary>List persistent-forwarding addresses.</summary>
 	public AssetAddressPage ListForwardingAddresses(AssetProvider provider, AssetListAddressesRequest request) =>
 		Read<AssetAddressPage>(_runtime.AssetListForwardingAddresses(_handle, Serialize(provider), Serialize(request)));
 
 	/// <summary>Deactivate a persistent-forwarding template by id.</summary>
-	public void DeactivateForwardingTemplate(AssetProvider provider, string id) =>
-		_runtime.AssetDeactivateForwardingTemplate(_handle, Serialize(provider), id);
+	public void DeactivatePersistentForwardingTemplate(AssetProvider provider, string id) =>
+		_runtime.AssetDeactivatePersistentForwardingTemplate(_handle, Serialize(provider), id);
 
 	/// <summary>Deactivate a persistent-forwarding address by id.</summary>
-	public void DeactivateForwardingAddress(AssetProvider provider, string id) =>
-		_runtime.AssetDeactivateForwardingAddress(_handle, Serialize(provider), id);
+	public void DeactivatePersistentForwardingAddress(AssetProvider provider, string id) =>
+		_runtime.AssetDeactivatePersistentForwardingAddress(_handle, Serialize(provider), id);
 
 	/// <summary>List asset-movement transactions.</summary>
 	public AssetTransactionPage ListTransactions(AssetProvider provider, AssetListTransactionsRequest request) =>
@@ -168,21 +168,21 @@ public sealed class AssetMovementClient : IDisposable
 	/// <summary>
 	/// Share KYC attributes with the provider, returning the outcome verbatim.
 	/// A pending outcome carries the promise URL the caller must poll; use
-	/// <see cref="ShareKycAndWait"/> to poll it automatically.
+	/// <see cref="ShareKycAttributesAndWait"/> to poll it automatically.
 	/// </summary>
-	public AssetShareKycOutcome ShareKyc(AssetProvider provider, AssetShareKycRequest request) =>
-		Read<AssetShareKycOutcome>(_runtime.AssetShareKyc(_handle, Serialize(provider), Serialize(request)));
+	public AssetShareKycOutcome ShareKycAttributes(AssetProvider provider, AssetShareKycRequest request) =>
+		Read<AssetShareKycOutcome>(_runtime.AssetShareKycAttributes(_handle, Serialize(provider), Serialize(request)));
 
 	/// <summary>
 	/// Share KYC attributes and, when the outcome is pending with a promise URL,
 	/// poll that URL inside the core until it resolves.
 	/// </summary>
-	public AssetShareKycOutcome ShareKycAndWait(
+	public AssetShareKycOutcome ShareKycAttributesAndWait(
 		AssetProvider provider,
 		AssetShareKycRequest request,
 		TimeSpan? pollInterval = null,
 		TimeSpan? timeout = null) =>
-		Read<AssetShareKycOutcome>(_runtime.AssetShareKycAwait(
+		Read<AssetShareKycOutcome>(_runtime.AssetShareKycAttributesAndWait(
 			_handle,
 			Serialize(provider),
 			Serialize(request),

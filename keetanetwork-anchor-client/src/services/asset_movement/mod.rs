@@ -10,18 +10,20 @@ pub mod request;
 pub mod response;
 
 pub use asset::{canonicalize_asset, AssetOrPair};
-pub use client::{AssetMovementClient, PollOptions};
+pub use client::{AssetMovementClient, AwaitOptions};
 pub use error::{AccountStatus, AssetMovementBlocker};
 pub use location::{canonicalize_location, AssetLocation, ChainLocation};
 pub use metadata::{
-	AssetMovementOperations, AssetMovementProvider, AssetMovementQuery, EndpointAuth, OperationEndpoint,
-	ProviderFilter, ProviderSearch, OPERATION_NAMES,
+	AssetMovementOperations, AssetMovementProvider, AssetMovementQuery, ClientRenderableContent, Disclaimer,
+	DisclaimerPurpose, EndpointAuth, OperationEndpoint, ProviderFilter, ProviderSearch, TokenLocationMetadata,
+	OPERATION_NAMES,
 };
 pub use request::{
-	CreateForwardingAddressRequest, CreateForwardingTemplateRequest, ExecuteTransferRequest, ForwardingAddressFilter,
-	ForwardingDestination, InitiateForwardingTemplateRequest, ListForwardingAddressesRequest,
-	ListForwardingTemplatesRequest, ListTransactionsRequest, Pagination, PersistentAddressFilter, ShareKycRequest,
-	TransactionEndpointFilter, TransactionRefFilter, TransferDestination, TransferRequest, TransferSource,
+	CreatePersistentForwardingAddressRequest, CreatePersistentForwardingTemplateRequest, ExecuteTransferRequest,
+	ForwardingAddressFilter, ForwardingDestination, InitiatePersistentForwardingTemplateRequest,
+	ListForwardingAddressTemplatesRequest, ListForwardingAddressesRequest, ListTransactionsRequest, Pagination,
+	PersistentAddressFilter, ShareKycRequest, TransactionEndpointFilter, TransactionRefFilter, TransferDestination,
+	TransferRequest, TransferSource,
 };
 pub use response::{
 	parse_total, AddressPage, ForwardingTemplate, ShareKycOutcome, SimulatedTransfer, TemplatePage, TemplateSession,

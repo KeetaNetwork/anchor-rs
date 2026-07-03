@@ -11,11 +11,13 @@ use serde::de::DeserializeOwned;
 use serde_json::{Map, Value};
 
 use super::error::{AccountStatus, AssetMovementBlocker};
-use super::metadata::{AssetMovementProvider, AssetMovementQuery, EndpointAuth, ProviderFilter, ProviderSearch};
+use super::metadata::{
+	AssetMovementProvider, AssetMovementQuery, Disclaimer, EndpointAuth, ProviderFilter, ProviderSearch,
+};
 use super::request::{
-	id_literal, literal, CreateForwardingAddressRequest, CreateForwardingTemplateRequest, ExecuteTransferRequest,
-	InitiateForwardingTemplateRequest, ListForwardingAddressesRequest, ListForwardingTemplatesRequest,
-	ListTransactionsRequest, ShareKycRequest, TransferRequest,
+	id_literal, literal, CreatePersistentForwardingAddressRequest, CreatePersistentForwardingTemplateRequest,
+	ExecuteTransferRequest, InitiatePersistentForwardingTemplateRequest, ListForwardingAddressTemplatesRequest,
+	ListForwardingAddressesRequest, ListTransactionsRequest, ShareKycRequest, TransferRequest,
 };
 use super::response::{
 	AddressPage, ForwardingTemplate, ShareKycOutcome, SimulatedTransfer, TemplatePage, TemplateSession,
@@ -30,7 +32,7 @@ type Fields = Map<String, Value>;
 /// How to pace and bound a polled operation (e.g. awaiting a share-KYC
 /// promise).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct PollOptions {
+pub struct AwaitOptions {
 	/// The minimum delay between polls, in milliseconds. The provider's
 	/// `retryAfter` hint overrides this when it is longer.
 	pub interval_ms: u32,
@@ -38,7 +40,7 @@ pub struct PollOptions {
 	pub timeout_ms: u32,
 }
 
-impl Default for PollOptions {
+impl Default for AwaitOptions {
 	fn default() -> Self {
 		Self { interval_ms: 2_000, timeout_ms: 300_000 }
 	}
@@ -111,6 +113,21 @@ impl AssetMovementClient {
 	) -> Result<Option<AssetMovementProvider>, AnchorClientError> {
 		let providers = self.lookup(ProviderFilter::by_account(account)).await?;
 		Ok(providers.into_iter().next())
+	}
+
+	/// The legal disclaimers of the provider with `id`, or [`None`] when no
+	/// such provider exists or it publishes none (the reference
+	/// `getProviderLegalDisclaimersByID`).
+	///
+	/// # Errors
+	///
+	/// Returns [`AnchorClientError`] when no metadata root can be read.
+	pub async fn provider_legal_disclaimers_by_id(
+		&self,
+		id: impl Into<String>,
+	) -> Result<Option<Vec<Disclaimer>>, AnchorClientError> {
+		let provider = self.provider_by_id(id).await?;
+		Ok(provider.and_then(|provider| provider.legal_disclaimers()))
 	}
 
 	/// Whether `provider` advertises `operation`.
@@ -232,7 +249,7 @@ impl AssetMovementClient {
 	/// Returns [`AnchorClientError::UnsupportedOperation`] when the provider
 	/// does not advertise `deactivatePersistentForwardingTemplate`, or any
 	/// request failure.
-	pub async fn deactivate_forwarding_template(
+	pub async fn deactivate_persistent_forwarding_template(
 		&self,
 		provider: &AssetMovementProvider,
 		id: &str,
@@ -253,7 +270,7 @@ impl AssetMovementClient {
 	/// Returns [`AnchorClientError::UnsupportedOperation`] when the provider
 	/// does not advertise `deactivatePersistentForwarding`, or any request
 	/// failure.
-	pub async fn deactivate_forwarding_address(
+	pub async fn deactivate_persistent_forwarding_address(
 		&self,
 		provider: &AssetMovementProvider,
 		id: &str,
@@ -269,16 +286,16 @@ impl AssetMovementClient {
 	/// Returns [`AnchorClientError::UnsupportedOperation`] when the provider
 	/// does not advertise `initiatePersistentForwardingTemplate`, or any
 	/// request failure.
-	pub async fn initiate_forwarding_template(
+	pub async fn initiate_persistent_forwarding_template(
 		&self,
 		provider: &AssetMovementProvider,
-		request: &InitiateForwardingTemplateRequest,
+		request: &InitiatePersistentForwardingTemplateRequest,
 	) -> Result<TemplateSession, AnchorClientError> {
 		let (endpoint, auth) = operation(provider, "initiatePersistentForwardingTemplate")?;
 		let signed = request.signable()?;
+		let fields = request.transport_fields();
 
-		self.post(&endpoint, auth, &[], request.transport_fields(), &signed)
-			.await
+		self.post(&endpoint, auth, &[], fields, &signed).await
 	}
 
 	/// Create a persistent-forwarding template.
@@ -288,15 +305,16 @@ impl AssetMovementClient {
 	/// Returns [`AnchorClientError::UnsupportedOperation`] when the provider
 	/// does not advertise `createPersistentForwardingTemplate`, or any request
 	/// failure.
-	pub async fn create_forwarding_template(
+	pub async fn create_persistent_forwarding_template(
 		&self,
 		provider: &AssetMovementProvider,
-		request: &CreateForwardingTemplateRequest,
+		request: &CreatePersistentForwardingTemplateRequest,
 	) -> Result<ForwardingTemplate, AnchorClientError> {
 		let (endpoint, auth) = operation(provider, "createPersistentForwardingTemplate")?;
 		let signed = request.signable()?;
-		self.post(&endpoint, auth, &[], request.transport_fields(), &signed)
-			.await
+		let fields = request.transport_fields();
+
+		self.post(&endpoint, auth, &[], fields, &signed).await
 	}
 
 	/// List persistent-forwarding templates.
@@ -306,15 +324,16 @@ impl AssetMovementClient {
 	/// Returns [`AnchorClientError::UnsupportedOperation`] when the provider
 	/// does not advertise `listPersistentForwardingTemplate`, or any request
 	/// failure.
-	pub async fn list_forwarding_templates(
+	pub async fn list_forwarding_address_templates(
 		&self,
 		provider: &AssetMovementProvider,
-		request: &ListForwardingTemplatesRequest,
+		request: &ListForwardingAddressTemplatesRequest,
 	) -> Result<TemplatePage, AnchorClientError> {
 		let (endpoint, auth) = operation(provider, "listPersistentForwardingTemplate")?;
 		let signed = request.signable();
-		self.post(&endpoint, auth, &[], request.transport_fields(), &signed)
-			.await
+		let fields = request.transport_fields();
+
+		self.post(&endpoint, auth, &[], fields, &signed).await
 	}
 
 	/// Create a persistent-forwarding address, returning its (obfuscated)
@@ -324,15 +343,16 @@ impl AssetMovementClient {
 	///
 	/// Returns [`AnchorClientError::UnsupportedOperation`] when the provider
 	/// does not advertise `createPersistentForwarding`, or any request failure.
-	pub async fn create_forwarding_address(
+	pub async fn create_persistent_forwarding_address(
 		&self,
 		provider: &AssetMovementProvider,
-		request: &CreateForwardingAddressRequest,
+		request: &CreatePersistentForwardingAddressRequest,
 	) -> Result<Value, AnchorClientError> {
 		let (endpoint, auth) = operation(provider, "createPersistentForwarding")?;
 		let signed = request.signable()?;
-		self.post(&endpoint, auth, &[], request.transport_fields(), &signed)
-			.await
+		let fields = request.transport_fields();
+
+		self.post(&endpoint, auth, &[], fields, &signed).await
 	}
 
 	/// List persistent-forwarding addresses.
@@ -348,8 +368,9 @@ impl AssetMovementClient {
 	) -> Result<AddressPage, AnchorClientError> {
 		let (endpoint, auth) = operation(provider, "listPersistentForwarding")?;
 		let signed = request.signable();
-		self.post(&endpoint, auth, &[], request.transport_fields(), &signed)
-			.await
+		let fields = request.transport_fields();
+
+		self.post(&endpoint, auth, &[], fields, &signed).await
 	}
 
 	/// List asset-movement transactions.
@@ -365,8 +386,9 @@ impl AssetMovementClient {
 	) -> Result<TransactionPage, AnchorClientError> {
 		let (endpoint, auth) = operation(provider, "listTransactions")?;
 		let signed = request.signable();
-		self.post(&endpoint, auth, &[], request.transport_fields(), &signed)
-			.await
+		let fields = request.transport_fields();
+
+		self.post(&endpoint, auth, &[], fields, &signed).await
 	}
 
 	/// Share KYC attributes with the provider.
@@ -378,7 +400,7 @@ impl AssetMovementClient {
 	///
 	/// Returns [`AnchorClientError::UnsupportedOperation`] when the provider
 	/// does not advertise `shareKYC`, or any request failure.
-	pub async fn share_kyc(
+	pub async fn share_kyc_attributes(
 		&self,
 		provider: &AssetMovementProvider,
 		request: &ShareKycRequest,
@@ -402,18 +424,18 @@ impl AssetMovementClient {
 	/// does not advertise `shareKYC`, [`AnchorClientError::Timeout`] when the
 	/// promise does not resolve within `options.timeout_ms`, or any request
 	/// failure.
-	pub async fn share_kyc_await<S, Fut>(
+	pub async fn share_kyc_attributes_and_wait<S, Fut>(
 		&self,
 		provider: &AssetMovementProvider,
 		request: &ShareKycRequest,
-		options: PollOptions,
+		options: AwaitOptions,
 		sleep: S,
 	) -> Result<ShareKycOutcome, AnchorClientError>
 	where
 		S: Fn(u32) -> Fut,
 		Fut: Future<Output = ()>,
 	{
-		let outcome = self.share_kyc(provider, request).await?;
+		let outcome = self.share_kyc_attributes(provider, request).await?;
 		let Some(promise_url) = outcome.promise_url.clone().filter(|_| outcome.is_pending) else {
 			return Ok(outcome);
 		};
@@ -509,6 +531,7 @@ impl AssetMovementClient {
 	) -> Result<String, AnchorClientError> {
 		let (endpoint, _auth) = operation(provider, "shareKYC")?;
 		let base = endpoint.url(&[])?;
+
 		join_promise_url(base.as_str(), promise_url)
 	}
 
@@ -521,7 +544,7 @@ impl AssetMovementClient {
 	async fn poll_promise<S, Fut>(
 		&self,
 		url: &str,
-		options: PollOptions,
+		options: AwaitOptions,
 		sleep: S,
 	) -> Result<ShareKycOutcome, AnchorClientError>
 	where

@@ -1,13 +1,15 @@
 //! Reading a metadata document from a location, dispatched by scheme.
 //!
 //! A [`MetadataLocation`] names where a document lives: an on-chain account read
-//! through the node API (`keetanet://<account>/metadata`), or an `https`/`http`
-//! URL read directly. [`read_document`] fetches and parses one into JSON.
+//! through the node client (`keetanet://<account>/metadata`), or an
+//! `https`/`http` URL read directly. [`read_document`] fetches and parses one
+//! into JSON.
 
 use alloc::string::{String, ToString};
 
 use core::str::FromStr;
 
+use keetanetwork_client::KeetaClient;
 use serde_json::{Map, Value};
 
 use super::decode::{decode_base64, parse_metadata};
@@ -88,52 +90,43 @@ fn scheme_of(value: &str) -> String {
 	}
 }
 
-/// Fetch and parse the metadata document at `location` over `transport`.
+/// Fetch and parse the metadata document at `location`: an on-chain account
+/// through the node `client`, or a remote URL over `transport`.
 ///
 /// # Errors
 ///
-/// Returns [`ResolverError::NotFound`] when a remote read does not succeed, or a
+/// Returns [`ResolverError::Node`] when a ledger read fails,
+/// [`ResolverError::NotFound`] when a remote read does not succeed, or a
 /// decode error ([`ResolverError::Base64`], [`ResolverError::Utf8`],
 /// [`ResolverError::Json`]) when the bytes are not a valid metadata document.
 pub(crate) async fn read_document(
+	client: &KeetaClient,
 	transport: &dyn AnchorHttpTransport,
-	node_api: &str,
 	location: &MetadataLocation,
 ) -> Result<Value, ResolverError> {
 	match location {
-		MetadataLocation::KeetaNet { account } => read_keetanet(transport, node_api, account).await,
+		MetadataLocation::KeetaNet { account } => read_keetanet(client, account).await,
 		MetadataLocation::Https { url } | MetadataLocation::Http { url } => read_https(transport, url).await,
 	}
 }
 
-/// Read an account's on-chain metadata via `GET {node_api}/node/ledger/account/{account}`.
+/// Read an account's on-chain metadata through the node client, mirroring the
+/// reference resolver's `client.getAccountInfo(account)`.
 ///
-/// The node returns the account state as JSON; the base64 service-metadata blob
-/// is the `info.metadata` field. An empty field is a valid empty document.
-async fn read_keetanet(
-	transport: &dyn AnchorHttpTransport,
-	node_api: &str,
-	account: &str,
-) -> Result<Value, ResolverError> {
-	let url = alloc::format!("{node_api}/node/ledger/account/{account}");
-	let response = transport.get(&url).await?;
-	if !response.is_success() {
-		return Err(ResolverError::NotFound { location: url });
-	}
-
-	let text = core::str::from_utf8(&response.body).map_err(|_| ResolverError::Utf8)?;
-	let state: Value = serde_json::from_str(text)?;
+/// The base64 service-metadata blob is the account state's `info.metadata`
+/// field. An empty or absent field is a valid empty document.
+async fn read_keetanet(client: &KeetaClient, account: &str) -> Result<Value, ResolverError> {
+	let state = client.state(account).await?;
 	let metadata = state
-		.get("info")
-		.and_then(|info| info.get("metadata"))
-		.and_then(Value::as_str)
+		.info
+		.and_then(|info| info.metadata)
 		.unwrap_or_default();
 
 	if metadata.is_empty() {
 		return Ok(Value::Object(Map::new()));
 	}
 
-	let raw = decode_base64(metadata)?;
+	let raw = decode_base64(&metadata)?;
 	parse_metadata(&raw)
 }
 

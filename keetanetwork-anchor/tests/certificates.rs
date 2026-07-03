@@ -8,7 +8,7 @@ use keetanetwork_x509::utils::create_dn;
 use keetanetwork_x509::SerialNumber;
 
 use common::{
-	test_certificate_attributes, test_certificate_issued_by, test_get_kyc_attribute_value, test_has_kyc_attributes,
+	test_certificate_attributes, test_certificate_issued_by, test_get_attribute_value, test_has_attributes,
 	test_plain_attributes,
 };
 use common::{TestAccounts, TestData};
@@ -230,12 +230,12 @@ where
 	let ca_certificate = builder
 		.create_ca_certificate::<S>()
 		.expect("Failed to create CA certificate");
-	assert!(test_has_kyc_attributes(&ca_certificate, 0, "CA cert").is_ok());
+	assert!(test_has_attributes(&ca_certificate, 0, "CA cert").is_ok());
 
 	let user_certificate = builder
 		.create_user_certificate::<S>()
 		.expect("Failed to create user certificate");
-	assert!(test_has_kyc_attributes(&user_certificate, 5, "User cert").is_ok());
+	assert!(test_has_attributes(&user_certificate, 5, "User cert").is_ok());
 	assert!(test_certificate_issued_by(&user_certificate, &ca_certificate).is_ok());
 
 	// Get references after mutations are complete
@@ -257,7 +257,7 @@ where
 	let mixed_certificate = builder
 		.create_mixed_certificate::<S>()
 		.expect("Failed to create mixed certificate");
-	assert!(test_has_kyc_attributes(&mixed_certificate, 3, "Mixed cert").is_ok());
+	assert!(test_has_attributes(&mixed_certificate, 3, "Mixed cert").is_ok());
 
 	// Get references after mutations are complete
 	let accounts = builder.accounts();
@@ -278,19 +278,19 @@ where
 	let ca_cert = builder
 		.create_ca_certificate::<S>()
 		.expect("Failed to create CA certificate");
-	assert!(test_has_kyc_attributes(&ca_cert, 0, "CA cert").is_ok());
+	assert!(test_has_attributes(&ca_cert, 0, "CA cert").is_ok());
 
 	// Test user certificate with mixed attributes
 	let user_cert = builder
 		.create_user_certificate::<S>()
 		.expect("Failed to create user certificate");
-	assert!(test_has_kyc_attributes(&user_cert, 5, "User cert").is_ok());
+	assert!(test_has_attributes(&user_cert, 5, "User cert").is_ok());
 
 	// Test certificate with only mixed attributes
 	let mixed_cert = builder
 		.create_mixed_certificate::<S>()
 		.expect("Failed to create mixed certificate");
-	assert!(test_has_kyc_attributes(&mixed_cert, 3, "Mixed cert").is_ok());
+	assert!(test_has_attributes(&mixed_cert, 3, "Mixed cert").is_ok());
 }
 
 /// Test certificate error handling and edge cases
@@ -307,15 +307,15 @@ where
 		.create_mixed_certificate::<S>()
 		.expect("Failed to create test certificate");
 	// Test accessing plain attribute without keypair (should work)
-	assert!(test_get_kyc_attribute_value::<T>(&test_cert, "postalCode", None).is_ok());
+	assert!(test_get_attribute_value::<T>(&test_cert, "postalCode", None).is_ok());
 	// Test with correct keypair (should work)
-	assert!(test_get_kyc_attribute_value::<T>(&test_cert, "fullName", Some(&accounts.subject.keypair)).is_ok());
+	assert!(test_get_attribute_value::<T>(&test_cert, "fullName", Some(&accounts.subject.keypair)).is_ok());
 	// Test accessing non-existent attributes using helper
-	assert!(test_get_kyc_attribute_value::<T>(&test_cert, "nonExistent", None).is_err());
+	assert!(test_get_attribute_value::<T>(&test_cert, "nonExistent", None).is_err());
 	// Test accessing sensitive attribute without keypair (should fail)
-	assert!(test_get_kyc_attribute_value::<T>(&test_cert, "fullName", None).is_err());
+	assert!(test_get_attribute_value::<T>(&test_cert, "fullName", None).is_err());
 	// Test with wrong keypair (should fail)
-	assert!(test_get_kyc_attribute_value(&test_cert, "fullName", Some(&accounts.wrong_account.keypair)).is_err());
+	assert!(test_get_attribute_value(&test_cert, "fullName", Some(&accounts.wrong_account.keypair)).is_err());
 }
 
 /// Test certificate attribute access without private key
@@ -331,14 +331,14 @@ where
 	let user_certificate = builder
 		.create_user_certificate::<S>()
 		.expect("Failed to create user certificate");
-	assert!(test_get_kyc_attribute_value::<T>(&user_certificate, "fullName", None).is_err());
-	assert!(test_get_kyc_attribute_value::<T>(&user_certificate, "email", None).is_err());
+	assert!(test_get_attribute_value::<T>(&user_certificate, "fullName", None).is_err());
+	assert!(test_get_attribute_value::<T>(&user_certificate, "email", None).is_err());
 
 	// Get references after mutations are complete
 	let accounts = builder.accounts();
 	// Test that decryption fails with public-only account
 	let keypair = Some(&accounts.subject_public_only.keypair);
-	assert!(test_get_kyc_attribute_value::<T>(&user_certificate, "fullName", keypair).is_err());
+	assert!(test_get_attribute_value::<T>(&user_certificate, "fullName", keypair).is_err());
 }
 
 /// Test CA certificate creation and properties
@@ -353,7 +353,7 @@ where
 		.create_ca_certificate::<S>()
 		.expect("Failed to create CA certificate");
 	// Verify CA certificate properties
-	assert!(test_has_kyc_attributes(&ca_cert, 0, "CA").is_ok());
+	assert!(test_has_attributes(&ca_cert, 0, "CA").is_ok());
 
 	// Verify we can access the underlying X.509 certificate
 	let x509_cert = ca_cert.to_x509();
@@ -373,7 +373,7 @@ where
 	let valid_cert = builder
 		.create_user_certificate::<S>()
 		.expect("Should create valid certificate");
-	assert!(test_has_kyc_attributes(&valid_cert, 5, "Valid cert").is_ok());
+	assert!(test_has_attributes(&valid_cert, 5, "Valid cert").is_ok());
 }
 
 keetanetwork_anchor::test_all_key_types!(test_certificates_workflow, test_certificate_workflow);

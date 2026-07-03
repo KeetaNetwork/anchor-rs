@@ -218,7 +218,7 @@ pub fn read_sensitive_attribute(
 	let certificate = KycCertificate::new(x509);
 
 	certificate
-		.decrypt_kyc_attribute(name, &subject.keypair)
+		.decrypt_attribute(name, &subject.keypair)
 		.expect("sensitive attribute decrypts")
 }
 

@@ -29,6 +29,7 @@ type ReferenceNode = Awaited<ReturnType<typeof nodeTesting.createTestNode>>;
 
 export type UserClient = InstanceType<typeof KeetaNet.UserClient>;
 export type GenericAccount = InstanceType<typeof KeetaNetLib.Account>;
+export type SigningAccount = ReturnType<typeof KeetaNetLib.Account.fromSeed>;
 export type ServiceMetadata = Parameters<typeof Metadata.formatMetadata>[0];
 
 /**
@@ -45,6 +46,8 @@ export interface ChainNode {
 	give(account: GenericAccount, amount: bigint): Promise<void>;
 	/* Publish `metadata` on-chain to a fresh funded account; return its key. */
 	publish(metadata: ServiceMetadata): Promise<string>;
+	/* A UserClient signing as `account`, for publishing under other accounts. */
+	clientFor(account: SigningAccount): UserClient;
 }
 
 /**
@@ -112,21 +115,25 @@ export async function bootChainNode(): Promise<ChainNode> {
 		await repClient.send(account, amount, repClient.baseToken, undefined, { account: repClientAccount });
 	};
 
+	const clientFor = function(account: SigningAccount): UserClient {
+		return(new KeetaNet.UserClient({
+			client,
+			network: node.config.network,
+			networkAlias: node.config.networkAlias,
+			signer: account,
+			usePublishAid: false
+		}));
+	};
+
 	const publish = async function(metadata: ServiceMetadata): Promise<string> {
 		const rootAccount = Account.fromSeed(Account.generateRandomSeed(), 0);
 		await give(rootAccount, 1_000n);
 
-		const rootClient = new KeetaNet.UserClient({
-			client,
-			network: node.config.network,
-			networkAlias: node.config.networkAlias,
-			signer: rootAccount,
-			usePublishAid: false
-		});
+		const rootClient = clientFor(rootAccount);
 		await rootClient.setInfo({ name: '', description: '', metadata: Metadata.formatMetadata(metadata) });
 
 		return(rootAccount.publicKeyString.get());
 	};
 
-	return({ node, api: endpoints.api, repClient, give, publish });
+	return({ node, api: endpoints.api, repClient, give, publish, clientFor });
 }

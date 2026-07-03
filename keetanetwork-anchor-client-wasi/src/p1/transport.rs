@@ -180,12 +180,23 @@ fn request_error(error: serde_json::Error) -> TransportError {
 
 /// Monotonic milliseconds from a process-fixed origin, backed by the wasip1
 /// clock through `std::time`.
-fn monotonic_millis() -> u64 {
+pub(super) fn monotonic_millis() -> u64 {
 	use std::sync::OnceLock;
 	use std::time::Instant;
 
 	static ORIGIN: OnceLock<Instant> = OnceLock::new();
 	ORIGIN.get_or_init(Instant::now).elapsed().as_millis() as u64
+}
+
+/// Clock milliseconds since the Unix epoch, backed by the wasip1 real-time
+/// clock through `std::time`. A clock before the epoch reports zero.
+pub(super) fn unix_millis() -> i64 {
+	use std::time::{SystemTime, UNIX_EPOCH};
+
+	SystemTime::now()
+		.duration_since(UNIX_EPOCH)
+		.map(|elapsed| i64::try_from(elapsed.as_millis()).unwrap_or(i64::MAX))
+		.unwrap_or_default()
 }
 
 /// A waker that does nothing: [`block_on`] never parks, so wake-ups are unused.

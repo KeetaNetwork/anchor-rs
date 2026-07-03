@@ -41,15 +41,15 @@
 //!     .build(&subject_account.keypair, &issuer_account.keypair)?;
 //!
 //! // Access KYC attributes
-//! assert!(certificate.has_kyc_attributes());
-//! assert_eq!(certificate.kyc_attribute_count(), 2);
+//! assert!(certificate.has_attributes());
+//! assert_eq!(certificate.attribute_count(), 2);
 //!
 //! // Get plain text attributes
-//! let postal_code = certificate.get_plain_kyc_attribute("postalCode")?;
+//! let postal_code = certificate.get_plain_attribute("postalCode")?;
 //! assert_eq!(postal_code, b"12345");
 //!
 //! // Decrypt sensitive attributes (requires subject's keypair)
-//! let email = certificate.decrypt_kyc_attribute("email", &subject_account.keypair)?;
+//! let email = certificate.decrypt_attribute("email", &subject_account.keypair)?;
 //! assert_eq!(email, b"john@example.com");
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
@@ -66,11 +66,11 @@
 //! let certificate = KycCertificate::new(x509_cert);
 //!
 //! // Check if it contains KYC attributes
-//! if certificate.has_kyc_attributes() {
-//!     println!("KycCertificate contains {} KYC attributes", certificate.kyc_attribute_count());
+//! if certificate.has_attributes() {
+//!     println!("KycCertificate contains {} KYC attributes", certificate.attribute_count());
 //!     
 //!     // Access the underlying KYC data
-//!     let kyc_attributes = certificate.kyc_attributes();
+//!     let kyc_attributes = certificate.attributes();
 //!     for attr in kyc_attributes.iter() {
 //!         println!("Attribute OID: {}, Sensitive: {}",
 //!                  attr.name.to_string(), attr.is_sensitive());
@@ -89,7 +89,7 @@
 //! # let certificate = KycCertificate::new(certificate);
 //!
 //! // Handle missing attributes
-//! match certificate.get_plain_kyc_attribute("nonExistent") {
+//! match certificate.get_plain_attribute("nonExistent") {
 //!     Ok(value) => println!("Attribute value: {:?}", value),
 //!     Err(KycCertificateError::AttributeNotFound { name }) => {
 //!         println!("Attribute '{}' not found", name);
@@ -98,7 +98,7 @@
 //! }
 //!
 //! // Handle type mismatches
-//! match certificate.decrypt_kyc_attribute("plainAttribute", &account.keypair) {
+//! match certificate.decrypt_attribute("plainAttribute", &account.keypair) {
 //!     Ok(value) => println!("Decrypted: {:?}", value),
 //!     Err(KycCertificateError::SensitiveAttributeError { .. }) => {
 //!         println!("Tried to decrypt a plain text attribute");
@@ -151,8 +151,8 @@ pub use crate::generated::{Attribute as KycAttribute, AttributeValue as KycAttri
 /// let certificate = KycCertificate::new(x509_cert);
 ///
 /// // Check for KYC attributes
-/// if certificate.has_kyc_attributes() {
-///     println!("Found {} KYC attributes", certificate.kyc_attribute_count());
+/// if certificate.has_attributes() {
+///     println!("Found {} KYC attributes", certificate.attribute_count());
 /// } else {
 ///     println!("No KYC attributes found");
 /// }
@@ -184,7 +184,7 @@ impl KycCertificate {
 	///
 	/// # let x509_cert = doc_utils::create_test_x509_cert();
 	/// let certificate = KycCertificate::new(x509_cert);
-	/// assert!(!certificate.has_kyc_attributes()); // Test cert has no KYC data
+	/// assert!(!certificate.has_attributes()); // Test cert has no KYC data
 	/// ```
 	pub fn new(inner: X509Certificate) -> Self {
 		let kyc_attributes = Self::parse_kyc_attributes(&inner);
@@ -229,13 +229,13 @@ impl KycCertificate {
 	/// # let certificate = doc_utils::create_test_certificate_builder(&subject_account)
 	/// #     .with_sensitive_attribute("fullName", b"John Doe".to_vec().into_secret())
 	/// #     .build(&subject_account.keypair, &issuer_account.keypair)?;
-	/// let kyc_attributes = certificate.kyc_attributes();
+	/// let kyc_attributes = certificate.attributes();
 	/// for attr in kyc_attributes.iter() {
 	///     println!("OID: {}, Sensitive: {}", attr.name, attr.is_sensitive());
 	/// }
 	/// # Ok::<(), Box<dyn std::error::Error>>(())
 	/// ```
-	pub fn kyc_attributes(&self) -> &KycAttributes {
+	pub fn attributes(&self) -> &KycAttributes {
 		&self.kyc_attributes
 	}
 
@@ -264,14 +264,14 @@ impl KycCertificate {
 	/// # let certificate = doc_utils::create_test_certificate_builder(&account)
 	/// #     .with_sensitive_attribute("fullName", b"John Doe".to_vec().into_secret())
 	/// #     .build(&account.keypair, &account.keypair)?;
-	/// if let Some(name_attr) = certificate.get_kyc_attribute("fullName") {
+	/// if let Some(name_attr) = certificate.get_attribute("fullName") {
 	///     println!("Found name attribute: {}", name_attr.is_sensitive());
 	/// } else {
 	///     println!("Name attribute not found");
 	/// }
 	/// # Ok::<(), Box<dyn std::error::Error>>(())
 	/// ```
-	pub fn get_kyc_attribute<N: AsRef<str>>(&self, name: N) -> Option<&Attribute> {
+	pub fn get_attribute<N: AsRef<str>>(&self, name: N) -> Option<&Attribute> {
 		let name_str = name.as_ref();
 
 		// Try sensitive attribute OID first
@@ -319,18 +319,18 @@ impl KycCertificate {
 	/// #     .with_sensitive_attribute("email", b"john@example.com".to_vec().into_secret())
 	/// #     .build(&subject_account.keypair, &issuer_account.keypair)?;
 	/// // Note: Must use subject's keypair to decrypt, not issuer's
-	/// let email = certificate.decrypt_kyc_attribute("email", &subject_account.keypair)?;
+	/// let email = certificate.decrypt_attribute("email", &subject_account.keypair)?;
 	/// assert_eq!(email, b"john@example.com");
 	/// # Ok::<(), Box<dyn std::error::Error>>(())
 	/// ```
-	pub fn decrypt_kyc_attribute<K, N>(&self, name: N, keypair: &K) -> Result<Vec<u8>, KycCertificateError>
+	pub fn decrypt_attribute<K, N>(&self, name: N, keypair: &K) -> Result<Vec<u8>, KycCertificateError>
 	where
 		K: KeyPair,
 		N: AsRef<str>,
 	{
 		let name_str = name.as_ref();
 		let attribute = self
-			.get_kyc_attribute(name_str)
+			.get_attribute(name_str)
 			.ok_or_else(|| KycCertificateError::AttributeNotFound { name: name_str.to_string() })?;
 
 		assert_attribute_is_sensitive(attribute, name_str)?;
@@ -355,18 +355,14 @@ impl KycCertificate {
 	///
 	/// - `Ok(_)` - The proof for the attribute
 	/// - `Err(_)` - If the attribute is not found, not sensitive, or decryption fails
-	pub fn prove_kyc_attribute<K, N>(
-		&self,
-		name: N,
-		keypair: &K,
-	) -> Result<SensitiveAttributeProof, KycCertificateError>
+	pub fn prove_attribute<K, N>(&self, name: N, keypair: &K) -> Result<SensitiveAttributeProof, KycCertificateError>
 	where
 		K: KeyPair,
 		N: AsRef<str>,
 	{
 		let name_str = name.as_ref();
 		let attribute = self
-			.get_kyc_attribute(name_str)
+			.get_attribute(name_str)
 			.ok_or_else(|| KycCertificateError::AttributeNotFound { name: name_str.to_string() })?;
 
 		assert_attribute_is_sensitive(attribute, name_str)?;
@@ -377,7 +373,7 @@ impl KycCertificate {
 
 	/// Validate a `proof` for the sensitive KYC attribute `name` against this
 	/// certificate, using `keypair`'s public key. A holder generates the proof
-	/// via [`prove_kyc_attribute`](Self::prove_kyc_attribute); any verifier with
+	/// via [`prove_attribute`](Self::prove_attribute); any verifier with
 	/// the subject's public key can validate it here.
 	///
 	/// # Arguments
@@ -391,7 +387,7 @@ impl KycCertificate {
 	/// - `Ok(true)` - The proof attests to the attribute's committed value
 	/// - `Ok(false)` - The proof does not match
 	/// - `Err(_)` - If the attribute is not found, not sensitive, or validation fails
-	pub fn validate_kyc_attribute_proof<K, N>(
+	pub fn validate_attribute_proof<K, N>(
 		&self,
 		name: N,
 		keypair: &K,
@@ -403,7 +399,7 @@ impl KycCertificate {
 	{
 		let name_str = name.as_ref();
 		let attribute = self
-			.get_kyc_attribute(name_str)
+			.get_attribute(name_str)
 			.ok_or_else(|| KycCertificateError::AttributeNotFound { name: name_str.to_string() })?;
 
 		assert_attribute_is_sensitive(attribute, name_str)?;
@@ -436,14 +432,14 @@ impl KycCertificate {
 	/// # let certificate = doc_utils::create_test_certificate_builder(&account)
 	/// #     .with_plain_attribute("postalCode", "12345")
 	/// #     .build(&account.keypair, &account.keypair)?;
-	/// let postal_code = certificate.get_plain_kyc_attribute("postalCode")?;
+	/// let postal_code = certificate.get_plain_attribute("postalCode")?;
 	/// assert_eq!(postal_code, b"12345");
 	/// # Ok::<(), Box<dyn std::error::Error>>(())
 	/// ```
-	pub fn get_plain_kyc_attribute<N: AsRef<str>>(&self, name: N) -> Result<Vec<u8>, KycCertificateError> {
+	pub fn get_plain_attribute<N: AsRef<str>>(&self, name: N) -> Result<Vec<u8>, KycCertificateError> {
 		let name_str = name.as_ref();
 		let attribute = self
-			.get_kyc_attribute(name_str)
+			.get_attribute(name_str)
 			.ok_or_else(|| KycCertificateError::AttributeNotFound { name: name_str.to_string() })?;
 
 		assert_attribute_is_plain(attribute, name_str)?;
@@ -484,13 +480,13 @@ impl KycCertificate {
 	///
 	/// # let x509_cert = doc_utils::create_test_x509_cert();
 	/// let certificate = KycCertificate::new(x509_cert);
-	/// if certificate.has_kyc_attributes() {
+	/// if certificate.has_attributes() {
 	///     println!("KycCertificate has KYC data");
 	/// } else {
 	///     println!("Standard certificate without KYC data");
 	/// }
 	/// ```
-	pub fn has_kyc_attributes(&self) -> bool {
+	pub fn has_attributes(&self) -> bool {
 		!self.kyc_attributes.is_empty()
 	}
 
@@ -512,10 +508,10 @@ impl KycCertificate {
 	/// #     .with_plain_attribute("postalCode", "12345")
 	/// #     .with_sensitive_attribute("email", b"john@example.com".to_vec().into_secret())
 	/// #     .build(&account.keypair, &account.keypair)?;
-	/// assert_eq!(certificate.kyc_attribute_count(), 2);
+	/// assert_eq!(certificate.attribute_count(), 2);
 	/// # Ok::<(), Box<dyn std::error::Error>>(())
 	/// ```
-	pub fn kyc_attribute_count(&self) -> usize {
+	pub fn attribute_count(&self) -> usize {
 		self.kyc_attributes.count()
 	}
 }
@@ -551,9 +547,9 @@ mod tests {
 	#[test]
 	fn test_certificate_without_kyc_attributes() {
 		let cert = KycCertificate::new(create_test_x509_cert());
-		assert!(!cert.has_kyc_attributes());
-		assert_eq!(cert.kyc_attribute_count(), 0);
-		assert!(cert.get_kyc_attribute("fullName").is_none());
+		assert!(!cert.has_attributes());
+		assert_eq!(cert.attribute_count(), 0);
+		assert!(cert.get_attribute("fullName").is_none());
 
 		// Test KycCertificate.to_x509
 		let x509_cert = cert.to_x509();
@@ -563,14 +559,14 @@ mod tests {
 			.is_none());
 
 		// Test KycCertificate.kyc_attributes
-		let kyc_attrs = cert.kyc_attributes();
+		let kyc_attrs = cert.attributes();
 		assert_eq!(kyc_attrs.count(), 0);
 	}
 
 	#[test]
 	fn test_certificate_attribute_errors() {
 		let cert = KycCertificate::new(create_test_x509_cert());
-		let result = cert.get_plain_kyc_attribute("nonExistent");
+		let result = cert.get_plain_attribute("nonExistent");
 		assert!(result.is_err());
 		assert!(matches!(result.unwrap_err(), KycCertificateError::AttributeNotFound { .. }));
 	}
@@ -599,36 +595,36 @@ mod tests {
 		let certificate = builder
 			.build(&account.keypair, &account.keypair)
 			.expect("build certificate");
-		assert!(certificate.has_kyc_attributes());
-		assert_eq!(certificate.kyc_attribute_count(), 3);
+		assert!(certificate.has_attributes());
+		assert_eq!(certificate.attribute_count(), 3);
 
-		// Test KycCertificate.kyc_attributes() method when KYC attributes are present
-		let kyc_attrs = certificate.kyc_attributes();
+		// Test KycCertificate.attributes() method when KYC attributes are present
+		let kyc_attrs = certificate.attributes();
 		assert_eq!(kyc_attrs.count(), 3);
 
 		// Test both plain and sensitive attributes
 		for (name, value, sensitive) in TEST_ATTRIBUTES.iter() {
 			if *sensitive {
 				let decrypted = certificate
-					.decrypt_kyc_attribute(name, &account.keypair)
+					.decrypt_attribute(name, &account.keypair)
 					.expect("decrypt attribute");
 				assert_eq!(decrypted, value.as_bytes());
 			} else {
 				let plain = certificate
-					.get_plain_kyc_attribute(name)
+					.get_plain_attribute(name)
 					.expect("get plain attribute");
 				assert_eq!(plain, value.as_bytes());
 			}
 		}
 
 		// Test error cases
-		assert!(certificate.get_kyc_attribute("nonExistent").is_none());
+		assert!(certificate.get_attribute("nonExistent").is_none());
 
-		let decrypt_result = certificate.decrypt_kyc_attribute("nonExistent", &account.keypair);
+		let decrypt_result = certificate.decrypt_attribute("nonExistent", &account.keypair);
 		assert!(decrypt_result.is_err());
 		assert!(matches!(decrypt_result.unwrap_err(), KycCertificateError::AttributeNotFound { .. }));
 
-		let plain_result = certificate.get_plain_kyc_attribute("nonExistent");
+		let plain_result = certificate.get_plain_attribute("nonExistent");
 		assert!(plain_result.is_err());
 		assert!(matches!(plain_result.unwrap_err(), KycCertificateError::AttributeNotFound { .. }));
 	}
@@ -650,12 +646,12 @@ mod tests {
 		let certificate = builder
 			.build(&account.keypair, &account.keypair)
 			.expect("build certificate");
-		let result = certificate.decrypt_kyc_attribute("postalCode", &account.keypair);
+		let result = certificate.decrypt_attribute("postalCode", &account.keypair);
 		assert!(result.is_err());
 		assert!(matches!(result.unwrap_err(), KycCertificateError::SensitiveAttributeError { .. }));
 
 		// Test trying to get a sensitive attribute as plain
-		let result = certificate.get_plain_kyc_attribute("email");
+		let result = certificate.get_plain_attribute("email");
 		assert!(result.is_err());
 		assert!(matches!(result.unwrap_err(), KycCertificateError::SensitiveAttributeError { .. }));
 	}
@@ -677,26 +673,26 @@ mod tests {
 
 		// A proof for an attribute validates against that attribute.
 		let email_proof = certificate
-			.prove_kyc_attribute("email", &account.keypair)
+			.prove_attribute("email", &account.keypair)
 			.expect("prove email");
 		assert!(certificate
-			.validate_kyc_attribute_proof("email", &account.keypair, email_proof)
+			.validate_attribute_proof("email", &account.keypair, email_proof)
 			.expect("validate email proof"));
 
 		// A proof for a different attribute does not validate against this one.
 		let name_proof = certificate
-			.prove_kyc_attribute("fullName", &account.keypair)
+			.prove_attribute("fullName", &account.keypair)
 			.expect("prove full name");
 		assert!(!certificate
-			.validate_kyc_attribute_proof("email", &account.keypair, name_proof)
+			.validate_attribute_proof("email", &account.keypair, name_proof)
 			.expect("validate name proof"));
 
 		// A plain attribute cannot be proven.
-		let plain_result = certificate.prove_kyc_attribute("postalCode", &account.keypair);
+		let plain_result = certificate.prove_attribute("postalCode", &account.keypair);
 		assert!(matches!(plain_result.unwrap_err(), KycCertificateError::SensitiveAttributeError { .. }));
 
 		// An absent attribute has no proof.
-		let missing_result = certificate.prove_kyc_attribute("nonExistent", &account.keypair);
+		let missing_result = certificate.prove_attribute("nonExistent", &account.keypair);
 		assert!(matches!(missing_result.unwrap_err(), KycCertificateError::AttributeNotFound { .. }));
 	}
 
