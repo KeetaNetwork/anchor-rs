@@ -87,20 +87,11 @@ public sealed partial class WasmRuntime : IDisposable
 	// KYC exports (ABI marshaling only; JSON shaping lives in KycClient)
 	// -----------------------------------------------------------------------
 
-	internal byte[] KycProviders(int handle, string countriesJson)
-	{
-		var owned = new List<Argument>();
-		try
-		{
-			Argument countries = Write(countriesJson, owned);
-			return TakeBytes(Invoke<int, int, int, int>(
-				"keeta_kyc_providers", handle, countries.Pointer, countries.Length));
-		}
-		finally
-		{
-			FreeAll(owned);
-		}
-	}
+	internal byte[] KycProviders(int handle, string countriesJson) =>
+		WithHandleAndString("keeta_kyc_providers", handle, countriesJson);
+
+	internal byte[] KycGetAllCertificates(int handle, string account) =>
+		WithHandleAndString("keeta_kyc_get_all_certificates", handle, account);
 
 	internal byte[] KycCreateVerification(int handle, string providerJson, string countriesJson, string redirect)
 	{
@@ -130,6 +121,22 @@ public sealed partial class WasmRuntime : IDisposable
 		WithProviderAndId("keeta_kyc_get_verification_status", handle, providerJson, id);
 
 	internal void KycFree(int handle) => Free("keeta_kyc_free", handle);
+
+	/// <summary>Drive an export taking a single string argument.</summary>
+	private byte[] WithHandleAndString(string export, int handle, string value)
+	{
+		var owned = new List<Argument>();
+		try
+		{
+			Argument argument = Write(value, owned);
+			return TakeBytes(Invoke<int, int, int, int>(
+				export, handle, argument.Pointer, argument.Length));
+		}
+		finally
+		{
+			FreeAll(owned);
+		}
+	}
 
 	/// <summary>Drive an export taking a provider and a verification id.</summary>
 	private byte[] WithProviderAndId(string export, int handle, string providerJson, string id)

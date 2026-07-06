@@ -14,6 +14,7 @@ use keetanetwork_account::GenericAccount;
 use keetanetwork_anchor_client::{
 	AnchorContext, AnchorOutcome, CountryCode, KeetaClient, KycClient, ReqwestTransport, Resolver, SupportedCountries,
 };
+use keetanetwork_x509::certificates::Certificate;
 use serde_json::Value;
 
 type TestResult = Result<(), Box<dyn Error>>;
@@ -98,6 +99,42 @@ async fn kyc_client_runs_the_full_verification_path() -> TestResult {
 		.ready()
 		.ok_or(HarnessError::MissingField { field: "issued chain" })?;
 	assert_eq!(chain.results.len(), 2, "the issued verification must serve its leaf and ca chain");
+
+	harness.shutdown()?;
+	Ok(())
+}
+
+#[tokio::test]
+async fn published_certificates_read_back_through_the_service_client() -> TestResult {
+	let mut harness = KycHarness::start()?;
+	let anchor = harness.start_kyc_anchor(None, true)?;
+	let chain = harness.publish_certificate_chain()?;
+	let client = client_for(&chain.api, &anchor.root)?;
+
+	let records = client.get_all_certificates(&chain.account).await?;
+	assert_eq!(records.len(), 2, "both published records must read back through the service client");
+
+	let ca: Certificate = chain.ca.parse()?;
+	let recorded_bundles: Vec<Vec<Certificate>> = records
+		.iter()
+		.map(|record| {
+			record
+				.intermediates
+				.iter()
+				.map(|pem| pem.parse::<Certificate>())
+				.collect::<Result<_, _>>()
+		})
+		.collect::<Result<_, _>>()?;
+	assert!(
+		recorded_bundles
+			.iter()
+			.any(|bundle| bundle.as_slice() == [ca.clone()]),
+		"the recorded CA bundle must survive the round trip"
+	);
+	assert!(
+		recorded_bundles.iter().any(Vec::is_empty),
+		"a record published without intermediates must decode as empty"
+	);
 
 	harness.shutdown()?;
 	Ok(())

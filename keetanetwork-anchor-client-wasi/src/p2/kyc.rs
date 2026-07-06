@@ -69,6 +69,16 @@ impl GuestClient for KycSession {
 		let outcome = run(async { self.inner.get_verification_status(&provider, &id).await })?;
 		Ok(outcome.into())
 	}
+
+	fn get_all_certificates(&self, account: String) -> Result<Vec<CertificateGroup>, CodedError> {
+		let records = run(async { self.inner.get_all_certificates(&account).await })?;
+		let groups = records
+			.into_iter()
+			.map(|record| CertificateGroup { certificate: record.certificate, intermediates: record.intermediates })
+			.collect();
+
+		Ok(groups)
+	}
 }
 
 /// Build a networked KYC client signed by `signer`: a `wasi:http` transport

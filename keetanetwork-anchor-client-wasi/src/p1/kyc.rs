@@ -13,8 +13,8 @@ use std::sync::Arc;
 use keetanetwork_account::GenericAccount;
 use keetanetwork_anchor_bindings::error::CodedError;
 use keetanetwork_anchor_client::{
-	AnchorClientError, AnchorContext, AnchorOutcome, Certificate, Certificates, CountryCode, ExpectedCost, KycClient,
-	KycOperations, KycProvider, Resolver, Verification, VerificationStatus,
+	AccountCertificate, AnchorClientError, AnchorContext, AnchorOutcome, Certificate, Certificates, CountryCode,
+	ExpectedCost, KycClient, KycOperations, KycProvider, Resolver, Verification, VerificationStatus,
 };
 use keetanetwork_client_wasi::{account, bytes_result, string_in};
 use serde::{Deserialize, Serialize};
@@ -153,6 +153,22 @@ pub unsafe extern "C" fn keeta_kyc_get_verification_status(
 	bytes_result(get_verification_status(handle, &provider, &id))
 }
 
+/// Every certificate `account` has published on-chain, each with the
+/// intermediates recorded alongside it, as a JSON array of certificate groups;
+/// returns a bytes handle (`0` on error).
+///
+/// # Safety
+///
+/// See [`keeta_kyc_with_account`].
+#[no_mangle]
+pub unsafe extern "C" fn keeta_kyc_get_all_certificates(handle: i32, account_ptr: i32, account_len: i32) -> i32 {
+	let Some(account) = (unsafe { string_in(account_ptr, account_len) }) else {
+		return 0;
+	};
+
+	bytes_result(get_all_certificates(handle, &account))
+}
+
 /// Release a client handle, ignoring an unknown one.
 #[no_mangle]
 pub extern "C" fn keeta_kyc_free(handle: i32) {
@@ -205,6 +221,13 @@ fn get_verification_status(handle: i32, provider_json: &str, id: &str) -> Result
 		with_session(handle, |client| block_on(async { client.get_verification_status(&provider, id).await }))?;
 
 	encode(&StatusOutcomeDto::from(outcome))
+}
+
+fn get_all_certificates(handle: i32, account: &str) -> Result<Vec<u8>, CodedError> {
+	let records = with_session(handle, |client| block_on(async { client.get_all_certificates(account).await }))?;
+	let payload: Vec<CertificateDto> = records.into_iter().map(CertificateDto::from).collect();
+
+	encode(&payload)
 }
 
 // ---------------------------------------------------------------------------
@@ -457,6 +480,12 @@ impl From<VerificationStatus> for StatusDto {
 impl From<Certificate> for CertificateDto {
 	fn from(certificate: Certificate) -> Self {
 		Self { certificate: certificate.certificate, intermediates: certificate.intermediates }
+	}
+}
+
+impl From<AccountCertificate> for CertificateDto {
+	fn from(record: AccountCertificate) -> Self {
+		Self { certificate: record.certificate, intermediates: record.intermediates }
 	}
 }
 

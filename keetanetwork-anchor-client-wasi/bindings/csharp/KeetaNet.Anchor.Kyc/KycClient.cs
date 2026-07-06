@@ -72,6 +72,16 @@ public sealed class KycClient : IDisposable
 			payload, "certificates", ready => new CertificatesOutcome(ready, null), retry => new CertificatesOutcome(null, retry));
 	}
 
+	/// <summary>
+	/// Every certificate <paramref name="account"/> has published on-chain, each
+	/// with the intermediates recorded alongside it (both PEM).
+	/// </summary>
+	public IReadOnlyList<Certificate> GetAllCertificates(string account)
+	{
+		byte[] payload = _runtime.KycGetAllCertificates(_handle, account);
+		return JsonSerializer.Deserialize<List<Certificate>>(payload, Json) ?? new List<Certificate>();
+	}
+
 	/// <summary>Parse <paramref name="provider"/>'s advertised issuer CA certificate.</summary>
 	/// <remarks>Use it as a trusted root when verifying an issued <see cref="Crypto.KycCertificate"/>.</remarks>
 	public Crypto.Certificate ProviderCertificate(KycProvider provider) =>

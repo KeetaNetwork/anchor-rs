@@ -238,6 +238,7 @@ interface kyc {
 		verification-outcome,
 		status-outcome,
 		certificates-outcome,
+		certificate-group,
 	};
 
 	/// A KYC client bound to a signer and a metadata root.
@@ -255,6 +256,10 @@ interface kyc {
 		get-certificates: func(provider: kyc-provider, id: string) -> result<certificates-outcome, coded-error>;
 		/// Read the status of verification `id`.
 		get-verification-status: func(provider: kyc-provider, id: string) -> result<status-outcome, coded-error>;
+		/// Every certificate `account` has published on-chain, each with the
+		/// intermediates recorded alongside it (the reference
+		/// `getAllCertificates`).
+		get-all-certificates: func(account: string) -> result<list<certificate-group>, coded-error>;
 	}
 }
 

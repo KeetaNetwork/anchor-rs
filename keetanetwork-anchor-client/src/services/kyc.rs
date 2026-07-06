@@ -123,7 +123,7 @@ mod client {
 
 	use super::{Certificates, KycQuery, SupportedCountries, Verification, VerificationStatus};
 	use crate::error::AnchorClientError;
-	use crate::resolver::{CountryCode, KycProvider};
+	use crate::resolver::{AccountCertificate, CountryCode, KycProvider};
 	use crate::service::{AnchorContext, AnchorOutcome, Auth, BodyEnvelope, Call, Endpoint, Method};
 
 	/// A KYC anchor client over a shared [`AnchorContext`].
@@ -154,6 +154,23 @@ mod client {
 				.lookup::<KycQuery>(countries)
 				.await?;
 			Ok(providers)
+		}
+
+		/// Every certificate `account` has published on-chain, each with the
+		/// intermediates recorded alongside it (both PEM), read through the
+		/// resolver's node client (the reference `getAllCertificates`).
+		///
+		/// # Errors
+		///
+		/// Returns [`AnchorClientError::Resolver`] when the ledger read fails.
+		pub async fn get_all_certificates(&self, account: &str) -> Result<Vec<AccountCertificate>, AnchorClientError> {
+			let certificates = self
+				.context
+				.resolver()
+				.get_all_certificates(account)
+				.await?;
+
+			Ok(certificates)
 		}
 
 		/// The countries any provider can validate, folded across every root
