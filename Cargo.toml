@@ -9,7 +9,7 @@ members = [
 exclude = ["keetanetwork-anchor-client-wasi/host-tests"]
 
 [workspace.package]
-version = "0.1.2"
+version = "0.1.3"
 edition = "2021"
 authors = ["Tanveer Wahid <twahid@keeta.com>"]
 license-file = "LICENSE"
@@ -60,22 +60,22 @@ version = "0.3.2"
 default-features = false
 
 [workspace.dependencies.keetanetwork-anchor]
-version = "0.1.2"
+version = "0.1.3"
 path = "keetanetwork-anchor"
 default-features = false
 
 [workspace.dependencies.keetanetwork-anchor-bindings]
-version = "0.1.2"
+version = "0.1.3"
 path = "keetanetwork-anchor-bindings"
 default-features = false
 
 [workspace.dependencies.keetanetwork-anchor-client]
-version = "0.1.2"
+version = "0.1.3"
 path = "keetanetwork-anchor-client"
 default-features = false
 
 [workspace.dependencies.keetanetwork-anchor-client-wasi]
-version = "0.1.2"
+version = "0.1.3"
 path = "keetanetwork-anchor-client-wasi"
 default-features = false
 
