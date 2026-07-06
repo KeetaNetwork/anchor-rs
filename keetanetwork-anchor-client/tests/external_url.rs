@@ -1,28 +1,29 @@
-//! `ExternalURL` indirection resolution, exercised hermetically.
+//! `ExternalURL` indirection resolution against live on-chain roots.
+
+mod harness;
 
 use std::collections::BTreeMap;
 use std::error::Error;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use base64::engine::general_purpose::STANDARD;
-use base64::Engine;
+use harness::KycHarness;
 use keetanetwork_anchor_client::{
-	AnchorHttpTransport, HttpResponse, Resolver, ResolverError, ServiceQuery, TransportError,
+	AnchorHttpTransport, HttpResponse, KeetaClient, Resolver, ResolverError, ServiceQuery, TransportError,
 };
 use serde_json::{json, Value};
 
 type TestResult = Result<(), Box<dyn Error>>;
 
-/// The node API the transport answers account reads under.
-const NODE_API: &str = "http://node.test/api";
+/// The web host the transport answers external document reads under.
+const DOCS_HOST: &str = "http://docs.test";
 
 /// The `ExternalURL` discriminator the reference and resolver agree on.
 const EXTERNAL_URL_MARKER: &str = "2b828e33-2692-46e9-817e-9b93d63f28fd";
 
-/// A `keetanet://<account>/metadata` reference string.
-fn keetanet(account: &str) -> String {
-	format!("keetanet://{account}/metadata")
+/// An external web document URL under the test host.
+fn doc_url(name: &str) -> String {
+	format!("{DOCS_HOST}/{name}")
 }
 
 /// An `ExternalURL` indirection node pointing at `url`.
@@ -48,49 +49,37 @@ fn root_with_tampered_kyc(entry_id: &str) -> Value {
 	json!({ "version": 1, "currencyMap": {}, "services": { "kyc": { entry_id: entry } } })
 }
 
-/// One `(account, document)` entry for the in-memory node.
-fn published(account: &str, document: Value) -> (String, Value) {
-	(account.to_string(), document)
-}
-
-/// Account strings as owned roots, in priority order.
-fn roots(accounts: &[&str]) -> Vec<String> {
-	accounts.iter().map(|account| account.to_string()).collect()
-}
-
-/// An in-memory node: each account maps to the JSON document its on-chain
-/// `info.metadata` would decode to.
+/// An in-memory web host serving external metadata documents: each name under
+/// [`DOCS_HOST`] maps to the JSON document its URL returns.
 #[derive(Debug, Default)]
-struct MapTransport {
+struct DocHost {
 	documents: BTreeMap<String, Value>,
 }
 
-impl MapTransport {
-	/// A transport serving `documents`, keyed by account string.
-	fn new(documents: impl IntoIterator<Item = (String, Value)>) -> Self {
-		Self { documents: documents.into_iter().collect() }
-	}
-
-	/// The account segment of a `.../node/ledger/account/<account>` URL.
-	fn account_of(url: &str) -> Option<&str> {
-		url.rsplit('/').next()
+impl DocHost {
+	/// A host serving `documents`, keyed by URL name.
+	fn new(documents: impl IntoIterator<Item = (&'static str, Value)>) -> Self {
+		Self {
+			documents: documents
+				.into_iter()
+				.map(|(name, document)| (name.to_string(), document))
+				.collect(),
+		}
 	}
 }
 
 #[async_trait]
-impl AnchorHttpTransport for MapTransport {
+impl AnchorHttpTransport for DocHost {
 	async fn get(&self, url: &str) -> Result<HttpResponse, TransportError> {
-		let Some(account) = Self::account_of(url) else {
-			return Ok(HttpResponse::new(404, Vec::new()));
-		};
+		let document = url
+			.strip_prefix(DOCS_HOST)
+			.and_then(|path| path.strip_prefix('/'))
+			.and_then(|name| self.documents.get(name));
 
-		let Some(document) = self.documents.get(account) else {
-			return Ok(HttpResponse::new(404, Vec::new()));
-		};
-
-		let metadata = STANDARD.encode(serde_json::to_vec(document).expect("document serializes"));
-		let body = json!({ "info": { "metadata": metadata } });
-		Ok(HttpResponse::new(200, serde_json::to_vec(&body).expect("response body serializes")))
+		match document {
+			Some(document) => Ok(HttpResponse::new(200, serde_json::to_vec(document).expect("document serializes"))),
+			None => Ok(HttpResponse::new(404, Vec::new())),
+		}
 	}
 
 	async fn post(&self, _url: &str, _body: &[u8]) -> Result<HttpResponse, TransportError> {
@@ -111,25 +100,44 @@ impl ServiceQuery for EntryIds {
 	}
 }
 
-/// Resolve every `kyc` entry id from `documents`, rooted at `roots`.
-async fn resolve_ids(
-	documents: impl IntoIterator<Item = (String, Value)>,
-	roots: Vec<String>,
-) -> Result<Vec<String>, ResolverError> {
-	let transport = Arc::new(MapTransport::new(documents));
-	let resolver = Resolver::new(transport, NODE_API, roots);
+/// A running harness anchor plus the ids resolved from live roots.
+///
+/// Publishes each document in `roots` on-chain (in priority order), serves
+/// `docs` as the external web host, and resolves every `kyc` entry id.
+fn resolve_ids(
+	roots: &[Value],
+	docs: impl IntoIterator<Item = (&'static str, Value)>,
+) -> Result<Result<Vec<String>, ResolverError>, Box<dyn Error>> {
+	let mut kyc = KycHarness::start()?;
+	let _anchor = kyc.start_kyc_anchor(None, true)?;
 
-	resolver.lookup::<EntryIds>(&()).await
+	let mut published = Vec::new();
+	let mut api = String::new();
+	for document in roots {
+		let root = kyc.publish_metadata(document)?;
+		api = root.api;
+		published.push(root.root);
+	}
+
+	let client = KeetaClient::new(&api);
+	let host = Arc::new(DocHost::new(docs));
+	let resolver = Resolver::new(client, host, published);
+	let runtime = tokio::runtime::Builder::new_current_thread()
+		.enable_all()
+		.build()?;
+	let ids = runtime.block_on(resolver.lookup::<EntryIds>(&()));
+
+	kyc.shutdown()?;
+	Ok(ids)
 }
 
-#[tokio::test]
-async fn a_root_level_external_url_is_followed() -> TestResult {
+#[test]
+fn a_root_level_external_url_is_followed() -> TestResult {
 	// The root account holds nothing but an indirection to the real document.
-	let root = published("root", external(&keetanet("leaf")));
-	let leaf = published("leaf", root_with_kyc("prov_leaf"));
-	let documents = [root, leaf];
+	let roots = [external(&doc_url("leaf"))];
+	let docs = [("leaf", root_with_kyc("prov_leaf"))];
 
-	let providers = resolve_ids(documents, roots(&["root"])).await?;
+	let providers = resolve_ids(&roots, docs)??;
 	assert_eq!(
 		providers,
 		vec!["prov_leaf".to_string()],
@@ -138,19 +146,17 @@ async fn a_root_level_external_url_is_followed() -> TestResult {
 	Ok(())
 }
 
-#[tokio::test]
-async fn a_nested_external_url_is_followed() -> TestResult {
+#[test]
+fn a_nested_external_url_is_followed() -> TestResult {
 	// The indirection sits deep in the tree: services.kyc is the external node.
-	let root_document = json!({
+	let roots = [json!({
 		"version": 1,
 		"currencyMap": {},
-		"services": { "kyc": external(&keetanet("kyc_map")) },
-	});
-	let root = published("root", root_document);
-	let kyc_map = published("kyc_map", json!({ "prov_nested": {} }));
-	let documents = [root, kyc_map];
+		"services": { "kyc": external(&doc_url("kyc_map")) },
+	})];
+	let docs = [("kyc_map", json!({ "prov_nested": {} }))];
 
-	let providers = resolve_ids(documents, roots(&["root"])).await?;
+	let providers = resolve_ids(&roots, docs)??;
 	assert_eq!(
 		providers,
 		vec!["prov_nested".to_string()],
@@ -159,56 +165,81 @@ async fn a_nested_external_url_is_followed() -> TestResult {
 	Ok(())
 }
 
-#[tokio::test]
-async fn a_chain_of_external_urls_is_followed() -> TestResult {
+#[test]
+fn a_chain_of_external_urls_is_followed() -> TestResult {
 	// root -> mid -> leaf: the replacement of each external node is itself
 	// re-examined, so the chain must collapse to the final document.
-	let root = published("root", external(&keetanet("mid")));
-	let mid = published("mid", external(&keetanet("leaf")));
-	let leaf = published("leaf", root_with_kyc("prov_chain"));
-	let documents = [root, mid, leaf];
+	let roots = [external(&doc_url("mid"))];
+	let docs = [("mid", external(&doc_url("leaf"))), ("leaf", root_with_kyc("prov_chain"))];
 
-	let providers = resolve_ids(documents, roots(&["root"])).await?;
+	let providers = resolve_ids(&roots, docs)??;
 	assert_eq!(providers, vec!["prov_chain".to_string()], "a chain of ExternalURLs must resolve to the final document");
 	Ok(())
 }
 
-#[tokio::test]
-async fn a_self_referential_external_url_resolves_to_null() {
-	// root points at itself: the cycle must collapse to null, leaving no valid
-	// root document and therefore no metadata at all.
-	let root = published("root", external(&keetanet("root")));
-	let documents = [root];
+#[test]
+fn a_keetanet_external_url_resolves_through_the_ledger() -> TestResult {
+	// The external reference addresses another on-chain account, so the hop is
+	// resolved through the live node client like the root itself.
+	let mut kyc = KycHarness::start()?;
+	let _anchor = kyc.start_kyc_anchor(None, true)?;
 
-	let outcome = resolve_ids(documents, roots(&["root"])).await;
-	assert!(
-		matches!(outcome, Err(ResolverError::NoRootMetadata)),
-		"a self-referential root must yield no valid metadata"
+	let leaf = kyc.publish_metadata(&root_with_kyc("prov_ledger"))?;
+	let root = kyc.publish_metadata(&external(&format!("keetanet://{}/metadata", leaf.root)))?;
+
+	let client = KeetaClient::new(&root.api);
+	let host = Arc::new(DocHost::default());
+	let resolver = Resolver::new(client, host, [root.root]);
+	let runtime = tokio::runtime::Builder::new_current_thread()
+		.enable_all()
+		.build()?;
+	let providers = runtime.block_on(resolver.lookup::<EntryIds>(&()))?;
+
+	assert_eq!(
+		providers,
+		vec!["prov_ledger".to_string()],
+		"a keetanet ExternalURL must resolve through the live ledger"
 	);
+
+	kyc.shutdown()?;
+	Ok(())
 }
 
-#[tokio::test]
-async fn a_mutual_external_url_cycle_resolves_to_null() {
-	// root -> other -> root: the second visit to a URL already on the branch
-	// must break the loop, again leaving no valid root document.
-	let root = published("root", external(&keetanet("other")));
-	let other = published("other", external(&keetanet("root")));
-	let documents = [root, other];
+#[test]
+fn a_self_referential_external_url_resolves_to_null() -> TestResult {
+	// The external document points at itself: the cycle must collapse to null,
+	// leaving no valid root document and therefore no metadata at all.
+	let roots = [external(&doc_url("loop"))];
+	let docs = [("loop", external(&doc_url("loop")))];
 
-	let outcome = resolve_ids(documents, roots(&["root"])).await;
+	let outcome = resolve_ids(&roots, docs)?;
+	assert!(
+		matches!(outcome, Err(ResolverError::NoRootMetadata)),
+		"a self-referential ExternalURL must yield no valid metadata"
+	);
+	Ok(())
+}
+
+#[test]
+fn a_mutual_external_url_cycle_resolves_to_null() -> TestResult {
+	// a -> b -> a: the second visit to a URL already on the branch must break
+	// the loop, again leaving no valid root document.
+	let roots = [external(&doc_url("a"))];
+	let docs = [("a", external(&doc_url("b"))), ("b", external(&doc_url("a")))];
+
+	let outcome = resolve_ids(&roots, docs)?;
 	assert!(
 		matches!(outcome, Err(ResolverError::NoRootMetadata)),
 		"a mutual ExternalURL cycle must yield no valid metadata"
 	);
+	Ok(())
 }
 
-#[tokio::test]
-async fn a_tampered_higher_priority_entry_shadows_and_drops_the_lower() -> TestResult {
-	let high = published("high", root_with_tampered_kyc("prov"));
-	let low = published("low", root_with_kyc("prov"));
-	let documents = [high, low];
+#[test]
+fn a_tampered_higher_priority_entry_shadows_and_drops_the_lower() -> TestResult {
+	let roots = [root_with_tampered_kyc("prov"), root_with_kyc("prov")];
 
-	let providers = resolve_ids(documents, roots(&["high", "low"])).await?;
+	let providers = resolve_ids(&roots, [])??;
 	assert!(
 		providers.is_empty(),
 		"a shadowed id whose winning entry fails verification must not fall back to a lower root"
@@ -216,14 +247,12 @@ async fn a_tampered_higher_priority_entry_shadows_and_drops_the_lower() -> TestR
 	Ok(())
 }
 
-#[tokio::test]
-async fn distinct_entries_across_roots_are_in_union() -> TestResult {
+#[test]
+fn distinct_entries_across_roots_are_in_union() -> TestResult {
 	// Different ids from each root coexist.
-	let high = published("high", root_with_kyc("prov_high"));
-	let low = published("low", root_with_kyc("prov_low"));
-	let documents = [high, low];
+	let roots = [root_with_kyc("prov_high"), root_with_kyc("prov_low")];
 
-	let providers = resolve_ids(documents, roots(&["high", "low"])).await?;
+	let providers = resolve_ids(&roots, [])??;
 	assert_eq!(
 		providers,
 		vec!["prov_high".to_string(), "prov_low".to_string()],

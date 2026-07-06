@@ -78,10 +78,12 @@ impl TransferRequest {
 	pub fn transport_fields(&self) -> Fields {
 		let mut from = Map::new();
 		from.insert("location".into(), Value::String(self.from.location.clone()));
+
 		insert_some(&mut from, "source", self.from.source.clone());
 
 		let mut to = Map::new();
 		to.insert("location".into(), Value::String(self.to.location.clone()));
+
 		insert_some(&mut to, "recipient", self.to.recipient.clone());
 		insert_some(&mut to, "depositMessage", self.to.deposit_message.clone().map(Value::String));
 
@@ -95,10 +97,12 @@ impl TransferRequest {
 				.collect();
 			fields.insert("allowedRails".into(), Value::Array(rails));
 		}
+
 		fields.insert("value".into(), Value::String(self.value.clone()));
 		fields.insert("from".into(), Value::Object(from));
 		fields.insert("to".into(), Value::Object(to));
 		fields.insert("asset".into(), self.asset.to_canonical_value());
+
 		fields
 	}
 
@@ -106,6 +110,7 @@ impl TransferRequest {
 	pub fn signable(&self) -> Result<Payload, SigningError> {
 		let mut to = Map::new();
 		to.insert("location".into(), Value::String(self.to.location.clone()));
+
 		insert_some(&mut to, "recipient", self.to.recipient.clone());
 		insert_some(&mut to, "depositMessage", self.to.deposit_message.clone().map(Value::String));
 
@@ -115,6 +120,7 @@ impl TransferRequest {
 			"to": Value::Object(to),
 			"value": self.value,
 		});
+
 		object_to_signable(&value)
 	}
 }
@@ -144,14 +150,14 @@ impl ExecuteTransferRequest {
 
 /// A request to open a persistent-forwarding template session.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct InitiateForwardingTemplateRequest {
+pub struct InitiatePersistentForwardingTemplateRequest {
 	/// The asset (or pair) the template forwards.
 	pub asset: AssetOrPair,
 	/// The canonical location the template forwards to.
 	pub location: String,
 }
 
-impl InitiateForwardingTemplateRequest {
+impl InitiatePersistentForwardingTemplateRequest {
 	/// The transport fields for `initiatePersistentForwardingTemplate`.
 	pub fn transport_fields(&self) -> Fields {
 		let mut fields = Map::new();
@@ -172,7 +178,7 @@ impl InitiateForwardingTemplateRequest {
 /// A request to create a persistent-forwarding template, either directly from a
 /// resolved address or by completing a prior session.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum CreateForwardingTemplateRequest {
+pub enum CreatePersistentForwardingTemplateRequest {
 	/// Create directly from a resolved destination address.
 	Direct {
 		/// The asset (or pair) the template forwards.
@@ -191,7 +197,7 @@ pub enum CreateForwardingTemplateRequest {
 	},
 }
 
-impl CreateForwardingTemplateRequest {
+impl CreatePersistentForwardingTemplateRequest {
 	/// The transport fields for `createPersistentForwardingTemplate`.
 	pub fn transport_fields(&self) -> Fields {
 		let mut fields = Map::new();
@@ -206,6 +212,7 @@ impl CreateForwardingTemplateRequest {
 				fields.insert("data".into(), data.clone());
 			}
 		}
+
 		fields
 	}
 
@@ -249,7 +256,7 @@ pub enum ForwardingDestination {
 
 /// A request to create a persistent-forwarding address.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CreateForwardingAddressRequest {
+pub struct CreatePersistentForwardingAddressRequest {
 	/// The canonical source location.
 	pub source_location: String,
 	/// The asset (or pair) forwarded.
@@ -262,14 +269,16 @@ pub struct CreateForwardingAddressRequest {
 	pub destination: ForwardingDestination,
 }
 
-impl CreateForwardingAddressRequest {
+impl CreatePersistentForwardingAddressRequest {
 	/// The shared base fields, before the destination discriminant.
 	fn base(&self) -> Fields {
 		let mut fields = Map::new();
 		fields.insert("sourceLocation".into(), Value::String(self.source_location.clone()));
 		fields.insert("asset".into(), self.asset.to_canonical_value());
+
 		insert_some(&mut fields, "incomingRail", self.incoming_rail.clone().map(Value::String));
 		insert_some(&mut fields, "outgoingRail", self.outgoing_rail.clone().map(Value::String));
+
 		fields
 	}
 
@@ -288,6 +297,7 @@ impl CreateForwardingAddressRequest {
 				);
 			}
 		}
+
 		fields
 	}
 
@@ -296,8 +306,10 @@ impl CreateForwardingAddressRequest {
 		let mut map = Map::new();
 		map.insert("sourceLocation".into(), Value::String(self.source_location.clone()));
 		map.insert("asset".into(), self.asset.to_canonical_value());
+
 		insert_some(&mut map, "outgoingRail", self.outgoing_rail.clone().map(Value::String));
 		insert_some(&mut map, "incomingRail", self.incoming_rail.clone().map(Value::String));
+
 		match &self.destination {
 			ForwardingDestination::Address { location, address } => {
 				map.insert("destinationLocation".into(), Value::String(location.clone()));
@@ -307,28 +319,31 @@ impl CreateForwardingAddressRequest {
 				map.insert("persistentAddressTemplateId".into(), Value::String(persistent_address_template_id.clone()));
 			}
 		}
+
 		object_to_signable(&Value::Object(map))
 	}
 }
 
 /// A request to list persistent-forwarding templates.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct ListForwardingTemplatesRequest {
+pub struct ListForwardingAddressTemplatesRequest {
 	/// Filter to these canonical assets, when set.
 	pub asset: Option<Vec<String>>,
 	/// Filter to these canonical locations, when set.
 	pub location: Option<Vec<String>>,
 }
 
-impl ListForwardingTemplatesRequest {
+impl ListForwardingAddressTemplatesRequest {
 	/// The transport fields for `listPersistentForwardingTemplate`.
 	///
 	/// Matches the reference `serializeRequest`, which carries only the asset
 	/// and location filters (pagination is not serialized).
 	pub fn transport_fields(&self) -> Fields {
 		let mut fields = Map::new();
+
 		insert_some(&mut fields, "asset", self.asset.clone().map(string_array));
 		insert_some(&mut fields, "location", self.location.clone().map(string_array));
+
 		fields
 	}
 
@@ -391,7 +406,9 @@ impl ListForwardingAddressesRequest {
 				.collect();
 			fields.insert("search".into(), Value::Array(items));
 		}
+
 		insert_some(&mut fields, "pagination", self.pagination.to_value());
+
 		fields
 	}
 
@@ -477,7 +494,9 @@ impl ListTransactionsRequest {
 	/// The transport fields for `listTransactions`.
 	pub fn transport_fields(&self) -> Fields {
 		let mut fields = Map::new();
+
 		insert_some(&mut fields, "pagination", self.pagination.to_value());
+
 		if let Some(addresses) = &self.persistent_addresses {
 			let items = addresses
 				.iter()
@@ -485,8 +504,10 @@ impl ListTransactionsRequest {
 				.collect();
 			fields.insert("persistentAddresses".into(), Value::Array(items));
 		}
+
 		insert_some(&mut fields, "from", self.from.as_ref().map(TransactionEndpointFilter::to_value));
 		insert_some(&mut fields, "to", self.to.as_ref().map(TransactionEndpointFilter::to_value));
+
 		if let Some(transactions) = &self.transactions {
 			let items = transactions
 				.iter()
@@ -494,6 +515,7 @@ impl ListTransactionsRequest {
 				.collect();
 			fields.insert("transactions".into(), Value::Array(items));
 		}
+
 		fields
 	}
 
@@ -517,7 +539,9 @@ impl ShareKycRequest {
 	pub fn transport_fields(&self) -> Fields {
 		let mut fields = Map::new();
 		fields.insert("attributes".into(), Value::String(self.attributes.clone()));
+
 		insert_some(&mut fields, "tosAgreement", self.tos_agreement.clone());
+
 		fields
 	}
 

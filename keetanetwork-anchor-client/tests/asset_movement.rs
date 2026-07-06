@@ -15,11 +15,12 @@ use harness::{AssetAnchor, AssetHarness, HarnessError};
 use keetanetwork_account::GenericAccount;
 use keetanetwork_anchor_client::{
 	parse_total, AccountStatus, AnchorClientError, AnchorContext, AssetMovementClient, AssetMovementProvider,
-	AssetOrPair, CreateForwardingAddressRequest, CreateForwardingTemplateRequest, ExecuteTransferRequest,
-	ForwardingAddressFilter, ForwardingDestination, InitiateForwardingTemplateRequest, ListForwardingAddressesRequest,
-	ListForwardingTemplatesRequest, ListTransactionsRequest, Pagination, PersistentAddressFilter, PollOptions,
-	ProviderSearch, ReqwestTransport, Resolver, ShareKycRequest, TransactionEndpointFilter, TransferDestination,
-	TransferRequest, TransferSource,
+	AssetOrPair, AwaitOptions, ClientRenderableContent, CreatePersistentForwardingAddressRequest,
+	CreatePersistentForwardingTemplateRequest, Disclaimer, DisclaimerPurpose, ExecuteTransferRequest,
+	ForwardingAddressFilter, ForwardingDestination, InitiatePersistentForwardingTemplateRequest, KeetaClient,
+	ListForwardingAddressTemplatesRequest, ListForwardingAddressesRequest, ListTransactionsRequest, Pagination,
+	PersistentAddressFilter, ProviderSearch, ReqwestTransport, Resolver, ShareKycRequest, TokenLocationMetadata,
+	TransactionEndpointFilter, TransferDestination, TransferRequest, TransferSource,
 };
 use serde_json::{json, Value};
 
@@ -27,17 +28,20 @@ type TestResult = Result<(), Box<dyn Error>>;
 
 /// The canonical bank source location the pull fixtures use.
 const BANK_LOCATION: &str = "bank-account:us";
+/// The EVM-side asset id the harness publishes location metadata for.
+const EVM_ASSET: &str = "evm:0xc0634090F2Fe6c6d75e61Be2b949464aBB498973";
 /// The canonical EVM source location the push fixtures use.
 const EVM_LOCATION: &str = "chain:evm:100";
 /// The canonical Keeta destination location the fixtures use.
 const KEETA_LOCATION: &str = "chain:keeta:100";
 
 /// An asset-movement client whose resolver reads the `root` account's on-chain
-/// metadata through the node API at `api`, and whose caller signs with a
+/// metadata through the node client at `api`, and whose caller signs with a
 /// deterministic account over the live reqwest transport.
 fn client_for(api: &str, root: &str) -> Result<AssetMovementClient, Box<dyn Error>> {
 	let transport = Arc::new(ReqwestTransport::try_default()?);
-	let resolver = Resolver::new(transport.clone(), api, [root.to_string()]);
+	let client = KeetaClient::new(api);
+	let resolver = Resolver::new(client, transport.clone(), [root.to_string()]);
 	let signer = Arc::new(GenericAccount::EcdsaSecp256k1(account_from_seed(0x11)));
 	let context = AnchorContext::new(resolver, transport, signer);
 
@@ -85,7 +89,7 @@ fn pull_transfer(anchor: &AssetAnchor) -> TransferRequest {
 
 /// The share-KYC request the poll tests submit, with `attributes` selecting the
 /// harness fixture path (any value containing `promise` reports pending).
-fn share_kyc_request(attributes: &str) -> ShareKycRequest {
+fn share_kyc_attributes_request(attributes: &str) -> ShareKycRequest {
 	ShareKycRequest { attributes: attributes.to_string(), tos_agreement: None }
 }
 
@@ -120,6 +124,43 @@ async fn discovery_reads_the_published_provider() -> TestResult {
 		.providers_for_transfer(&ProviderSearch::for_asset("evm:0xdeadbeef"))
 		.await?;
 	assert!(none.is_empty(), "an unadvertised asset must match no provider");
+
+	harness.shutdown()?;
+	Ok(())
+}
+
+#[tokio::test]
+async fn published_legal_and_location_metadata_decode() -> TestResult {
+	let mut harness = AssetHarness::start()?;
+	let anchor = harness.start_asset_anchor(true)?;
+	let client = client_for(&anchor.api, &anchor.root)?;
+	let provider = discovered_provider(&client, &anchor).await?;
+
+	let disclaimers = provider
+		.legal_disclaimers()
+		.ok_or(HarnessError::MissingField { field: "legal disclaimers" })?;
+	let expected_disclaimer = Disclaimer {
+		purpose: DisclaimerPurpose::General,
+		content: ClientRenderableContent::Markdown { content: "Transfers are final.".to_string() },
+	};
+	assert_eq!(disclaimers, vec![expected_disclaimer], "the published disclaimer must decode");
+
+	let by_id = client
+		.provider_legal_disclaimers_by_id(&anchor.provider_id)
+		.await?;
+	assert_eq!(by_id, Some(disclaimers), "the by-id lookup must serve the same disclaimers");
+
+	let metadata = provider.asset_metadata_for_location(EVM_LOCATION, EVM_ASSET);
+	let expected_metadata = TokenLocationMetadata {
+		decimal_places: 6,
+		logo_uri: Some("https://cdn.example/usdc.svg".to_string()),
+		display_name: Some("Harness USDC".to_string()),
+		ticker: Some("$USDC".to_string()),
+	};
+	assert_eq!(metadata, Some(expected_metadata), "the published token metadata must decode");
+
+	let unadvertised = provider.asset_metadata_for_location(EVM_LOCATION, "evm:0xdeadbeef");
+	assert_eq!(unadvertised, None, "an unadvertised asset must carry no metadata");
 
 	harness.shutdown()?;
 	Ok(())
@@ -197,18 +238,18 @@ async fn forwarding_and_listing_run_against_the_live_anchor() -> TestResult {
 	let asset = AssetOrPair::from(anchor.asset.clone());
 
 	let session = client
-		.initiate_forwarding_template(
+		.initiate_persistent_forwarding_template(
 			&provider,
-			&InitiateForwardingTemplateRequest { asset: asset.clone(), location: EVM_LOCATION.to_string() },
+			&InitiatePersistentForwardingTemplateRequest { asset: asset.clone(), location: EVM_LOCATION.to_string() },
 		)
 		.await?;
 	assert_eq!(session.id, "test-session-id", "the anchor must open the fixture session");
 	assert_eq!(session.data["plaidLinkToken"], json!("link-sandbox-test-token"), "the session data must decode");
 
 	let template = client
-		.create_forwarding_template(
+		.create_persistent_forwarding_template(
 			&provider,
-			&CreateForwardingTemplateRequest::Direct {
+			&CreatePersistentForwardingTemplateRequest::Direct {
 				asset: asset.clone(),
 				location: EVM_LOCATION.to_string(),
 				address: Value::String(anchor.send_to_address.clone()),
@@ -218,9 +259,9 @@ async fn forwarding_and_listing_run_against_the_live_anchor() -> TestResult {
 	assert_eq!(template.id, "template-id", "a direct create must return the fixture template");
 
 	let completed = client
-		.create_forwarding_template(
+		.create_persistent_forwarding_template(
 			&provider,
-			&CreateForwardingTemplateRequest::Completion {
+			&CreatePersistentForwardingTemplateRequest::Completion {
 				id: Some(session.id.clone()),
 				data: json!({
 					"type": "plaid",
@@ -233,9 +274,9 @@ async fn forwarding_and_listing_run_against_the_live_anchor() -> TestResult {
 	assert_eq!(completed.id, "template-id", "a session completion must return the fixture template");
 
 	let templates = client
-		.list_forwarding_templates(
+		.list_forwarding_address_templates(
 			&provider,
-			&ListForwardingTemplatesRequest {
+			&ListForwardingAddressTemplatesRequest {
 				asset: Some(vec![anchor.asset.clone()]),
 				location: Some(vec![EVM_LOCATION.to_string()]),
 			},
@@ -245,9 +286,9 @@ async fn forwarding_and_listing_run_against_the_live_anchor() -> TestResult {
 	assert_eq!(parse_total(&templates.total), Some(1), "the template listing must carry its total");
 
 	let created = client
-		.create_forwarding_address(
+		.create_persistent_forwarding_address(
 			&provider,
-			&CreateForwardingAddressRequest {
+			&CreatePersistentForwardingAddressRequest {
 				source_location: EVM_LOCATION.to_string(),
 				asset: asset.clone(),
 				outgoing_rail: Some("KEETA_SEND".to_string()),
@@ -263,9 +304,9 @@ async fn forwarding_and_listing_run_against_the_live_anchor() -> TestResult {
 	assert_eq!(created["fees"]["total"], json!("10"), "the created address must carry its fee total");
 
 	let from_template = client
-		.create_forwarding_address(
+		.create_persistent_forwarding_address(
 			&provider,
-			&CreateForwardingAddressRequest {
+			&CreatePersistentForwardingAddressRequest {
 				source_location: EVM_LOCATION.to_string(),
 				asset: asset.clone(),
 				outgoing_rail: None,
@@ -320,14 +361,14 @@ async fn forwarding_and_listing_run_against_the_live_anchor() -> TestResult {
 	);
 
 	client
-		.deactivate_forwarding_template(&provider, &template.id)
+		.deactivate_persistent_forwarding_template(&provider, &template.id)
 		.await?;
 	client
-		.deactivate_forwarding_address(&provider, &template.id)
+		.deactivate_persistent_forwarding_address(&provider, &template.id)
 		.await?;
 
 	let missing = client
-		.deactivate_forwarding_template(&provider, "does-not-exist")
+		.deactivate_persistent_forwarding_template(&provider, "does-not-exist")
 		.await;
 	assert!(missing.is_err(), "deactivating an unknown template must surface the anchor error");
 
@@ -351,22 +392,22 @@ async fn forwarding_and_listing_run_against_the_live_anchor() -> TestResult {
 }
 
 #[tokio::test]
-async fn share_kyc_settles_and_polls_against_the_live_anchor() -> TestResult {
+async fn share_kyc_attributes_settles_and_polls_against_the_live_anchor() -> TestResult {
 	let mut harness = AssetHarness::start()?;
 	let anchor = harness.start_asset_anchor(true)?;
 	let client = client_for(&anchor.api, &anchor.root)?;
 	let provider = discovered_provider(&client, &anchor).await?;
 
 	let settled = client
-		.share_kyc(&provider, &share_kyc_request("exported-attributes"))
+		.share_kyc_attributes(&provider, &share_kyc_attributes_request("exported-attributes"))
 		.await?;
 	assert!(!settled.is_pending, "a plain share must settle immediately");
 
 	let without_polling = client
-		.share_kyc_await(
+		.share_kyc_attributes_and_wait(
 			&provider,
-			&share_kyc_request("exported-attributes"),
-			PollOptions::default(),
+			&share_kyc_attributes_request("exported-attributes"),
+			AwaitOptions::default(),
 			|_millis| async { panic!("a settled share must not sleep") },
 		)
 		.await?;
@@ -376,21 +417,31 @@ async fn share_kyc_settles_and_polls_against_the_live_anchor() -> TestResult {
 	// polls and settles on the third, so the await must sleep exactly twice.
 	let polls = Arc::new(AtomicU32::new(0));
 	let counter = Arc::clone(&polls);
-	let options = PollOptions { interval_ms: 1, timeout_ms: 60_000 };
+	let options = AwaitOptions { interval_ms: 1, timeout_ms: 60_000 };
 	let outcome = client
-		.share_kyc_await(&provider, &share_kyc_request("promise-flow"), options, move |_millis| {
-			let counter = Arc::clone(&counter);
-			async move {
-				counter.fetch_add(1, Ordering::Relaxed);
-			}
-		})
+		.share_kyc_attributes_and_wait(
+			&provider,
+			&share_kyc_attributes_request("promise-flow"),
+			options,
+			move |_millis| {
+				let counter = Arc::clone(&counter);
+				async move {
+					counter.fetch_add(1, Ordering::Relaxed);
+				}
+			},
+		)
 		.await?;
 	assert!(!outcome.is_pending, "the polled promise must settle");
 	assert_eq!(polls.load(Ordering::Relaxed), 2, "the poll must sleep once per pending response");
 
-	let options = PollOptions { interval_ms: 1_000, timeout_ms: 500 };
+	let options = AwaitOptions { interval_ms: 1_000, timeout_ms: 500 };
 	let timed_out = client
-		.share_kyc_await(&provider, &share_kyc_request("promise-stall"), options, |_millis| async {})
+		.share_kyc_attributes_and_wait(
+			&provider,
+			&share_kyc_attributes_request("promise-stall"),
+			options,
+			|_millis| async {},
+		)
 		.await;
 	assert!(
 		matches!(timed_out, Err(AnchorClientError::Timeout { .. })),

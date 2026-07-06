@@ -301,7 +301,7 @@ impl SharableCertificateAttributes {
 		let Some(disclosed) = populated.attributes.get(name) else {
 			return Ok(None);
 		};
-		let Some(cert_attribute) = populated.certificate.get_kyc_attribute(name) else {
+		let Some(cert_attribute) = populated.certificate.get_attribute(name) else {
 			return Ok(None);
 		};
 
@@ -318,7 +318,7 @@ impl SharableCertificateAttributes {
 		let mut attributes = BTreeMap::new();
 		for name in names {
 			let name = name.as_ref();
-			let Some(cert_attribute) = certificate.get_kyc_attribute(name) else {
+			let Some(cert_attribute) = certificate.get_attribute(name) else {
 				continue;
 			};
 
@@ -422,7 +422,7 @@ fn disclose_attribute(
 	entry: &AttributeEntry,
 ) -> Result<DisclosedAttribute> {
 	let cert_attribute = certificate
-		.get_kyc_attribute(name)
+		.get_attribute(name)
 		.ok_or_else(|| SharableAttributesError::AttributeNotFound { name: name.to_string() })?;
 
 	if cert_attribute.is_sensitive() != entry.sensitive {
@@ -463,9 +463,9 @@ fn prove_attribute(
 	subject: &GenericAccount,
 ) -> Result<SensitiveAttributeProof> {
 	let proof = match subject {
-		GenericAccount::Ed25519(account) => certificate.prove_kyc_attribute(name, &account.keypair)?,
-		GenericAccount::EcdsaSecp256k1(account) => certificate.prove_kyc_attribute(name, &account.keypair)?,
-		GenericAccount::EcdsaSecp256r1(account) => certificate.prove_kyc_attribute(name, &account.keypair)?,
+		GenericAccount::Ed25519(account) => certificate.prove_attribute(name, &account.keypair)?,
+		GenericAccount::EcdsaSecp256k1(account) => certificate.prove_attribute(name, &account.keypair)?,
+		GenericAccount::EcdsaSecp256r1(account) => certificate.prove_attribute(name, &account.keypair)?,
 		_ => return Err(SharableAttributesError::UnsupportedSubjectKey),
 	};
 
@@ -481,12 +481,12 @@ fn validate_proof(
 	proof: SensitiveAttributeProof,
 ) -> Result<bool> {
 	let valid = match subject {
-		GenericAccount::Ed25519(account) => certificate.validate_kyc_attribute_proof(name, &account.keypair, proof)?,
+		GenericAccount::Ed25519(account) => certificate.validate_attribute_proof(name, &account.keypair, proof)?,
 		GenericAccount::EcdsaSecp256k1(account) => {
-			certificate.validate_kyc_attribute_proof(name, &account.keypair, proof)?
+			certificate.validate_attribute_proof(name, &account.keypair, proof)?
 		}
 		GenericAccount::EcdsaSecp256r1(account) => {
-			certificate.validate_kyc_attribute_proof(name, &account.keypair, proof)?
+			certificate.validate_attribute_proof(name, &account.keypair, proof)?
 		}
 		_ => return Err(SharableAttributesError::UnsupportedSubjectKey),
 	};
@@ -656,7 +656,7 @@ mod tests {
 	fn round_trip_discloses_validated_attributes() -> core::result::Result<(), Box<dyn std::error::Error>> {
 		let (certificate, subject) = issue_certificate();
 		let expected_postal = certificate
-			.get_kyc_attribute("postalCode")
+			.get_attribute("postalCode")
 			.map(|attribute| attribute.as_ref().to_vec());
 
 		let intermediates: [X509Certificate; 0] = [];

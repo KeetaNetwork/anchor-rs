@@ -72,12 +72,13 @@ impl GuestClient for KycSession {
 }
 
 /// Build a networked KYC client signed by `signer`: a `wasi:http` transport
-/// wrapped in the resilience policy, a metadata resolver reading `root` via the
-/// node API at `node_url`, and the bound `signer`.
+/// wrapped in the resilience policy, a metadata resolver reading `root`
+/// through the node client at `node_url`, and the bound `signer`.
 fn build_client(node_url: String, root: String, signer: Arc<GenericAccount>) -> KycClient {
 	let base: Arc<dyn AnchorHttpTransport> = Arc::new(WasiTransport::default());
 	let transport: Arc<dyn AnchorHttpTransport> = Arc::new(ResilientTransport::new(base, WasiRuntime));
-	let resolver = Resolver::new(transport.clone(), node_url, [root]);
+	let client = super::node_client(&node_url);
+	let resolver = Resolver::new(client, transport.clone(), [root]);
 	let context = AnchorContext::new(resolver, transport, signer);
 	KycClient::new(context)
 }

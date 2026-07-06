@@ -65,19 +65,19 @@ pub fn valid_at(certificate: &KycCertificate, unix_millis: i64) -> Result<bool, 
 
 /// Whether `certificate` carries any KYC attributes.
 pub fn has_attributes(certificate: &KycCertificate) -> bool {
-	certificate.has_kyc_attributes()
+	certificate.has_attributes()
 }
 
 /// The number of KYC attributes, plain and sensitive.
 pub fn attribute_count(certificate: &KycCertificate) -> usize {
-	certificate.kyc_attribute_count()
+	certificate.attribute_count()
 }
 
 /// The KYC attributes the certificate carries, each as its OID `name` paired
 /// with whether its value is `sensitive` (encrypted) rather than plain.
 pub fn attributes(certificate: &KycCertificate) -> Vec<(String, bool)> {
 	certificate
-		.kyc_attributes()
+		.attributes()
 		.iter()
 		.map(|attribute| (attribute.name.to_string(), attribute.is_sensitive()))
 		.collect()
@@ -85,7 +85,7 @@ pub fn attributes(certificate: &KycCertificate) -> Vec<(String, bool)> {
 
 /// The plain-text value of the non-sensitive attribute `name`.
 pub fn plain_attribute<N: AsRef<str>>(certificate: &KycCertificate, name: N) -> Result<Vec<u8>, CodedError> {
-	certificate.get_plain_kyc_attribute(name).map_err(coded)
+	certificate.get_plain_attribute(name).map_err(coded)
 }
 
 /// Whether `certificate` chains to one of `trusted_roots` at `unix_millis`,
@@ -112,9 +112,7 @@ where
 	K: KeyPair,
 	N: AsRef<str>,
 {
-	certificate
-		.decrypt_kyc_attribute(name, keypair)
-		.map_err(coded)
+	certificate.decrypt_attribute(name, keypair).map_err(coded)
 }
 
 /// Decrypt a sensitive attribute for an erased account, dispatching on the
@@ -166,7 +164,7 @@ where
 	N: AsRef<str>,
 {
 	certificate
-		.prove_kyc_attribute(name, keypair)
+		.prove_attribute(name, keypair)
 		.map(AttributeProof::from)
 		.map_err(coded)
 }
@@ -202,7 +200,7 @@ where
 	N: AsRef<str>,
 {
 	certificate
-		.validate_kyc_attribute_proof(name, keypair, proof.into())
+		.validate_attribute_proof(name, keypair, proof.into())
 		.map_err(coded)
 }
 

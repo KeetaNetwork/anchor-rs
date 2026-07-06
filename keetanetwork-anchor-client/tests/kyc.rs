@@ -11,17 +11,20 @@ use std::sync::Arc;
 use common::account_from_seed;
 use harness::{issue_attributes, HarnessError, KycHarness, SUBJECT_SEED};
 use keetanetwork_account::GenericAccount;
-use keetanetwork_anchor_client::{AnchorContext, AnchorOutcome, CountryCode, KycClient, ReqwestTransport, Resolver};
+use keetanetwork_anchor_client::{
+	AnchorContext, AnchorOutcome, CountryCode, KeetaClient, KycClient, ReqwestTransport, Resolver, SupportedCountries,
+};
 use serde_json::Value;
 
 type TestResult = Result<(), Box<dyn Error>>;
 
 /// A KYC client whose resolver reads the `root` account's on-chain metadata
-/// through the node API at `api`, and whose caller signs with a deterministic
-/// account over the live reqwest transport.
+/// through the node client at `api`, and whose caller signs with a
+/// deterministic account over the live reqwest transport.
 fn client_for(api: &str, root: &str) -> Result<KycClient, Box<dyn Error>> {
 	let transport = Arc::new(ReqwestTransport::try_default()?);
-	let resolver = Resolver::new(transport.clone(), api, [root.to_string()]);
+	let client = KeetaClient::new(api);
+	let resolver = Resolver::new(client, transport.clone(), [root.to_string()]);
 	let signer = Arc::new(GenericAccount::EcdsaSecp256k1(account_from_seed(0x11)));
 	let context = AnchorContext::new(resolver, transport, signer);
 
@@ -95,6 +98,34 @@ async fn kyc_client_runs_the_full_verification_path() -> TestResult {
 		.ready()
 		.ok_or(HarnessError::MissingField { field: "issued chain" })?;
 	assert_eq!(chain.results.len(), 2, "the issued verification must serve its leaf and ca chain");
+
+	harness.shutdown()?;
+	Ok(())
+}
+
+#[tokio::test]
+async fn supported_countries_fold_across_the_published_providers() -> TestResult {
+	let mut harness = KycHarness::start()?;
+	let anchor = harness.start_kyc_anchor(Some(&["US", "DE", "DE"]), true)?;
+	let client = client_for(&anchor.api, &anchor.root)?;
+
+	let supported = client.get_supported_countries().await?;
+	let expected = SupportedCountries::Countries(vec![CountryCode::try_from("DE")?, CountryCode::try_from("US")?]);
+	assert_eq!(supported, expected, "the published codes must fold sorted and deduplicated");
+
+	harness.shutdown()?;
+	Ok(())
+}
+
+#[tokio::test]
+async fn an_unconfigured_provider_publishes_an_empty_country_union() -> TestResult {
+	let mut harness = KycHarness::start()?;
+	let anchor = harness.start_kyc_anchor(None, true)?;
+	let client = client_for(&anchor.api, &anchor.root)?;
+
+	// The reference server publishes `countryCodes: []` when none are configured.
+	let supported = client.get_supported_countries().await?;
+	assert_eq!(supported, SupportedCountries::Countries(Vec::new()), "an unconfigured provider unions no countries");
 
 	harness.shutdown()?;
 	Ok(())

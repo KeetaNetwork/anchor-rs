@@ -266,7 +266,7 @@ interface asset-movement {
 	use keeta:client/crypto@0.1.0.{account};
 
 	/// How to pace and bound a polled operation (awaiting a share-KYC promise).
-	record poll-options {
+	record await-options {
 		/// The minimum delay between polls, in milliseconds. The provider's
 		/// `retry-after` hint overrides this when it is longer.
 		interval-ms: u32,
@@ -299,27 +299,27 @@ interface asset-movement {
 		/// The signer's JSON account status with the provider.
 		account-status: func(provider: string) -> result<string, coded-error>;
 		/// Open a persistent-forwarding template session, returning JSON.
-		initiate-forwarding-template: func(provider: string, request: string) -> result<string, coded-error>;
+		initiate-persistent-forwarding-template: func(provider: string, request: string) -> result<string, coded-error>;
 		/// Create a persistent-forwarding template, returning JSON.
-		create-forwarding-template: func(provider: string, request: string) -> result<string, coded-error>;
+		create-persistent-forwarding-template: func(provider: string, request: string) -> result<string, coded-error>;
 		/// List persistent-forwarding templates, returning a JSON page.
-		list-forwarding-templates: func(provider: string, request: string) -> result<string, coded-error>;
+		list-forwarding-address-templates: func(provider: string, request: string) -> result<string, coded-error>;
 		/// Create a persistent-forwarding address, returning JSON.
-		create-forwarding-address: func(provider: string, request: string) -> result<string, coded-error>;
+		create-persistent-forwarding-address: func(provider: string, request: string) -> result<string, coded-error>;
 		/// List persistent-forwarding addresses, returning a JSON page.
 		list-forwarding-addresses: func(provider: string, request: string) -> result<string, coded-error>;
 		/// Deactivate a persistent-forwarding template by id.
-		deactivate-forwarding-template: func(provider: string, id: string) -> result<string, coded-error>;
+		deactivate-persistent-forwarding-template: func(provider: string, id: string) -> result<string, coded-error>;
 		/// Deactivate a persistent-forwarding address by id.
-		deactivate-forwarding-address: func(provider: string, id: string) -> result<string, coded-error>;
+		deactivate-persistent-forwarding-address: func(provider: string, id: string) -> result<string, coded-error>;
 		/// List asset-movement transactions, returning a JSON page.
 		list-transactions: func(provider: string, request: string) -> result<string, coded-error>;
 		/// Share KYC attributes with the provider, returning a JSON outcome.
-		share-kyc: func(provider: string, request: string) -> result<string, coded-error>;
+		share-kyc-attributes: func(provider: string, request: string) -> result<string, coded-error>;
 		/// Share KYC attributes and poll the returned promise URL to completion,
 		/// pacing and bounding the poll with `options` (or the defaults when
 		/// absent), returning a JSON outcome.
-		share-kyc-await: func(provider: string, request: string, options: option<poll-options>) -> result<string, coded-error>;
+		share-kyc-attributes-and-wait: func(provider: string, request: string, options: option<await-options>) -> result<string, coded-error>;
 	}
 }
 

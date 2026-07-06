@@ -82,6 +82,15 @@ interface PublishMetadataRequest {
 	metadata: ServiceMetadata;
 }
 
+/**
+ * Publish a certificate chain on-chain for a fresh holder account: one record
+ * carrying the CA as its intermediate bundle, and one recorded without
+ * intermediates, so a ledger read exercises both shapes.
+ */
+interface PublishCertificateChainRequest {
+	cmd: 'publishCertificateChain';
+}
+
 interface ShutdownRequest {
 	cmd: 'shutdown';
 }
@@ -149,6 +158,7 @@ type KycRequest =
 	StopKycAnchorRequest |
 	BuildMetadataRequest |
 	PublishMetadataRequest |
+	PublishCertificateChainRequest |
 	IssueCertificateRequest |
 	DecodeCertificateRequest |
 	ProveAttributeRequest |
@@ -295,6 +305,51 @@ async function handlePublishMetadata(request: PublishMetadataRequest): Promise<H
 
 	const root = await current.chain.publish(request.metadata);
 	return({ event: 'metadata-published', api: current.chain.api, root });
+}
+
+/**
+ * Publish two certificate records on-chain for a fresh funded holder: a leaf
+ * issued by the running anchor's CA with the CA recorded as its intermediate
+ * bundle, and a second leaf recorded without intermediates. The Rust client
+ * reads both back through the node API.
+ */
+async function handlePublishCertificateChain(): Promise<HarnessResponse> {
+	const current = kycAnchor;
+	if (current === undefined) {
+		throw(new Error('no running anchor: start the KYC anchor before publishing certificates'));
+	}
+
+	const holder = Account.fromSeed(Account.generateRandomSeed(), 0);
+	await current.chain.give(holder, 1_000n);
+
+	const buildLeaf = async function(serial: number): Promise<CertificateAuthority> {
+		const builder = new KeetaNetLib.Utils.Certificate.CertificateBuilder({
+			subjectPublicKey: holder,
+			issuer: current.caAccount,
+			serial,
+			validFrom: new Date(Date.now() - 30_000),
+			validTo: new Date(Date.now() + (60 * 60 * 1000))
+		});
+
+		return(await builder.build());
+	};
+
+	const leaf = await buildLeaf(2);
+	const bare = await buildLeaf(3);
+
+	const holderClient = current.chain.clientFor(holder);
+	const intermediates = new KeetaNetLib.Utils.Certificate.CertificateBundle([current.ca]);
+	await holderClient.modifyCertificate(KeetaNetLib.Block.AdjustMethod.ADD, leaf, intermediates);
+	await holderClient.modifyCertificate(KeetaNetLib.Block.AdjustMethod.ADD, bare, null);
+
+	return({
+		event: 'certificate-chain-published',
+		api: current.chain.api,
+		account: holder.publicKeyString.get(),
+		leaf: leaf.toPEM(),
+		bare: bare.toPEM(),
+		ca: current.ca.toPEM()
+	});
 }
 
 /**
@@ -463,6 +518,7 @@ async function handle(request: KycRequest): Promise<HarnessResponse> {
 		case 'stopKycAnchor': return(await handleStopKycAnchor());
 		case 'buildMetadata': return(handleBuildMetadata(request));
 		case 'publishMetadata': return(await handlePublishMetadata(request));
+		case 'publishCertificateChain': return(await handlePublishCertificateChain());
 		case 'issueCertificate': return(await handleIssueCertificate(request));
 		case 'decodeCertificate': return(await handleDecodeCertificate(request));
 		case 'proveAttribute': return(await handleProveAttribute(request));

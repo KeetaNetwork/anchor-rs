@@ -89,6 +89,8 @@ test-feat:
 	cargo check -p keetanetwork-anchor-client --no-default-features --features codec
 	cargo check -p keetanetwork-anchor-client --no-default-features --features service
 	cargo check -p keetanetwork-anchor-client --no-default-features --features kyc
+	cargo check -p keetanetwork-anchor-client --no-default-features --features trust
+	cargo check -p keetanetwork-anchor-client --no-default-features --features kyc,trust
 	cargo check -p keetanetwork-anchor-client --no-default-features --features http
 	cargo check -p keetanetwork-anchor-client --no-default-features --features kyc,http
 	# Resilience: pure cores are no_std; backends/decorator ride the runtimes.

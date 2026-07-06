@@ -1,8 +1,9 @@
 //! On-chain service-metadata resolution.
 //!
-//! [`Resolver`] reads each root account's service metadata via the node API
-//! (`keetanet://<account>/metadata`), follows any `ExternalURL` indirection at
-//! any depth, and projects each verified entry through a [`ServiceQuery`].
+//! [`Resolver`] reads each root account's service metadata through the node
+//! client (`keetanet://<account>/metadata`), follows any `ExternalURL`
+//! indirection at any depth, and projects each verified entry through a
+//! [`ServiceQuery`].
 
 mod decode;
 mod metadata;
@@ -13,6 +14,10 @@ pub use decode::{decode_base64, parse_metadata};
 pub use metadata::{CountryCode, KycOperations, KycProvider};
 pub use query::ServiceQuery;
 
+/// One certificate an account published on-chain: the PEM-encoded leaf and the
+/// PEM-encoded intermediates recorded alongside it (the node client's record).
+pub use keetanetwork_client::Certificate as AccountCertificate;
+
 use alloc::collections::BTreeSet;
 use alloc::string::{String, ToString};
 use alloc::sync::Arc;
@@ -21,6 +26,7 @@ use alloc::vec::Vec;
 use core::str::FromStr;
 
 use keetanetwork_anchor::signing::{object_to_signable, verify_body, Signed, VerifyOptions};
+use keetanetwork_client::KeetaClient;
 use serde_json::{Map, Value};
 
 use crate::error::ResolverError;
@@ -47,24 +53,24 @@ enum Segment {
 /// Resolves anchor services from one or more on-chain root accounts.
 #[derive(Clone)]
 pub struct Resolver {
+	client: KeetaClient,
 	transport: Arc<dyn AnchorHttpTransport>,
-	node_api: String,
 	roots: Vec<String>,
 }
 
 impl Resolver {
-	/// A resolver reading `roots` (in priority order) from the node API at
-	/// `node_api`, signing nothing (metadata reads are unauthenticated).
+	/// A resolver reading `roots` (in priority order) through the node
+	/// `client`, signing nothing (metadata reads are unauthenticated).
 	///
-	/// Each root is a `keeta_...` account string whose `info.metadata` holds the
-	/// service-metadata document. A trailing `/` on `node_api` is ignored.
+	/// Each root is a `keeta_...` account string whose `info.metadata` holds
+	/// the service-metadata document. The `transport` reads `ExternalURL`
+	/// metadata indirections, which live outside the ledger.
 	pub fn new(
+		client: KeetaClient,
 		transport: Arc<dyn AnchorHttpTransport>,
-		node_api: impl Into<String>,
 		roots: impl IntoIterator<Item = String>,
 	) -> Self {
-		let node_api = node_api.into().trim_end_matches('/').to_string();
-		Self { transport, node_api, roots: roots.into_iter().collect() }
+		Self { client, transport, roots: roots.into_iter().collect() }
 	}
 
 	/// Collect every provider matching `criteria`, across all roots.
@@ -134,13 +140,26 @@ impl Resolver {
 		Ok(providers)
 	}
 
+	/// Every certificate `account` has published on-chain, each with the
+	/// intermediates recorded alongside it (both PEM), read through the node
+	/// client like the reference `client.getAllCertificates`.
+	///
+	/// # Errors
+	///
+	/// Returns [`ResolverError::Node`] when the ledger read fails.
+	pub async fn get_all_certificates(&self, account: &str) -> Result<Vec<AccountCertificate>, ResolverError> {
+		let certificates = self.client.certificates(account).await?;
+
+		Ok(certificates)
+	}
+
 	/// The fully-resolved, version-1 document for each readable root, in
 	/// priority order. Unreadable or unsupported roots are skipped.
 	async fn root_documents(&self) -> Vec<Value> {
 		let mut documents = Vec::new();
 		for account in &self.roots {
 			let location = MetadataLocation::KeetaNet { account: account.clone() };
-			let Ok(mut document) = read_document(self.transport.as_ref(), &self.node_api, &location).await else {
+			let Ok(mut document) = read_document(&self.client, self.transport.as_ref(), &location).await else {
 				continue;
 			};
 
@@ -195,7 +214,7 @@ impl Resolver {
 		}
 
 		let fetched = match MetadataLocation::from_str(&url) {
-			Ok(location) => read_document(self.transport.as_ref(), &self.node_api, &location)
+			Ok(location) => read_document(&self.client, self.transport.as_ref(), &location)
 				.await
 				.ok(),
 			Err(_) => None,

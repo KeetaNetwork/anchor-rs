@@ -7,16 +7,19 @@ use std::error::Error;
 use std::sync::Arc;
 
 use harness::{HarnessError, KycHarness};
-use keetanetwork_anchor_client::{decode_base64, parse_metadata, CountryCode, KycQuery, ReqwestTransport, Resolver};
+use keetanetwork_anchor_client::{
+	decode_base64, parse_metadata, CountryCode, KeetaClient, KycQuery, ReqwestTransport, Resolver,
+};
 use serde_json::{json, Value};
 
 type TestResult = Result<(), Box<dyn Error>>;
 
-/// A resolver reading the on-chain metadata of `root` through the node API at
-/// `api`, over a live reqwest transport.
+/// A resolver reading the on-chain metadata of `root` through the node client
+/// at `api`, over a live reqwest transport for external URLs.
 fn resolver_for(api: &str, root: &str) -> Result<Resolver, Box<dyn Error>> {
 	let transport = Arc::new(ReqwestTransport::try_default()?);
-	let resolver = Resolver::new(transport, api, [root.to_string()]);
+	let client = KeetaClient::new(api);
+	let resolver = Resolver::new(client, transport, [root.to_string()]);
 	Ok(resolver)
 }
 

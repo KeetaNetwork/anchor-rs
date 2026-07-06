@@ -51,6 +51,10 @@ version = "0.3.2"
 version = "0.3.1"
 default-features = false
 
+[workspace.dependencies.keetanetwork-client]
+version = "0.3.2"
+default-features = false
+
 [workspace.dependencies.keetanetwork-client-wasi]
 version = "0.3.2"
 default-features = false

@@ -10,10 +10,10 @@ use std::collections::BTreeMap;
 use keetanetwork_anchor_bindings::error::CodedError;
 use keetanetwork_anchor_client::AssetMovementOperations;
 use keetanetwork_anchor_client::{
-	AccountStatus, AssetMovementBlocker, AssetMovementProvider, AssetOrPair, CreateForwardingAddressRequest,
-	CreateForwardingTemplateRequest, EndpointAuth, ExecuteTransferRequest, ForwardingAddressFilter,
-	ForwardingDestination, InitiateForwardingTemplateRequest, ListForwardingAddressesRequest,
-	ListForwardingTemplatesRequest, ListTransactionsRequest, OperationEndpoint, Pagination, PersistentAddressFilter,
+	AccountStatus, AssetMovementBlocker, AssetMovementProvider, AssetOrPair, CreatePersistentForwardingAddressRequest,
+	CreatePersistentForwardingTemplateRequest, EndpointAuth, ExecuteTransferRequest, ForwardingAddressFilter,
+	ForwardingDestination, InitiatePersistentForwardingTemplateRequest, ListForwardingAddressTemplatesRequest,
+	ListForwardingAddressesRequest, ListTransactionsRequest, OperationEndpoint, Pagination, PersistentAddressFilter,
 	ProviderFilter, ProviderSearch, ShareKycRequest, TransactionEndpointFilter, TransactionRefFilter,
 	TransferDestination, TransferRequest, TransferSource,
 };
@@ -92,6 +92,7 @@ fn accepts(filter: &ProviderFilter, provider: &AssetMovementProvider) -> bool {
 		.account
 		.as_deref()
 		.is_none_or(|account| provider.account.as_deref() == Some(account));
+
 	id_ok && account_ok
 }
 
@@ -217,22 +218,22 @@ pub(crate) fn execute_request(json: &str) -> Result<ExecuteTransferRequest, Code
 }
 
 /// Parse an initiate-forwarding-template request.
-pub(crate) fn initiate_template_request(json: &str) -> Result<InitiateForwardingTemplateRequest, CodedError> {
+pub(crate) fn initiate_template_request(json: &str) -> Result<InitiatePersistentForwardingTemplateRequest, CodedError> {
 	parse::<InitiateTemplateDto>(json)?.into_core()
 }
 
 /// Parse a create-forwarding-template request.
-pub(crate) fn create_template_request(json: &str) -> Result<CreateForwardingTemplateRequest, CodedError> {
+pub(crate) fn create_template_request(json: &str) -> Result<CreatePersistentForwardingTemplateRequest, CodedError> {
 	parse::<CreateTemplateDto>(json)?.into_core()
 }
 
 /// Parse a list-forwarding-templates request.
-pub(crate) fn list_templates_request(json: &str) -> Result<ListForwardingTemplatesRequest, CodedError> {
+pub(crate) fn list_templates_request(json: &str) -> Result<ListForwardingAddressTemplatesRequest, CodedError> {
 	Ok(parse::<ListTemplatesDto>(json)?.into_core())
 }
 
 /// Parse a create-forwarding-address request.
-pub(crate) fn create_address_request(json: &str) -> Result<CreateForwardingAddressRequest, CodedError> {
+pub(crate) fn create_address_request(json: &str) -> Result<CreatePersistentForwardingAddressRequest, CodedError> {
 	parse::<CreateAddressDto>(json)?.into_core()
 }
 
@@ -247,7 +248,7 @@ pub(crate) fn list_transactions_request(json: &str) -> Result<ListTransactionsRe
 }
 
 /// Parse a share-KYC request.
-pub(crate) fn share_kyc_request(json: &str) -> Result<ShareKycRequest, CodedError> {
+pub(crate) fn share_kyc_attributes_request(json: &str) -> Result<ShareKycRequest, CodedError> {
 	Ok(parse::<ShareKycDto>(json)?.into_core())
 }
 
@@ -404,8 +405,8 @@ struct InitiateTemplateDto {
 }
 
 impl InitiateTemplateDto {
-	fn into_core(self) -> Result<InitiateForwardingTemplateRequest, CodedError> {
-		Ok(InitiateForwardingTemplateRequest { asset: asset_or_pair(self.asset)?, location: self.location })
+	fn into_core(self) -> Result<InitiatePersistentForwardingTemplateRequest, CodedError> {
+		Ok(InitiatePersistentForwardingTemplateRequest { asset: asset_or_pair(self.asset)?, location: self.location })
 	}
 }
 
@@ -426,16 +427,16 @@ struct CreateTemplateDto {
 }
 
 impl CreateTemplateDto {
-	fn into_core(self) -> Result<CreateForwardingTemplateRequest, CodedError> {
+	fn into_core(self) -> Result<CreatePersistentForwardingTemplateRequest, CodedError> {
 		if let Some(data) = self.data {
-			return Ok(CreateForwardingTemplateRequest::Completion { id: self.id, data });
+			return Ok(CreatePersistentForwardingTemplateRequest::Completion { id: self.id, data });
 		}
 
 		let (Some(asset), Some(location), Some(address)) = (self.asset, self.location, self.address) else {
 			return Err(invalid("a direct template requires asset, location, and address"));
 		};
 
-		Ok(CreateForwardingTemplateRequest::Direct { asset: asset_or_pair(asset)?, location, address })
+		Ok(CreatePersistentForwardingTemplateRequest::Direct { asset: asset_or_pair(asset)?, location, address })
 	}
 }
 
@@ -449,8 +450,8 @@ struct ListTemplatesDto {
 }
 
 impl ListTemplatesDto {
-	fn into_core(self) -> ListForwardingTemplatesRequest {
-		ListForwardingTemplatesRequest { asset: self.asset, location: self.location }
+	fn into_core(self) -> ListForwardingAddressTemplatesRequest {
+		ListForwardingAddressTemplatesRequest { asset: self.asset, location: self.location }
 	}
 }
 
@@ -473,7 +474,7 @@ struct CreateAddressDto {
 }
 
 impl CreateAddressDto {
-	fn into_core(self) -> Result<CreateForwardingAddressRequest, CodedError> {
+	fn into_core(self) -> Result<CreatePersistentForwardingAddressRequest, CodedError> {
 		let destination =
 			match (self.destination_location, self.destination_address, self.persistent_address_template_id) {
 				(Some(location), Some(address), _) => ForwardingDestination::Address { location, address },
@@ -485,7 +486,7 @@ impl CreateAddressDto {
 				}
 			};
 
-		Ok(CreateForwardingAddressRequest {
+		Ok(CreatePersistentForwardingAddressRequest {
 			source_location: self.source_location,
 			asset: asset_or_pair(self.asset)?,
 			outgoing_rail: self.outgoing_rail,

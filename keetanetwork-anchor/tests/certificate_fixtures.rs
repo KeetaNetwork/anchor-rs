@@ -58,13 +58,13 @@ fn parse_certificate_from_fixture(fixture_name: &str) -> KycCertificate {
 fn test_typescript_certificate_parsing() {
 	for test_case in TEST_CASES {
 		let certificate = parse_certificate_from_fixture(test_case.pem_fixture);
-		assert!(certificate.has_kyc_attributes(), "{}: KycCertificate should have KYC attributes", test_case.name);
+		assert!(certificate.has_attributes(), "{}: KycCertificate should have KYC attributes", test_case.name);
 		assert!(
-			certificate.kyc_attribute_count() >= test_case.expected_attributes.len(),
+			certificate.attribute_count() >= test_case.expected_attributes.len(),
 			"{}: KycCertificate should have at least {} KYC attributes, found {}",
 			test_case.name,
 			test_case.expected_attributes.len(),
-			certificate.kyc_attribute_count()
+			certificate.attribute_count()
 		);
 	}
 }
@@ -78,11 +78,11 @@ fn test_typescript_certificate_attribute_decryption() -> Result<(), BoxError> {
 		// Try to decrypt each expected sensitive attribute
 		for attr_name in test_case.expected_attributes {
 			let attr = certificate
-				.get_kyc_attribute(attr_name)
+				.get_attribute(attr_name)
 				.ok_or_else(|| format!("{}: Attribute '{}' should exist", test_case.name, attr_name))?;
 
 			if attr.is_sensitive() {
-				let result = certificate.decrypt_kyc_attribute(attr_name, &account.keypair);
+				let result = certificate.decrypt_attribute(attr_name, &account.keypair);
 				assert!(
 					result.is_ok(),
 					"{}: Failed to decrypt sensitive attribute '{}': {:?}",
@@ -114,10 +114,10 @@ fn test_typescript_certificate_wrong_key_fails() {
 
 		// Find a sensitive attribute to test with
 		for attr_name in test_case.expected_attributes {
-			let attr = certificate.get_kyc_attribute(attr_name);
+			let attr = certificate.get_attribute(attr_name);
 			if let Some(attr) = attr {
 				if attr.is_sensitive() {
-					let result = certificate.decrypt_kyc_attribute(attr_name, &wrong_account.keypair);
+					let result = certificate.decrypt_attribute(attr_name, &wrong_account.keypair);
 					assert!(
 						result.is_err(),
 						"{}: Decryption with wrong key should fail for attribute '{}'",

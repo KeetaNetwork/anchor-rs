@@ -11,18 +11,18 @@ use keetanetwork_account::GenericAccount;
 use keetanetwork_anchor_bindings::error::CodedError as CoreCodedError;
 use keetanetwork_anchor_client::resilience::{ResilienceRuntime, ResilientTransport, WasiRuntime};
 use keetanetwork_anchor_client::{
-	AnchorContext, AnchorHttpTransport, AssetMovementClient, PollOptions, ProviderFilter, Resolver, WasiTransport,
+	AnchorContext, AnchorHttpTransport, AssetMovementClient, AwaitOptions, ProviderFilter, Resolver, WasiTransport,
 };
 
 use crate::asset_json::{
 	create_address_request, create_template_request, encode, encode_account_status, encode_ack, encode_provider,
 	encode_providers, execute_request, filter_providers, initiate_template_request, list_addresses_request,
-	list_templates_request, list_transactions_request, parse_provider, parse_provider_search, share_kyc_request,
-	transfer_request,
+	list_templates_request, list_transactions_request, parse_provider, parse_provider_search,
+	share_kyc_attributes_request, transfer_request,
 };
 
 use super::exports::keeta::anchor::asset_movement::{
-	AssetClient as WitAssetClient, Guest as AssetMovementGuest, GuestAssetClient, PollOptions as WitPollOptions,
+	AssetClient as WitAssetClient, AwaitOptions as WitAwaitOptions, Guest as AssetMovementGuest, GuestAssetClient,
 };
 use super::exports::keeta::client::crypto::AccountBorrow;
 use super::{run, AccountResource, CodedError, Component};
@@ -106,34 +106,42 @@ impl GuestAssetClient for AssetSession {
 		text(encode_account_status(&status))
 	}
 
-	fn initiate_forwarding_template(&self, provider: String, request: String) -> Result<String, CodedError> {
+	fn initiate_persistent_forwarding_template(&self, provider: String, request: String) -> Result<String, CodedError> {
 		let provider = core(parse_provider(&provider))?;
 		let request = core(initiate_template_request(&request))?;
-		let outcome = run(self.inner.initiate_forwarding_template(&provider, &request))?;
+		let outcome = run(self
+			.inner
+			.initiate_persistent_forwarding_template(&provider, &request))?;
 
 		text(encode(&outcome))
 	}
 
-	fn create_forwarding_template(&self, provider: String, request: String) -> Result<String, CodedError> {
+	fn create_persistent_forwarding_template(&self, provider: String, request: String) -> Result<String, CodedError> {
 		let provider = core(parse_provider(&provider))?;
 		let request = core(create_template_request(&request))?;
-		let outcome = run(self.inner.create_forwarding_template(&provider, &request))?;
+		let outcome = run(self
+			.inner
+			.create_persistent_forwarding_template(&provider, &request))?;
 
 		text(encode(&outcome))
 	}
 
-	fn list_forwarding_templates(&self, provider: String, request: String) -> Result<String, CodedError> {
+	fn list_forwarding_address_templates(&self, provider: String, request: String) -> Result<String, CodedError> {
 		let provider = core(parse_provider(&provider))?;
 		let request = core(list_templates_request(&request))?;
-		let outcome = run(self.inner.list_forwarding_templates(&provider, &request))?;
+		let outcome = run(self
+			.inner
+			.list_forwarding_address_templates(&provider, &request))?;
 
 		text(encode(&outcome))
 	}
 
-	fn create_forwarding_address(&self, provider: String, request: String) -> Result<String, CodedError> {
+	fn create_persistent_forwarding_address(&self, provider: String, request: String) -> Result<String, CodedError> {
 		let provider = core(parse_provider(&provider))?;
 		let request = core(create_address_request(&request))?;
-		let details = run(self.inner.create_forwarding_address(&provider, &request))?;
+		let details = run(self
+			.inner
+			.create_persistent_forwarding_address(&provider, &request))?;
 
 		text(encode(&details))
 	}
@@ -146,15 +154,19 @@ impl GuestAssetClient for AssetSession {
 		text(encode(&outcome))
 	}
 
-	fn deactivate_forwarding_template(&self, provider: String, id: String) -> Result<String, CodedError> {
+	fn deactivate_persistent_forwarding_template(&self, provider: String, id: String) -> Result<String, CodedError> {
 		let provider = core(parse_provider(&provider))?;
-		run(self.inner.deactivate_forwarding_template(&provider, &id))?;
+		run(self
+			.inner
+			.deactivate_persistent_forwarding_template(&provider, &id))?;
 		text(encode_ack())
 	}
 
-	fn deactivate_forwarding_address(&self, provider: String, id: String) -> Result<String, CodedError> {
+	fn deactivate_persistent_forwarding_address(&self, provider: String, id: String) -> Result<String, CodedError> {
 		let provider = core(parse_provider(&provider))?;
-		run(self.inner.deactivate_forwarding_address(&provider, &id))?;
+		run(self
+			.inner
+			.deactivate_persistent_forwarding_address(&provider, &id))?;
 		text(encode_ack())
 	}
 
@@ -166,31 +178,32 @@ impl GuestAssetClient for AssetSession {
 		text(encode(&outcome))
 	}
 
-	fn share_kyc(&self, provider: String, request: String) -> Result<String, CodedError> {
+	fn share_kyc_attributes(&self, provider: String, request: String) -> Result<String, CodedError> {
 		let provider = core(parse_provider(&provider))?;
-		let request = core(share_kyc_request(&request))?;
-		let outcome = run(self.inner.share_kyc(&provider, &request))?;
+		let request = core(share_kyc_attributes_request(&request))?;
+		let outcome = run(self.inner.share_kyc_attributes(&provider, &request))?;
 
 		text(encode(&outcome))
 	}
 
-	fn share_kyc_await(
+	fn share_kyc_attributes_and_wait(
 		&self,
 		provider: String,
 		request: String,
-		options: Option<WitPollOptions>,
+		options: Option<WitAwaitOptions>,
 	) -> Result<String, CodedError> {
 		let provider = core(parse_provider(&provider))?;
-		let request = core(share_kyc_request(&request))?;
-		let options = options.map_or_else(PollOptions::default, |options| PollOptions {
+		let request = core(share_kyc_attributes_request(&request))?;
+		let options = options.map_or_else(AwaitOptions::default, |options| AwaitOptions {
 			interval_ms: options.interval_ms,
 			timeout_ms: options.timeout_ms,
 		});
-		let outcome = run(self
-			.inner
-			.share_kyc_await(&provider, &request, options, |millis| async move {
-				WasiRuntime.sleep_ms(u64::from(millis)).await;
-			}))?;
+		let outcome =
+			run(self
+				.inner
+				.share_kyc_attributes_and_wait(&provider, &request, options, |millis| async move {
+					WasiRuntime.sleep_ms(u64::from(millis)).await;
+				}))?;
 
 		text(encode(&outcome))
 	}
@@ -198,11 +211,12 @@ impl GuestAssetClient for AssetSession {
 
 /// Build a networked asset-movement client signed by `signer`: a `wasi:http`
 /// transport wrapped in the resilience policy, a metadata resolver reading
-/// `root` via the node API at `node_url`, and the bound `signer`.
+/// `root` through the node client at `node_url`, and the bound `signer`.
 fn build_client(node_url: String, root: String, signer: Arc<GenericAccount>) -> AssetMovementClient {
 	let base: Arc<dyn AnchorHttpTransport> = Arc::new(WasiTransport::default());
 	let transport: Arc<dyn AnchorHttpTransport> = Arc::new(ResilientTransport::new(base, WasiRuntime));
-	let resolver = Resolver::new(transport.clone(), node_url, [root]);
+	let client = super::node_client(&node_url);
+	let resolver = Resolver::new(client, transport.clone(), [root]);
 	let context = AnchorContext::new(resolver, transport, signer);
 
 	AssetMovementClient::new(context)

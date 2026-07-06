@@ -17,14 +17,26 @@ path = "src/lib.rs"
 name = "asset_movement"
 required-features = ["asset"]
 
+# The on-chain certificate read and trust evaluation are `trust`-gated.
+[[test]]
+name = "account_certificates"
+required-features = ["trust"]
+
 [features]
 default = ["std"]
-codec = ["dep:serde", "dep:serde_json"]
+codec = ["dep:serde", "dep:serde_json", "dep:keetanetwork-client"]
 service = ["codec", "dep:percent-encoding"]
 kyc = ["service"]
 fx = ["service"]
 storage = ["service"]
 asset = ["service"]
+trust = [
+	"codec",
+	"keetanetwork-anchor/x509",
+	"keetanetwork-anchor/chrono",
+	"dep:keetanetwork-x509",
+	"dep:chrono",
+]
 http = ["service", "dep:reqwest", "reqwest/json"]
 resilience = ["dep:spin"]
 std = [
@@ -40,8 +52,9 @@ std = [
 	"percent-encoding?/std",
 	"keetanetwork-anchor/std",
 	"keetanetwork-account/std",
+	"keetanetwork-client/std",
 ]
-wasm = ["http"]
+wasm = ["http", "keetanetwork-client/http", "keetanetwork-client/wasm"]
 wasi = ["service"]
 
 [dependencies]
@@ -51,8 +64,16 @@ keetanetwork-anchor = { workspace = true, features = [
 keetanetwork-account = { workspace = true, default-features = false, features = [
 	"rasn",
 ] }
+keetanetwork-x509 = { workspace = true, default-features = false, features = [
+	"rasn",
+	"alloc",
+], optional = true }
+keetanetwork-client = { workspace = true, optional = true }
 
 async-trait = { workspace = true }
+chrono = { workspace = true, default-features = false, features = [
+	"alloc",
+], optional = true }
 base64 = { workspace = true, features = ["alloc"] }
 miniz_oxide = { workspace = true }
 url = { workspace = true }
@@ -91,6 +112,8 @@ keetanetwork-anchor = { workspace = true, default-features = true, features = [
 	"chrono",
 ] }
 keetanetwork-account = { workspace = true, features = ["std", "rasn"] }
+keetanetwork-asn1 = { workspace = true, features = ["rasn"] }
+keetanetwork-x509 = { workspace = true, features = ["std", "rasn"] }
 keetanetwork-crypto = { workspace = true, features = [
 	"std",
 	"signature",

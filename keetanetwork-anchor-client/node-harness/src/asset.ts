@@ -150,6 +150,28 @@ function assetCallbacks(baseTokenAccount: TokenAccount, sendToAccount: GenericAc
 	return({
 		authenticationRequired: true,
 
+		legal: {
+			disclaimers: [
+				{
+					purpose: 'general',
+					content: { type: 'markdown', content: 'Transfers are final.' }
+				}
+			]
+		},
+
+		locationMetadata: {
+			'chain:evm:100': {
+				assets: {
+					'evm:0xc0634090F2Fe6c6d75e61Be2b949464aBB498973': {
+						decimalPlaces: 6,
+						displayName: 'Harness USDC',
+						ticker: '$USDC',
+						logoURI: 'https://cdn.example/usdc.svg'
+					}
+				}
+			}
+		},
+
 		supportedAssets: [
 			{
 				asset: baseToken,

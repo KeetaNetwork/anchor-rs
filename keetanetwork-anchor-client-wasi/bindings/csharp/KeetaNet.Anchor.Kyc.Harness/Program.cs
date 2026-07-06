@@ -385,22 +385,22 @@ static void AssetMovementSelfTest(WasmRuntime runtime)
 		// Persistent-forwarding lifecycle: open a template session, create a
 		// template directly, list templates, create an address for a destination
 		// pair, list addresses, then deactivate both.
-		AssetTemplateSession session = client.InitiateForwardingTemplate(
+		AssetTemplateSession session = client.InitiatePersistentForwardingTemplate(
 			provider, new AssetInitiateTemplateRequest(asset, "chain:evm:100"));
 		Require(session.Id == "test-session-id", $"{algorithm}: the template session must carry the harness id");
 		Require(
 			session.Data.GetProperty("type").GetString() == "plaid",
 			$"{algorithm}: the template session must carry the provider-specific data");
 
-		AssetForwardingTemplate template = client.CreateForwardingTemplate(
+		AssetForwardingTemplate template = client.CreatePersistentForwardingTemplate(
 			provider, new AssetCreateTemplateRequest(Asset: asset, Location: "chain:evm:100", Address: sendTo));
 		Require(template.Id == "template-id", $"{algorithm}: the created template must carry the harness id");
 
-		AssetTemplatePage templates = client.ListForwardingTemplates(provider, new AssetListTemplatesRequest());
+		AssetTemplatePage templates = client.ListForwardingAddressTemplates(provider, new AssetListTemplatesRequest());
 		Require(templates.Templates.Count == 1, $"{algorithm}: the template list must carry the harness template");
 		Require(templates.Total == "1", $"{algorithm}: the template list must carry its total");
 
-		JsonElement forwarding = client.CreateForwardingAddress(provider, new AssetCreateAddressRequest(
+		JsonElement forwarding = client.CreatePersistentForwardingAddress(provider, new AssetCreateAddressRequest(
 			"chain:evm:100",
 			asset,
 			DestinationLocation: "chain:keeta:100",
@@ -412,8 +412,8 @@ static void AssetMovementSelfTest(WasmRuntime runtime)
 		AssetAddressPage addresses = client.ListForwardingAddresses(provider, new AssetListAddressesRequest());
 		Require(addresses.Addresses.Count == 1, $"{algorithm}: the address list must carry the harness address");
 
-		client.DeactivateForwardingTemplate(provider, "template-id");
-		client.DeactivateForwardingAddress(provider, "template-id");
+		client.DeactivatePersistentForwardingTemplate(provider, "template-id");
+		client.DeactivatePersistentForwardingAddress(provider, "template-id");
 
 		// The transaction query returns the canonical harness transaction.
 		AssetTransactionPage transactions = client.ListTransactions(provider, new AssetListTransactionsRequest());
@@ -423,12 +423,11 @@ static void AssetMovementSelfTest(WasmRuntime runtime)
 			$"{algorithm}: list-transactions must carry the harness transaction");
 
 		// A settled share resolves immediately; a pending share hands back a
-		// promise URL, which the await variant polls (202s then 200) to the
-		// settled outcome.
-		AssetShareKycOutcome shared = client.ShareKyc(provider, new AssetShareKycRequest("immediate-attributes"));
+		// promise URL, which the await variant polls to the settled outcome.
+		AssetShareKycOutcome shared = client.ShareKycAttributes(provider, new AssetShareKycRequest("immediate-attributes"));
 		Require(!shared.IsPending, $"{algorithm}: a settled share must not be pending");
 
-		AssetShareKycOutcome awaited = client.ShareKycAndWait(
+		AssetShareKycOutcome awaited = client.ShareKycAttributesAndWait(
 			provider,
 			new AssetShareKycRequest($"{algorithm}-promise"),
 			pollInterval: TimeSpan.FromMilliseconds(50),
