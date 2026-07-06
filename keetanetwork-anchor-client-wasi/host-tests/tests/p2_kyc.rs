@@ -129,6 +129,31 @@ async fn p2_kyc_signs_against_live_anchor() -> Result<(), BoxError> {
 	};
 	assert_eq!(groups.len(), 2, "the issued verification must serve its leaf and ca chain");
 
+	// The on-chain ledger read: a fresh holder publishes two certificate
+	// records (with and without intermediates). Both must read back through
+	// the same client resource with the recorded CA bundle intact.
+	let chain = harness.request("publishCertificateChain", json!({}))?;
+	let chain_account = field_str(&chain, "account")?;
+	let chain_ca = field_str(&chain, "ca")?;
+	let published = kyc
+		.client()
+		.call_get_all_certificates(&mut store, client, &chain_account)
+		.await?
+		.map_err(coded)?;
+	assert_eq!(published.len(), 2, "both published records must read back");
+
+	let with_intermediates = published
+		.iter()
+		.find(|record| !record.intermediates.is_empty())
+		.ok_or("a record with intermediates must read back")?;
+	assert_eq!(with_intermediates.intermediates, [chain_ca], "the recorded CA bundle must survive the round trip");
+	assert!(
+		published
+			.iter()
+			.any(|record| record.intermediates.is_empty()),
+		"a record published without intermediates must decode as empty"
+	);
+
 	harness.shutdown()?;
 	Ok(())
 }

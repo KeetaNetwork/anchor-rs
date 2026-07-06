@@ -83,6 +83,8 @@ string nodeApi = RequireEnv("KEETA_NODE_API");
 string root = RequireEnv("KEETA_ROOT");
 string providerId = RequireEnv("KEETA_PROVIDER_ID");
 string issuedVerificationId = RequireEnv("KEETA_ISSUED_VERIFICATION_ID");
+string chainAccount = RequireEnv("KEETA_CHAIN_ACCOUNT");
+string chainCa = RequireEnv("KEETA_CHAIN_CA");
 string seed = Environment.GetEnvironmentVariable("KEETA_SEED") ?? new string('1', 64);
 
 string[] algorithms = { "ed25519", "ecdsa_secp256k1", "ecdsa_secp256r1" };
@@ -131,6 +133,17 @@ foreach (string algorithm in algorithms)
 	Require(
 		chain.Ready is not null && chain.Ready!.Results.Count == 2,
 		$"{algorithm}: an issued verification must serve its leaf and ca chain");
+
+	// The on-chain certificate read: both records the harness published for the
+	// chain account return, the recorded CA bundle intact.
+	IReadOnlyList<Certificate> published = client.GetAllCertificates(chainAccount);
+	Require(published.Count == 2, $"{algorithm}: expected both published records, got {published.Count}");
+	Require(
+		published.Any(record => record.Intermediates.Count == 1 && record.Intermediates[0] == chainCa),
+		$"{algorithm}: the recorded CA bundle must survive the round trip");
+	Require(
+		published.Any(record => record.Intermediates.Count == 0),
+		$"{algorithm}: a record published without intermediates must decode as empty");
 
 	Console.WriteLine($"{algorithm}: OK");
 }
