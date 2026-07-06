@@ -13,4 +13,5 @@ pub mod certificate;
 pub mod encrypted_container;
 pub mod error;
 pub mod parse;
+pub mod registry;
 pub mod sharable_attributes;

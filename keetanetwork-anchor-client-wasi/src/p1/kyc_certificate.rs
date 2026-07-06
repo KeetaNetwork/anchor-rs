@@ -7,47 +7,30 @@
 
 use core::cell::RefCell;
 
-use std::collections::BTreeMap;
-
 use keetanetwork_anchor::certificates::KycCertificate;
 use keetanetwork_anchor_bindings::certificate as cert_ops;
 use keetanetwork_anchor_bindings::error::CodedError;
+use keetanetwork_anchor_bindings::registry::HandleRegistry;
 use keetanetwork_client_wasi::{account, bytes_in, bytes_result, certificate, fail, store_certificate, string_in};
 use keetanetwork_x509::certificates::Certificate as X509Certificate;
 use serde::{Deserialize, Serialize};
 
-thread_local! {
-	static LEAVES: RefCell<Leaves> = RefCell::new(Leaves::default());
-}
+use super::ok_or_fail;
 
-/// The live KYC leaf certificates, each under a monotonically increasing handle.
-#[derive(Default)]
-struct Leaves {
-	next: i32,
-	certificates: BTreeMap<i32, KycCertificate>,
+thread_local! {
+	static LEAVES: RefCell<HandleRegistry<KycCertificate>> =
+		const { RefCell::new(HandleRegistry::new("kyc-certificate")) };
 }
 
 /// Store `certificate` under a fresh handle and return it.
 pub(crate) fn store_leaf(certificate: KycCertificate) -> i32 {
-	LEAVES.with_borrow_mut(|leaves| {
-		leaves.next = leaves.next.wrapping_add(1).max(1);
-
-		let handle = leaves.next;
-		leaves.certificates.insert(handle, certificate);
-
-		handle
-	})
+	LEAVES.with_borrow_mut(|leaves| leaves.store(certificate))
 }
 
-/// Resolve `handle` to a clone of its leaf, recording an `INVALID_HANDLE` error
-/// when unknown.
-pub(crate) fn leaf(handle: i32) -> Option<KycCertificate> {
-	let value = LEAVES.with_borrow(|leaves| leaves.certificates.get(&handle).cloned());
-	if value.is_none() {
-		fail(CodedError::new("INVALID_HANDLE", "unknown kyc-certificate handle"));
-	}
-
-	value
+/// Run `body` against the leaf at `handle`, recording an `INVALID_HANDLE`
+/// error and yielding `None` when the handle is unknown.
+pub(crate) fn with_leaf<R>(handle: i32, body: impl FnOnce(&KycCertificate) -> R) -> Option<R> {
+	ok_or_fail(LEAVES.with_borrow(|leaves| leaves.with(handle, body)))
 }
 
 /// Parse a PEM-encoded KYC leaf certificate; returns a leaf handle (`0` on
@@ -72,27 +55,22 @@ pub unsafe extern "C" fn keeta_kyc_certificate_parse(ptr: i32, len: i32) -> i32 
 /// an unknown leaf handle).
 #[no_mangle]
 pub extern "C" fn keeta_kyc_certificate_base(handle: i32) -> i32 {
-	match leaf(handle) {
-		Some(certificate) => store_certificate(certificate.to_x509().clone()),
-		None => 0,
-	}
+	with_leaf(handle, |certificate| store_certificate(certificate.to_x509().clone())).unwrap_or(0)
 }
 
 /// Whether the leaf is valid at `unix_millis`: `1` valid, `0` invalid, `-1` on
 /// error (an unknown handle or out-of-range moment; see the last error).
 #[no_mangle]
 pub extern "C" fn keeta_kyc_certificate_valid_at(handle: i32, unix_millis: i64) -> i32 {
-	let Some(certificate) = leaf(handle) else {
-		return -1;
-	};
-
-	match cert_ops::valid_at(&certificate, unix_millis) {
-		Ok(true) => 1,
-		Ok(false) => 0,
-		Err(error) => {
+	let outcome = with_leaf(handle, |certificate| cert_ops::valid_at(certificate, unix_millis));
+	match outcome {
+		Some(Ok(true)) => 1,
+		Some(Ok(false)) => 0,
+		Some(Err(error)) => {
 			fail(error);
 			-1
 		}
+		None => -1,
 	}
 }
 
@@ -112,9 +90,6 @@ pub unsafe extern "C" fn keeta_kyc_certificate_verify(
 	intermediates_len: i32,
 	unix_millis: i64,
 ) -> i32 {
-	let Some(certificate) = leaf(handle) else {
-		return -1;
-	};
 	let Some(roots) = (unsafe { resolve_certificates(roots_ptr, roots_len) }) else {
 		return -1;
 	};
@@ -122,13 +97,15 @@ pub unsafe extern "C" fn keeta_kyc_certificate_verify(
 		return -1;
 	};
 
-	match cert_ops::verify(&certificate, &roots, &intermediates, unix_millis) {
-		Ok(true) => 1,
-		Ok(false) => 0,
-		Err(error) => {
+	let outcome = with_leaf(handle, |certificate| cert_ops::verify(certificate, &roots, &intermediates, unix_millis));
+	match outcome {
+		Some(Ok(true)) => 1,
+		Some(Ok(false)) => 0,
+		Some(Err(error)) => {
 			fail(error);
 			-1
 		}
+		None => -1,
 	}
 }
 
@@ -136,11 +113,11 @@ pub unsafe extern "C" fn keeta_kyc_certificate_verify(
 /// returns a bytes handle (`0` on error).
 #[no_mangle]
 pub extern "C" fn keeta_kyc_certificate_attributes(handle: i32) -> i32 {
-	let Some(certificate) = leaf(handle) else {
+	let Some(attributes) = with_leaf(handle, cert_ops::attributes) else {
 		return 0;
 	};
 
-	let listed: Vec<AttributeDto> = cert_ops::attributes(&certificate)
+	let listed: Vec<AttributeDto> = attributes
 		.into_iter()
 		.map(|(name, sensitive)| AttributeDto { name, sensitive })
 		.collect();
@@ -156,14 +133,14 @@ pub extern "C" fn keeta_kyc_certificate_attributes(handle: i32) -> i32 {
 /// `(name_ptr, name_len)` MUST describe an initialized, readable guest buffer.
 #[no_mangle]
 pub unsafe extern "C" fn keeta_kyc_certificate_plain_attribute(handle: i32, name_ptr: i32, name_len: i32) -> i32 {
-	let Some(certificate) = leaf(handle) else {
-		return 0;
-	};
 	let Some(name) = (unsafe { string_in(name_ptr, name_len) }) else {
 		return 0;
 	};
 
-	bytes_result(cert_ops::plain_attribute(&certificate, &name))
+	match with_leaf(handle, |certificate| cert_ops::plain_attribute(certificate, &name)) {
+		Some(result) => bytes_result(result),
+		None => 0,
+	}
 }
 
 /// The decrypted value of sensitive attribute `name`, using the account
@@ -180,9 +157,6 @@ pub unsafe extern "C" fn keeta_kyc_certificate_decrypt_attribute(
 	name_len: i32,
 	account_handle: i32,
 ) -> i32 {
-	let Some(certificate) = leaf(handle) else {
-		return 0;
-	};
 	let Some(name) = (unsafe { string_in(name_ptr, name_len) }) else {
 		return 0;
 	};
@@ -190,7 +164,12 @@ pub unsafe extern "C" fn keeta_kyc_certificate_decrypt_attribute(
 		return 0;
 	};
 
-	bytes_result(cert_ops::decrypt_attribute_with_account(&certificate, &name, &account))
+	let outcome =
+		with_leaf(handle, |certificate| cert_ops::decrypt_attribute_with_account(certificate, &name, &account));
+	match outcome {
+		Some(result) => bytes_result(result),
+		None => 0,
+	}
 }
 
 /// A proof for sensitive attribute `name`, decrypting it with the account
@@ -207,9 +186,6 @@ pub unsafe extern "C" fn keeta_kyc_certificate_prove(
 	name_len: i32,
 	account_handle: i32,
 ) -> i32 {
-	let Some(certificate) = leaf(handle) else {
-		return 0;
-	};
 	let Some(name) = (unsafe { string_in(name_ptr, name_len) }) else {
 		return 0;
 	};
@@ -217,9 +193,11 @@ pub unsafe extern "C" fn keeta_kyc_certificate_prove(
 		return 0;
 	};
 
-	let proof = match cert_ops::prove_attribute_with_account(&certificate, &name, &account) {
-		Ok(proof) => proof,
-		Err(error) => return fail(error),
+	let outcome = with_leaf(handle, |certificate| cert_ops::prove_attribute_with_account(certificate, &name, &account));
+	let proof = match outcome {
+		Some(Ok(proof)) => proof,
+		Some(Err(error)) => return fail(error),
+		None => return 0,
 	};
 
 	let dto = AttributeProofDto { value: proof.value, salt: proof.salt };
@@ -242,9 +220,6 @@ pub unsafe extern "C" fn keeta_kyc_certificate_validate_proof(
 	proof_ptr: i32,
 	proof_len: i32,
 ) -> i32 {
-	let Some(certificate) = leaf(handle) else {
-		return -1;
-	};
 	let Some(name) = (unsafe { string_in(name_ptr, name_len) }) else {
 		return -1;
 	};
@@ -262,13 +237,17 @@ pub unsafe extern "C" fn keeta_kyc_certificate_validate_proof(
 	};
 
 	let proof = cert_ops::AttributeProof { value: dto.value, salt: dto.salt };
-	match cert_ops::validate_attribute_proof_with_account(&certificate, &name, &account, proof) {
-		Ok(true) => 1,
-		Ok(false) => 0,
-		Err(error) => {
+	let outcome = with_leaf(handle, |certificate| {
+		cert_ops::validate_attribute_proof_with_account(certificate, &name, &account, proof)
+	});
+	match outcome {
+		Some(Ok(true)) => 1,
+		Some(Ok(false)) => 0,
+		Some(Err(error)) => {
 			fail(error);
 			-1
 		}
+		None => -1,
 	}
 }
 
@@ -331,17 +310,16 @@ pub unsafe extern "C" fn keeta_kyc_certificate_issue(
 /// The leaf's PEM encoding as a bytes handle (`0` on error).
 #[no_mangle]
 pub extern "C" fn keeta_kyc_certificate_pem(handle: i32) -> i32 {
-	let Some(certificate) = leaf(handle) else {
-		return 0;
-	};
-
-	bytes_result(cert_ops::pem(&certificate).map(String::into_bytes))
+	match with_leaf(handle, cert_ops::pem) {
+		Some(result) => bytes_result(result.map(String::into_bytes)),
+		None => 0,
+	}
 }
 
 /// Release a KYC leaf handle, ignoring an unknown one.
 #[no_mangle]
 pub extern "C" fn keeta_kyc_certificate_free(handle: i32) {
-	LEAVES.with_borrow_mut(|leaves| leaves.certificates.remove(&handle));
+	LEAVES.with_borrow_mut(|leaves| leaves.remove(handle));
 }
 
 /// Read a `(ptr, len)` buffer of little-endian `i32` certificate handles and

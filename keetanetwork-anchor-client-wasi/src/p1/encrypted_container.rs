@@ -2,58 +2,37 @@
 
 use core::cell::RefCell;
 
-use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use keetanetwork_account::GenericAccount;
 use keetanetwork_anchor::encrypted_container::EncryptedContainer;
 use keetanetwork_anchor_bindings::encrypted_container as ec_ops;
 use keetanetwork_anchor_bindings::error::CodedError;
+use keetanetwork_anchor_bindings::registry::HandleRegistry;
 use keetanetwork_client_wasi::{account, bytes_in, bytes_result, fail};
 
-thread_local! {
-	static CONTAINERS: RefCell<Containers> = RefCell::new(Containers::default());
-}
+use super::ok_or_fail;
 
-/// The live containers, each under a monotonically increasing handle.
-#[derive(Default)]
-struct Containers {
-	next: i32,
-	containers: BTreeMap<i32, EncryptedContainer>,
+thread_local! {
+	static CONTAINERS: RefCell<HandleRegistry<EncryptedContainer>> =
+		const { RefCell::new(HandleRegistry::new("encrypted-container")) };
 }
 
 /// Store `container` under a fresh handle and return it.
 fn store_container(container: EncryptedContainer) -> i32 {
-	CONTAINERS.with_borrow_mut(|state| {
-		state.next = state.next.wrapping_add(1).max(1);
-
-		let handle = state.next;
-		state.containers.insert(handle, container);
-
-		handle
-	})
+	CONTAINERS.with_borrow_mut(|state| state.store(container))
 }
 
 /// Run `body` against the container at `handle`, recording an `INVALID_HANDLE`
 /// error and yielding `None` when the handle is unknown.
 fn with_container<R>(handle: i32, body: impl FnOnce(&EncryptedContainer) -> R) -> Option<R> {
-	let result = CONTAINERS.with_borrow(|state| state.containers.get(&handle).map(body));
-	if result.is_none() {
-		fail(CodedError::new("INVALID_HANDLE", "unknown encrypted-container handle"));
-	}
-
-	result
+	ok_or_fail(CONTAINERS.with_borrow(|state| state.with(handle, body)))
 }
 
 /// Run `body` against the mutable container at `handle`, recording an
 /// `INVALID_HANDLE` error and yielding `None` when the handle is unknown.
 fn with_container_mut<R>(handle: i32, body: impl FnOnce(&mut EncryptedContainer) -> R) -> Option<R> {
-	let result = CONTAINERS.with_borrow_mut(|state| state.containers.get_mut(&handle).map(body));
-	if result.is_none() {
-		fail(CodedError::new("INVALID_HANDLE", "unknown encrypted-container handle"));
-	}
-
-	result
+	ok_or_fail(CONTAINERS.with_borrow_mut(|state| state.with_mut(handle, body)))
 }
 
 /// Decode the tri-state `locked` flag: negative is the default policy, `0` is
@@ -273,7 +252,7 @@ pub unsafe extern "C" fn keeta_encrypted_container_revoke_access(handle: i32, ke
 /// Release a container handle, ignoring an unknown one.
 #[no_mangle]
 pub extern "C" fn keeta_encrypted_container_free(handle: i32) {
-	CONTAINERS.with_borrow_mut(|state| state.containers.remove(&handle));
+	CONTAINERS.with_borrow_mut(|state| state.remove(handle));
 }
 
 /// JSON-encode principal public keys for transport across the bytes boundary.
