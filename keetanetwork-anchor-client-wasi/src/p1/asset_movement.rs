@@ -7,11 +7,11 @@
 
 use core::cell::RefCell;
 
-use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use keetanetwork_account::GenericAccount;
 use keetanetwork_anchor_bindings::error::CodedError;
+use keetanetwork_anchor_bindings::registry::HandleRegistry;
 use keetanetwork_anchor_client::{
 	AnchorClientError, AnchorContext, AssetMovementClient, AssetMovementProvider, AwaitOptions, ProviderFilter,
 	Resolver,
@@ -28,14 +28,8 @@ use crate::asset_json::{
 use super::transport::{block_on, host_sleep_ms, host_transport};
 
 thread_local! {
-	static SESSIONS: RefCell<Sessions> = RefCell::new(Sessions::default());
-}
-
-/// The live asset-movement clients, each under a monotonically increasing handle.
-#[derive(Default)]
-struct Sessions {
-	next: i32,
-	clients: BTreeMap<i32, AssetMovementClient>,
+	static SESSIONS: RefCell<HandleRegistry<AssetMovementClient>> =
+		const { RefCell::new(HandleRegistry::new("asset-movement-client")) };
 }
 
 // ---------------------------------------------------------------------------
@@ -474,7 +468,7 @@ fn await_options(interval_ms: i32, timeout_ms: i32) -> AwaitOptions {
 /// Release a client handle, ignoring an unknown one.
 #[no_mangle]
 pub extern "C" fn keeta_asset_free(handle: i32) {
-	SESSIONS.with_borrow_mut(|sessions| sessions.clients.remove(&handle));
+	SESSIONS.with_borrow_mut(|sessions| sessions.remove(handle));
 }
 
 // ---------------------------------------------------------------------------
@@ -522,14 +516,7 @@ fn build_client(node_url: String, root: String, signer: Arc<GenericAccount>) -> 
 
 /// Store `client` under a fresh handle and return it.
 fn insert(client: AssetMovementClient) -> i32 {
-	SESSIONS.with_borrow_mut(|sessions| {
-		sessions.next = sessions.next.wrapping_add(1).max(1);
-
-		let handle = sessions.next;
-		sessions.clients.insert(handle, client);
-
-		handle
-	})
+	SESSIONS.with_borrow_mut(|sessions| sessions.store(client))
 }
 
 /// Resolve `handle` and run `call` against the stored client, recording an
@@ -538,10 +525,9 @@ fn with_session<T>(
 	handle: i32,
 	call: impl FnOnce(&AssetMovementClient) -> Result<T, AnchorClientError>,
 ) -> Result<T, CodedError> {
-	SESSIONS.with_borrow(|sessions| {
-		let client = sessions.clients.get(&handle).ok_or_else(unknown_handle)?;
-		call(client).map_err(coded)
-	})
+	SESSIONS
+		.with_borrow(|sessions| sessions.with(handle, call))?
+		.map_err(coded)
 }
 
 /// Read a `(provider, argument)` pair from guest memory and run `body`, wiring
@@ -572,9 +558,4 @@ fn unreadable() -> CodedError {
 /// The coded error for an anchor client failure.
 fn coded(error: AnchorClientError) -> CodedError {
 	CodedError::new(error.code(), error.to_string())
-}
-
-/// The coded error for a request referencing an unknown client handle.
-fn unknown_handle() -> CodedError {
-	CodedError::new("INVALID_HANDLE", "unknown client handle")
 }

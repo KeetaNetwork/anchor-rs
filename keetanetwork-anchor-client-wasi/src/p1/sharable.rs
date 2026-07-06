@@ -7,10 +7,9 @@
 
 use core::cell::RefCell;
 
-use std::collections::BTreeMap;
-
 use keetanetwork_anchor::sharable_attributes::SharableCertificateAttributes;
 use keetanetwork_anchor_bindings::error::CodedError;
+use keetanetwork_anchor_bindings::registry::HandleRegistry;
 use keetanetwork_anchor_bindings::sharable_attributes as sharable_ops;
 use keetanetwork_bindings::x509::certificate_pem;
 use keetanetwork_client_wasi::{account, bytes_in, bytes_result, fail, string_in};
@@ -18,49 +17,29 @@ use keetanetwork_x509::certificates::Certificate as X509Certificate;
 use serde::Serialize;
 
 use crate::p1::encrypted_container::resolve_accounts;
-use crate::p1::kyc_certificate::{leaf, resolve_certificates, store_leaf};
+use crate::p1::kyc_certificate::{resolve_certificates, store_leaf, with_leaf};
+use crate::p1::ok_or_fail;
 
 thread_local! {
-	static SHARABLE: RefCell<Sharable> = RefCell::new(Sharable::default());
-}
-
-/// The live sharable bundles, each under a monotonically increasing handle.
-#[derive(Default)]
-struct Sharable {
-	next: i32,
-	bundles: BTreeMap<i32, SharableCertificateAttributes>,
+	static SHARABLE: RefCell<HandleRegistry<SharableCertificateAttributes>> =
+		const { RefCell::new(HandleRegistry::new("sharable-attributes")) };
 }
 
 /// Store `bundle` under a fresh handle and return it.
 fn store(bundle: SharableCertificateAttributes) -> i32 {
-	SHARABLE.with_borrow_mut(|state| {
-		state.next = state.next.wrapping_add(1).max(1);
-		let handle = state.next;
-		state.bundles.insert(handle, bundle);
-		handle
-	})
+	SHARABLE.with_borrow_mut(|state| state.store(bundle))
 }
 
 /// Run `body` against the bundle at `handle`, recording an `INVALID_HANDLE`
 /// error and yielding `None` when the handle is unknown.
 fn with_bundle<R>(handle: i32, body: impl FnOnce(&SharableCertificateAttributes) -> R) -> Option<R> {
-	let result = SHARABLE.with_borrow(|state| state.bundles.get(&handle).map(body));
-	if result.is_none() {
-		fail(CodedError::new("INVALID_HANDLE", "unknown sharable-attributes handle"));
-	}
-
-	result
+	ok_or_fail(SHARABLE.with_borrow(|state| state.with(handle, body)))
 }
 
 /// Run `body` against the mutable bundle at `handle`, recording an
 /// `INVALID_HANDLE` error and yielding `None` when the handle is unknown.
 fn with_bundle_mut<R>(handle: i32, body: impl FnOnce(&mut SharableCertificateAttributes) -> R) -> Option<R> {
-	let result = SHARABLE.with_borrow_mut(|state| state.bundles.get_mut(&handle).map(body));
-	if result.is_none() {
-		fail(CodedError::new("INVALID_HANDLE", "unknown sharable-attributes handle"));
-	}
-
-	result
+	ok_or_fail(SHARABLE.with_borrow_mut(|state| state.with_mut(handle, body)))
 }
 
 /// Build a sharable bundle from the leaf `certificate_handle`, proving or
@@ -81,9 +60,6 @@ pub unsafe extern "C" fn keeta_sharable_from_certificate(
 	names_ptr: i32,
 	names_len: i32,
 ) -> i32 {
-	let Some(certificate) = leaf(certificate_handle) else {
-		return 0;
-	};
 	let Some(subject) = account(subject_handle) else {
 		return 0;
 	};
@@ -94,9 +70,13 @@ pub unsafe extern "C" fn keeta_sharable_from_certificate(
 		return 0;
 	};
 
-	match sharable_ops::from_certificate(&certificate, &subject, &intermediates, &names) {
-		Ok(bundle) => store(bundle),
-		Err(error) => fail(error),
+	let outcome = with_leaf(certificate_handle, |certificate| {
+		sharable_ops::from_certificate(certificate, &subject, &intermediates, &names)
+	});
+	match outcome {
+		Some(Ok(bundle)) => store(bundle),
+		Some(Err(error)) => fail(error),
+		None => 0,
 	}
 }
 
@@ -295,7 +275,7 @@ pub unsafe extern "C" fn keeta_sharable_attribute_value(handle: i32, name_ptr: i
 /// Release a sharable-bundle handle, ignoring an unknown one.
 #[no_mangle]
 pub extern "C" fn keeta_sharable_free(handle: i32) {
-	SHARABLE.with_borrow_mut(|state| state.bundles.remove(&handle));
+	SHARABLE.with_borrow_mut(|state| state.remove(handle));
 }
 
 /// Decode a `(ptr, len)` buffer holding a JSON string array into attribute
