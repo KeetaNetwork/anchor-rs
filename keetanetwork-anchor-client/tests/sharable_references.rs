@@ -143,7 +143,7 @@ async fn fetch_external_blobs_decodes_data_urls_offline() -> TestResult {
 	let transport = ReqwestTransport::try_default()?;
 	let blobs = fetch_external_blobs(&transport, [&reference]).await?;
 	assert_eq!(
-		blobs.get(&reference.id()),
+		blobs.get(reference.id()),
 		Some(BLOB_PLAINTEXT),
 		"a data: URL must decode inline without touching the network"
 	);
