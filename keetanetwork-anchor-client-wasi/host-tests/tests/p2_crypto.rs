@@ -7,12 +7,13 @@ mod common;
 mod wasmtime_p2;
 
 use common::BoxError;
+use wasmtime_p2::bindings::exports::keeta::client::crypto::{AccountKind, KeyAlgorithm};
 use wasmtime_p2::{coded, component_built, instantiate};
 
 /// The deterministic seed `doc_utils` derives its test subject from; the KYC
 /// fixture below is signed for the secp256k1 account at index 0 of this seed.
 const SUBJECT_SEED: &str = "D6986115BE7334E50DA8D73B1A4670A510E8BF47E8C5C9960B8F5248EC7D6E3D";
-const ALGORITHM: &str = "ecdsa_secp256k1";
+const ALGORITHM: KeyAlgorithm = KeyAlgorithm::EcdsaSecp256k1;
 
 /// Unix seconds inside the fixture's one-year validity (2026-06-28..2027-06-28).
 const VALID_AT: i64 = 1_797_292_800;
@@ -71,8 +72,11 @@ async fn account_signs_and_verifies_a_message() -> Result<(), BoxError> {
 		.await?
 		.map_err(coded)?;
 
-	let algorithm = crypto.account().call_algorithm(&mut store, account).await?;
-	assert_eq!(algorithm, ALGORITHM, "the account must report its derivation algorithm");
+	let kind = crypto.account().call_kind(&mut store, account).await?;
+	assert!(
+		matches!(kind, AccountKind::Signing(algorithm) if algorithm == ALGORITHM),
+		"the account must report its derivation algorithm"
+	);
 
 	let address = crypto.account().call_address(&mut store, account).await?;
 	assert!(address.starts_with("keeta_"), "the address must be a textual keeta address");

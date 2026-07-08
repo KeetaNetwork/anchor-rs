@@ -8,6 +8,7 @@ mod wasmtime_p2;
 
 use common::BoxError;
 use wasmtime_p2::bindings::exports::keeta::anchor::certificates::IssueAttribute;
+use wasmtime_p2::bindings::exports::keeta::client::crypto::KeyAlgorithm;
 use wasmtime_p2::{coded, component_built, instantiate};
 
 /// A seed the subject (and proving account) derives from at index 0.
@@ -16,7 +17,7 @@ const SUBJECT_SEED: &str = "1111111111111111111111111111111111111111111111111111
 const ISSUER_SEED: &str = "2222222222222222222222222222222222222222222222222222222222222222";
 /// A seed the recipient derives from at index 0.
 const RECIPIENT_SEED: &str = "3333333333333333333333333333333333333333333333333333333333333333";
-const ALGORITHM: &str = "ecdsa_secp256k1";
+const ALGORITHM: KeyAlgorithm = KeyAlgorithm::EcdsaSecp256k1;
 /// The plain attribute embedded in the fixture leaf.
 const PLAIN: (&str, &[u8]) = ("postalCode", b"12345");
 /// The sensitive attribute embedded in the fixture leaf.

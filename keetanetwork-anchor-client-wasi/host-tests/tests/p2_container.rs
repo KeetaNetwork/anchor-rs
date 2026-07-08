@@ -7,6 +7,7 @@ mod common;
 mod wasmtime_p2;
 
 use common::BoxError;
+use wasmtime_p2::bindings::exports::keeta::client::crypto::KeyAlgorithm;
 use wasmtime_p2::{coded, component_built, instantiate};
 
 /// A seed the encryption principal derives from at index 0.
@@ -15,7 +16,7 @@ const PRINCIPAL_SEED: &str = "11111111111111111111111111111111111111111111111111
 const SIGNER_SEED: &str = "2222222222222222222222222222222222222222222222222222222222222222";
 /// A seed a second reader derives from at index 0.
 const READER_SEED: &str = "3333333333333333333333333333333333333333333333333333333333333333";
-const ALGORITHM: &str = "ecdsa_secp256k1";
+const ALGORITHM: KeyAlgorithm = KeyAlgorithm::EcdsaSecp256k1;
 
 /// Skip when the component has not been built.
 macro_rules! require_component {

@@ -16,7 +16,7 @@ use keetanetwork_anchor_client::{
 	AnchorClientError, AnchorContext, AssetMovementClient, AssetMovementProvider, AwaitOptions, ProviderFilter,
 	Resolver,
 };
-use keetanetwork_client_wasi::{account, bytes_result, string_in};
+use keetanetwork_client_wasi::{bytes_result, string_in};
 
 use crate::asset_json::{
 	create_address_request, create_template_request, encode, encode_account_status, encode_ack, encode_provider,
@@ -51,12 +51,9 @@ pub unsafe extern "C" fn keeta_asset_with_account(
 	root_len: i32,
 	account_handle: i32,
 ) -> i32 {
-	let (Some(node_url), Some(root)) =
-		(unsafe { string_in(node_url_ptr, node_url_len) }, unsafe { string_in(root_ptr, root_len) })
+	let Some((node_url, root, signer)) =
+		(unsafe { super::with_account_args(node_url_ptr, node_url_len, root_ptr, root_len, account_handle) })
 	else {
-		return 0;
-	};
-	let Some(signer) = account(account_handle) else {
 		return 0;
 	};
 
@@ -505,7 +502,7 @@ async fn lookup(
 // ---------------------------------------------------------------------------
 
 /// Build a networked asset-movement client signed by `signer`.
-fn build_client(node_url: String, root: String, signer: Arc<GenericAccount>) -> AssetMovementClient {
+fn build_client(node_url: String, root: Arc<GenericAccount>, signer: Arc<GenericAccount>) -> AssetMovementClient {
 	let transport = host_transport();
 	let client = super::node::node_client(&node_url);
 	let resolver = Resolver::new(client, transport.clone(), [root]);

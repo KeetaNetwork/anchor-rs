@@ -240,8 +240,8 @@ pub struct IssueAttribute {
 pub fn issue(
 	subject: &GenericAccount,
 	issuer: &GenericAccount,
-	subject_dn: &str,
-	issuer_dn: &str,
+	subject_dn: impl AsRef<str>,
+	issuer_dn: impl AsRef<str>,
 	serial: u64,
 	not_before_secs: i64,
 	not_after_secs: i64,
@@ -250,7 +250,8 @@ pub fn issue(
 ) -> Result<KycCertificate, CodedError> {
 	let not_before = timestamp(not_before_secs)?;
 	let not_after = timestamp(not_after_secs)?;
-	let builder = configure(subject, subject_dn, issuer_dn, serial, not_before, not_after, is_ca, attributes)?;
+	let builder =
+		configure(subject, subject_dn.as_ref(), issuer_dn.as_ref(), serial, not_before, not_after, is_ca, attributes)?;
 
 	dispatch_build(builder, subject, issuer)
 }

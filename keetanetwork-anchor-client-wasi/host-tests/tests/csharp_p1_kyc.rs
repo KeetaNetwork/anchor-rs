@@ -61,14 +61,7 @@ fn csharp_sdk_conforms_with_typescript_anchor() -> Result<(), BoxError> {
 		.ok_or("issued certificate is missing its attributes")?;
 	let reference_json = serde_json::to_string(reference)?;
 
-	// A two-record certificate chain published on-chain for a fresh holder, the
-	// fixture the C# `GetAllCertificates` ledger read must serve back.
-	let chain = harness.request("publishCertificateChain", json!({}))?;
-	let chain_account = field_str(&chain, "account")?;
-	let chain_ca = field_str(&chain, "ca")?;
-
-	// The TypeScript reader proves an attribute on the anchor leaf; the C# SDK
-	// must validate that proof (TS proves -> C# validates).
+	// The TypeScript reader proves an attribute on the anchor leaf
 	let ts_proof = harness
 		.request("proveAttribute", json!({ "leaf": anchor_leaf, "subjectSeed": SUBJECT_SEED, "name": PROOF_NAME }))?;
 	let ts_proof_flat = flatten_proof(
@@ -88,8 +81,6 @@ fn csharp_sdk_conforms_with_typescript_anchor() -> Result<(), BoxError> {
 		.env("KEETA_PROVIDER_ID", &provider_id)
 		.env("KEETA_LEAF_PEM", &anchor_leaf)
 		.env("KEETA_ISSUED_VERIFICATION_ID", &issued_verification_id)
-		.env("KEETA_CHAIN_ACCOUNT", &chain_account)
-		.env("KEETA_CHAIN_CA", &chain_ca)
 		.env("KEETA_ATTRIBUTES_JSON", &reference_json)
 		.env("KEETA_SUBJECT_SEED", SUBJECT_SEED)
 		.env("KEETA_COMPATIBILITY", "1")
@@ -104,6 +95,7 @@ fn csharp_sdk_conforms_with_typescript_anchor() -> Result<(), BoxError> {
 	let context = || format!("STDOUT:\n{stdout}\nSTDERR:\n{stderr}");
 
 	assert!(output.status.success(), "the C# SDK must exit zero\n{}", context());
+
 	for marker in ["KYC_OK", "ATTRIBUTES_OK", "COMPATIBILITY_OK"] {
 		assert!(stdout.contains(marker), "the C# SDK must print `{marker}`\n{}", context());
 	}

@@ -6,9 +6,11 @@
 //! into JSON.
 
 use alloc::string::{String, ToString};
+use alloc::sync::Arc;
 
 use core::str::FromStr;
 
+use keetanetwork_account::GenericAccount;
 use keetanetwork_client::KeetaClient;
 use serde_json::{Map, Value};
 
@@ -23,12 +25,12 @@ const METADATA_PATH: &str = "metadata";
 const NO_CONTENT: u16 = 204;
 
 /// Where a metadata document is read from, by scheme.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) enum MetadataLocation {
 	/// On-chain metadata for `account`, read via the node API.
 	KeetaNet {
-		/// The `keeta_...` account whose `info.metadata` holds the document.
-		account: String,
+		/// The account whose `info.metadata` holds the document.
+		account: Arc<GenericAccount>,
 	},
 
 	/// Metadata read directly from an `https` URL.
@@ -79,7 +81,8 @@ fn keetanet_location(rest: &str) -> Result<MetadataLocation, ResolverError> {
 		return Err(ResolverError::UnsupportedScheme { scheme: "keetanet".to_string() });
 	}
 
-	Ok(MetadataLocation::KeetaNet { account: account.to_string() })
+	let account = GenericAccount::from_str(account)?;
+	Ok(MetadataLocation::KeetaNet { account: Arc::new(account) })
 }
 
 /// The scheme portion of `value` (before `://`), for error reporting.
@@ -115,7 +118,7 @@ pub(crate) async fn read_document(
 ///
 /// The base64 service-metadata blob is the account state's `info.metadata`
 /// field. An empty or absent field is a valid empty document.
-async fn read_keetanet(client: &KeetaClient, account: &str) -> Result<Value, ResolverError> {
+async fn read_keetanet(client: &KeetaClient, account: &GenericAccount) -> Result<Value, ResolverError> {
 	let state = client.state(account).await?;
 	let metadata = state
 		.info
@@ -146,12 +149,32 @@ async fn read_https(transport: &dyn AnchorHttpTransport, url: &str) -> Result<Va
 
 #[cfg(test)]
 mod tests {
+	use alloc::format;
+
+	use keetanetwork_account::{AccountPublicKey, KeyED25519};
+	use keetanetwork_anchor::testing::create_account_from_seed;
+
 	use super::*;
+
+	/// A real, parseable `keeta_...` address for location tests.
+	fn test_address() -> String {
+		create_account_from_seed::<KeyED25519>(0)
+			.keypair
+			.to_public_key_string()
+			.expect("test account renders an address")
+	}
 
 	#[test]
 	fn keetanet_reference_parses_to_an_account_location() {
+		let address = test_address();
+		let location = MetadataLocation::from_str(&format!("keetanet://{address}/metadata"));
+		assert!(matches!(location, Ok(MetadataLocation::KeetaNet { account }) if account.to_string() == address));
+	}
+
+	#[test]
+	fn keetanet_reference_rejects_a_malformed_account() {
 		let location = MetadataLocation::from_str("keetanet://keeta_abc/metadata");
-		assert!(matches!(location, Ok(MetadataLocation::KeetaNet { account }) if account == "keeta_abc"));
+		assert!(matches!(location, Err(ResolverError::Account { .. })));
 	}
 
 	#[test]

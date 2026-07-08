@@ -8,6 +8,7 @@ mod harness;
 
 use core::sync::atomic::{AtomicU32, Ordering};
 use std::error::Error;
+use std::str::FromStr;
 use std::sync::Arc;
 
 use common::account_from_seed;
@@ -41,7 +42,7 @@ const KEETA_LOCATION: &str = "chain:keeta:100";
 fn client_for(api: &str, root: &str) -> Result<AssetMovementClient, Box<dyn Error>> {
 	let transport = Arc::new(ReqwestTransport::try_default()?);
 	let client = KeetaClient::new(api);
-	let resolver = Resolver::new(client, transport.clone(), [root.to_string()]);
+	let resolver = Resolver::new(client, transport.clone(), [GenericAccount::from_str(root)?]);
 	let signer = Arc::new(GenericAccount::EcdsaSecp256k1(account_from_seed(0x11)));
 	let context = AnchorContext::new(resolver, transport, signer);
 

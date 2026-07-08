@@ -3,7 +3,7 @@
 //! This example demonstrates creating accounts from seeds.
 //! This is a basic building block for certificate creation.
 
-use keetanetwork_account::{Account, Accountable, KeyECDSASECP256K1, KeyPair, Keyable};
+use keetanetwork_account::{Account, AccountPublicKey, Accountable, KeyECDSASECP256K1, KeyPair, Keyable};
 use keetanetwork_crypto::prelude::IntoSecret;
 
 const TEST_SEED: &str = "D6986115BE7334E50DA8D73B1A4670A510E8BF47E8C5C9960B8F5248EC7D6E3D";

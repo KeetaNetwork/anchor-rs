@@ -72,6 +72,21 @@ pub fn coded(error: CodedError) -> wasmtime::Error {
 	wasmtime::Error::msg(format!("{}: {}", error.code, error.message))
 }
 
+/// Parse a textual `keeta_…` address into a guest `account` resource for the
+/// component's `borrow<account>` parameters.
+pub async fn account_from_address(
+	store: &mut Store<Host>,
+	bindings: &KeetaAnchorKyc,
+	address: &str,
+) -> wasmtime::Result<wasmtime::component::ResourceAny> {
+	bindings
+		.keeta_client_crypto()
+		.account()
+		.call_from_address(&mut *store, address)
+		.await?
+		.map_err(coded)
+}
+
 /// Instantiate the P2 component with WASI + outbound `wasi:http` granted.
 pub async fn instantiate() -> wasmtime::Result<(Store<Host>, KeetaAnchorKyc)> {
 	let engine = Engine::default();

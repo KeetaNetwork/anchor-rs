@@ -93,7 +93,7 @@ where
 
 /// Verify a body-signed request and return the authenticated account.
 pub fn verify_body<T>(
-	account: &str,
+	account: impl AsRef<str>,
 	signed: &Signed,
 	data: &T,
 	options: &VerifyOptions,
@@ -101,7 +101,7 @@ pub fn verify_body<T>(
 where
 	T: ToSignable + ?Sized,
 {
-	let account = GenericAccount::from_str(account)?;
+	let account = GenericAccount::from_str(account.as_ref())?;
 
 	verify_envelope(&account, data, signed, options)?;
 

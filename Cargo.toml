@@ -26,15 +26,15 @@ version = "0.3.0"
 default-features = false
 
 [workspace.dependencies.keetanetwork-x509]
-version = "0.3.0"
+version = "0.4.0"
 default-features = false
 
 [workspace.dependencies.keetanetwork-asn1]
-version = "0.2.4"
+version = "0.2.5"
 default-features = false
 
 [workspace.dependencies.keetanetwork-account]
-version = "0.3.1"
+version = "0.4.0"
 default-features = false
 
 [workspace.dependencies.keetanetwork-utils]
@@ -42,21 +42,21 @@ version = "0.2.1"
 default-features = false
 
 [workspace.dependencies.keetanetwork-block]
-version = "0.3.1"
+version = "0.4.1"
 
 [workspace.dependencies.keetanetwork-vote]
-version = "0.3.2"
+version = "0.4.0"
 
 [workspace.dependencies.keetanetwork-bindings]
-version = "0.3.1"
+version = "0.4.1"
 default-features = false
 
 [workspace.dependencies.keetanetwork-client]
-version = "0.3.2"
+version = "0.4.0"
 default-features = false
 
 [workspace.dependencies.keetanetwork-client-wasi]
-version = "0.3.2"
+version = "0.4.1"
 default-features = false
 
 [workspace.dependencies.keetanetwork-anchor]

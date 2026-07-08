@@ -133,7 +133,7 @@ impl AssetMovementClient {
 	}
 
 	/// Whether `provider` advertises `operation`.
-	pub fn is_operation_supported(&self, provider: &AssetMovementProvider, operation: &str) -> bool {
+	pub fn is_operation_supported(&self, provider: &AssetMovementProvider, operation: impl AsRef<str>) -> bool {
 		provider.operations.contains(operation)
 	}
 
@@ -203,8 +203,9 @@ impl AssetMovementClient {
 	pub async fn transfer_status(
 		&self,
 		provider: &AssetMovementProvider,
-		id: &str,
+		id: impl AsRef<str>,
 	) -> Result<TransferStatus, AnchorClientError> {
+		let id = id.as_ref();
 		let (endpoint, auth) = operation(provider, "getTransferStatus")?;
 		let signed = id_literal("get-transaction", id);
 		let params = [("id", id)];
@@ -254,13 +255,13 @@ impl AssetMovementClient {
 	pub async fn deactivate_persistent_forwarding_template(
 		&self,
 		provider: &AssetMovementProvider,
-		id: &str,
+		id: impl AsRef<str>,
 	) -> Result<(), AnchorClientError> {
 		self.deactivate(
 			provider,
 			"deactivatePersistentForwardingTemplate",
 			"deactivate-persistent-forwarding-template",
-			id,
+			id.as_ref(),
 		)
 		.await
 	}
@@ -275,10 +276,15 @@ impl AssetMovementClient {
 	pub async fn deactivate_persistent_forwarding_address(
 		&self,
 		provider: &AssetMovementProvider,
-		id: &str,
+		id: impl AsRef<str>,
 	) -> Result<(), AnchorClientError> {
-		self.deactivate(provider, "deactivatePersistentForwarding", "deactivate-persistent-forwarding-address", id)
-			.await
+		self.deactivate(
+			provider,
+			"deactivatePersistentForwarding",
+			"deactivate-persistent-forwarding-address",
+			id.as_ref(),
+		)
+		.await
 	}
 
 	/// Open a persistent-forwarding template session.

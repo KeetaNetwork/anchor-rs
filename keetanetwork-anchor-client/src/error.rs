@@ -94,6 +94,13 @@ pub enum ResolverError {
 	#[snafu(display("no valid root metadata found"))]
 	NoRootMetadata,
 
+	/// A reference did not name a valid `keeta_...` account.
+	#[snafu(display("invalid account reference: {source}"), context(false))]
+	Account {
+		/// The underlying account-parsing failure.
+		source: keetanetwork_account::AccountError,
+	},
+
 	/// Fetching metadata from the source failed at the transport layer.
 	#[snafu(display("metadata fetch failed: {source}"), context(false))]
 	Transport {

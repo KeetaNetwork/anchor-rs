@@ -101,6 +101,6 @@ pub struct ShareKycOutcome {
 }
 
 /// Parse a decimal `total` string into a count, when it is a valid integer.
-pub fn parse_total(total: &str) -> Option<u64> {
-	total.parse().ok()
+pub fn parse_total(total: impl AsRef<str>) -> Option<u64> {
+	total.as_ref().parse().ok()
 }

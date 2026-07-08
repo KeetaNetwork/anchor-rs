@@ -15,8 +15,8 @@ use std::sync::Arc;
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine as _;
 use keetanetwork_account::{
-	Account, AccountPublicKey, Accountable, GenericAccount, KeyECDSASECP256K1, KeyECDSASECP256R1, KeyED25519, KeyPair,
-	Keyable,
+	Account, AccountPrivateKey, AccountPublicKey, Accountable, GenericAccount, KeyECDSASECP256K1, KeyECDSASECP256R1,
+	KeyED25519, KeyPair, Keyable,
 };
 use keetanetwork_anchor::encrypted_container::{EncryptedContainer, FromPlaintextOptions};
 use keetanetwork_crypto::prelude::IntoSecret;

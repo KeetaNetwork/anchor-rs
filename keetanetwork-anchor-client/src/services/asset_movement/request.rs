@@ -553,15 +553,15 @@ impl ShareKycRequest {
 
 /// The signed payload for an id-only operation (deactivate, get-status), a
 /// fixed literal followed by the id.
-pub fn id_literal(literal_tag: &str, id: &str) -> Payload {
-	alloc::vec![Signable::from(literal_tag.to_string()), Signable::from(id.to_string())]
+pub fn id_literal(literal_tag: impl Into<String>, id: impl Into<String>) -> Payload {
+	alloc::vec![Signable::from(literal_tag.into()), Signable::from(id.into())]
 }
 
 /// A fixed string-tuple payload, e.g. `['get-account-status']`.
-pub fn literal(parts: &[&str]) -> Payload {
+pub fn literal<S: AsRef<str>>(parts: &[S]) -> Payload {
 	parts
 		.iter()
-		.map(|part| Signable::from(part.to_string()))
+		.map(|part| Signable::from(part.as_ref().to_string()))
 		.collect()
 }
 

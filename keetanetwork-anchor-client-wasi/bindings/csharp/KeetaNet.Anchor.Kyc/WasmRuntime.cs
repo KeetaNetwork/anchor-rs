@@ -90,9 +90,6 @@ public sealed partial class WasmRuntime : IDisposable
 	internal byte[] KycProviders(int handle, string countriesJson) =>
 		WithHandleAndString("keeta_kyc_providers", handle, countriesJson);
 
-	internal byte[] KycGetAllCertificates(int handle, string account) =>
-		WithHandleAndString("keeta_kyc_get_all_certificates", handle, account);
-
 	internal byte[] KycCreateVerification(int handle, string providerJson, string countriesJson, string redirect)
 	{
 		var owned = new List<Argument>();

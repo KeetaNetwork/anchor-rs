@@ -74,14 +74,15 @@ pub struct AssetMovementOperations {
 
 impl AssetMovementOperations {
 	/// The endpoint advertised for `operation`, when present.
-	pub fn get(&self, operation: &str) -> Option<&OperationEndpoint> {
+	pub fn get(&self, operation: impl AsRef<str>) -> Option<&OperationEndpoint> {
+		let operation = operation.as_ref();
 		self.entries
 			.iter()
 			.find_map(|(name, endpoint)| (name == operation).then_some(endpoint))
 	}
 
 	/// Whether `operation` is advertised.
-	pub fn contains(&self, operation: &str) -> bool {
+	pub fn contains(&self, operation: impl AsRef<str>) -> bool {
 		self.get(operation).is_some()
 	}
 

@@ -11,13 +11,14 @@ use core::time::Duration;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use keetanetwork_account::GenericAccount;
 use keetanetwork_anchor_client::keetanetwork_client::{
 	AccountInfo, AccountState, Acl, BoxFuture, Certificate, ChainPage, ChainQuery, ClientConfig, ClientError,
-	HistoryEntry, HistoryQuery, KeetaClient, LedgerChecksum, LedgerSide, NodeTransport, RepPart, Representative,
+	HistoryPage, HistoryQuery, KeetaClient, LedgerChecksum, LedgerSide, NodeTransport, RepPart, Representative,
 	Runtime, TaskHandle, TokenBalance, TransportFactory, Vote, VoteQuote, VoteStaple,
 };
 use keetanetwork_anchor_client::AnchorHttpTransport;
-use keetanetwork_block::{Amount, Block};
+use keetanetwork_block::{Amount, Block, BlockHash, BlockTime};
 use num_bigint::BigInt;
 use serde::Deserialize;
 use snafu::Snafu;
@@ -132,7 +133,6 @@ impl HostNodeTransport {
 		}
 
 		let decoded = serde_json::from_slice(&response.body);
-
 		decoded.map_err(|error| ClientError::Transport { source: Box::new(error) })
 	}
 }
@@ -143,6 +143,19 @@ fn decode_amount(value: Option<String>) -> Result<Amount, ClientError> {
 		None => Ok(Amount::default()),
 		Some(value) => Amount::from_str(&value).map_err(|error| ClientError::Transport { source: Box::new(error) }),
 	}
+}
+
+/// Parse a `keeta_…` address into the client's shared account reference.
+fn decode_account(address: &str) -> Result<Arc<GenericAccount>, ClientError> {
+	let account =
+		GenericAccount::from_str(address).map_err(|error| ClientError::Transport { source: Box::new(error) })?;
+	Ok(Arc::new(account))
+}
+
+/// Parse an optional hex block hash field, treating an absent field as `None`.
+fn decode_hash(hash: Option<String>) -> Result<Option<BlockHash>, ClientError> {
+	hash.map(|value| BlockHash::from_str(&value).map_err(|error| ClientError::Transport { source: Box::new(error) }))
+		.transpose()
 }
 
 /// Assemble the client's [`AccountState`] from the response shape.
@@ -162,13 +175,19 @@ fn decode_account_state(state: AccountStateResponse) -> Result<AccountState, Cli
 		.into_iter()
 		.filter_map(|entry| {
 			let token = entry.token?;
-			Some(decode_amount(entry.balance).map(|balance| TokenBalance { token, balance }))
+			let entry = decode_account(&token)
+				.and_then(|token| decode_amount(entry.balance).map(|balance| TokenBalance { token, balance }));
+			Some(entry)
 		})
 		.collect::<Result<Vec<_>, _>>()?;
 
 	Ok(AccountState {
-		representative: state.representative,
-		head: state.current_head_block,
+		representative: state
+			.representative
+			.as_deref()
+			.map(decode_account)
+			.transpose()?,
+		head: decode_hash(state.current_head_block)?,
 		height,
 		info: state.info.map(|info| AccountInfo {
 			name: info.name,
@@ -224,25 +243,25 @@ host_node_transport! {
 	node_version() -> String;
 	balance(account: &str, token: &str) -> Amount;
 	balances(account: &str) -> Vec<TokenBalance>;
-	account_states(accounts: &str) -> Vec<AccountState>;
+	account_states(accounts: &[String]) -> Vec<AccountState>;
 	head_block(account: &str) -> Option<Block>;
 	account_head_info(account: &str) -> Option<(Block, Amount)>;
 	pending_block(account: &str) -> Option<Block>;
-	block(hash: &str, side: Option<LedgerSide>) -> Option<Block>;
-	successor_block(hash: &str) -> Option<Block>;
-	block_by_idempotent(account: &str, key: &str) -> Option<Block>;
-	block_votes(hash: &str, side: LedgerSide) -> Option<Vec<Vote>>;
+	block(hash: BlockHash, side: Option<LedgerSide>) -> Option<Block>;
+	successor_block(hash: BlockHash) -> Option<Block>;
+	block_by_idempotent(account: &str, key: &str, side: Option<LedgerSide>) -> Option<Block>;
+	block_votes(hash: BlockHash, side: LedgerSide) -> Option<Vec<Vote>>;
 	chain_page(account: &str, query: &ChainQuery) -> ChainPage;
-	history_page(account: &str, query: &HistoryQuery) -> Vec<HistoryEntry>;
-	global_history_page(query: &HistoryQuery) -> Vec<HistoryEntry>;
-	vote_staples_after(start: &str, limit: Option<i64>) -> Vec<VoteStaple>;
+	history_page(account: &str, query: &HistoryQuery) -> HistoryPage;
+	global_history_page(query: &HistoryQuery) -> HistoryPage;
+	vote_staples_after(start: BlockTime, limit: Option<i64>) -> Vec<VoteStaple>;
 	node_representative() -> Representative;
 	representative(rep: &str) -> Representative;
 	representatives() -> Vec<Representative>;
 	ledger_checksum() -> LedgerChecksum;
 	acls_by_principal(account: &str) -> Vec<Acl>;
 	acls_by_entity(account: &str) -> Vec<Acl>;
-	certificate(account: &str, hash: &str) -> Option<Certificate>;
+	certificate(account: &str, hash: [u8; 32]) -> Option<Certificate>;
 	create_vote(blocks: &[Block], prior: &[Vote], quote: Option<&VoteQuote>) -> Vote;
 	create_vote_quote(blocks: &[Block]) -> VoteQuote;
 	publish_staple(staple: &VoteStaple) -> bool;
