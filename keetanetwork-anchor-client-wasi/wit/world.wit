@@ -238,7 +238,6 @@ interface kyc {
 		verification-outcome,
 		status-outcome,
 		certificates-outcome,
-		certificate-group,
 	};
 
 	/// A KYC client bound to a signer and a metadata root.
@@ -246,7 +245,7 @@ interface kyc {
 		/// Build a client that resolves providers from the `root` account's
 		/// on-chain service metadata, read via the node API at `node-url`, and
 		/// signs each request with `signer`.
-		with-account: static func(node-url: string, root: string, signer: borrow<account>) -> result<client, coded-error>;
+		with-account: static func(node-url: string, root: borrow<account>, signer: borrow<account>) -> result<client, coded-error>;
 		/// Every provider that serves all `countries` (ISO codes).
 		providers: func(countries: list<string>) -> result<list<kyc-provider>, coded-error>;
 		/// Begin a verification with `provider` for `countries`, optionally
@@ -256,10 +255,6 @@ interface kyc {
 		get-certificates: func(provider: kyc-provider, id: string) -> result<certificates-outcome, coded-error>;
 		/// Read the status of verification `id`.
 		get-verification-status: func(provider: kyc-provider, id: string) -> result<status-outcome, coded-error>;
-		/// Every certificate `account` has published on-chain, each with the
-		/// intermediates recorded alongside it (the reference
-		/// `getAllCertificates`).
-		get-all-certificates: func(account: string) -> result<list<certificate-group>, coded-error>;
 	}
 }
 
@@ -284,13 +279,13 @@ interface asset-movement {
 		/// Build a client that resolves providers from the `root` account's
 		/// on-chain service metadata, read via the node API at `node-url`, and
 		/// signs each request with `signer`.
-		with-account: static func(node-url: string, root: string, signer: borrow<account>) -> result<asset-client, coded-error>;
+		with-account: static func(node-url: string, root: borrow<account>, signer: borrow<account>) -> result<asset-client, coded-error>;
 		/// Every advertised provider, as a JSON array.
 		providers: func() -> result<string, coded-error>;
 		/// The provider with `id` as a JSON document, or JSON `null` when absent.
 		provider-by-id: func(id: string) -> result<string, coded-error>;
 		/// The provider signed by `account` as a JSON document, or JSON `null`.
-		provider-by-account: func(account: string) -> result<string, coded-error>;
+		provider-by-account: func(account: borrow<account>) -> result<string, coded-error>;
 		/// Every provider whose supported assets satisfy the JSON search, as a JSON array.
 		providers-for-transfer: func(search: string) -> result<string, coded-error>;
 		/// Simulate a transfer, returning a JSON simulated transfer.

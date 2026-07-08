@@ -25,6 +25,7 @@ use alloc::vec::Vec;
 
 use core::str::FromStr;
 
+use keetanetwork_account::GenericAccount;
 use keetanetwork_anchor::signing::{object_to_signable, verify_body, Signed, VerifyOptions};
 use keetanetwork_client::KeetaClient;
 use serde_json::{Map, Value};
@@ -55,22 +56,22 @@ enum Segment {
 pub struct Resolver {
 	client: KeetaClient,
 	transport: Arc<dyn AnchorHttpTransport>,
-	roots: Vec<String>,
+	roots: Vec<Arc<GenericAccount>>,
 }
 
 impl Resolver {
 	/// A resolver reading `roots` (in priority order) through the node
 	/// `client`, signing nothing (metadata reads are unauthenticated).
 	///
-	/// Each root is a `keeta_...` account string whose `info.metadata` holds
-	/// the service-metadata document. The `transport` reads `ExternalURL`
+	/// Each root is an account whose `info.metadata` holds the
+	/// service-metadata document. The `transport` reads `ExternalURL`
 	/// metadata indirections, which live outside the ledger.
 	pub fn new(
 		client: KeetaClient,
 		transport: Arc<dyn AnchorHttpTransport>,
-		roots: impl IntoIterator<Item = String>,
+		roots: impl IntoIterator<Item = impl Into<Arc<GenericAccount>>>,
 	) -> Self {
-		Self { client, transport, roots: roots.into_iter().collect() }
+		Self { client, transport, roots: roots.into_iter().map(Into::into).collect() }
 	}
 
 	/// Collect every provider matching `criteria`, across all roots.
@@ -140,25 +141,12 @@ impl Resolver {
 		Ok(providers)
 	}
 
-	/// Every certificate `account` has published on-chain, each with the
-	/// intermediates recorded alongside it (both PEM), read through the node
-	/// client like the reference `client.getAllCertificates`.
-	///
-	/// # Errors
-	///
-	/// Returns [`ResolverError::Node`] when the ledger read fails.
-	pub async fn get_all_certificates(&self, account: &str) -> Result<Vec<AccountCertificate>, ResolverError> {
-		let certificates = self.client.certificates(account).await?;
-
-		Ok(certificates)
-	}
-
 	/// The fully-resolved, version-1 document for each readable root, in
 	/// priority order. Unreadable or unsupported roots are skipped.
 	async fn root_documents(&self) -> Vec<Value> {
 		let mut documents = Vec::new();
 		for account in &self.roots {
-			let location = MetadataLocation::KeetaNet { account: account.clone() };
+			let location = MetadataLocation::KeetaNet { account: Arc::clone(account) };
 			let Ok(mut document) = read_document(&self.client, self.transport.as_ref(), &location).await else {
 				continue;
 			};

@@ -5,7 +5,9 @@
 //! documentation examples and provide consistent test data for KYC
 //! certificate and sensitive attribute operations.
 
-use keetanetwork_account::{Account, Accountable, KeyECDSASECP256K1, KeyED25519, KeyNETWORK, KeyPair, Keyable};
+use keetanetwork_account::{
+	Account, AccountPrivateKey, Accountable, KeyECDSASECP256K1, KeyED25519, KeyNETWORK, KeyPair, Keyable,
+};
 use keetanetwork_asn1::SubjectPublicKeyInfo;
 use keetanetwork_crypto::prelude::IntoSecret;
 use keetanetwork_x509::utils::create_dn;
@@ -134,7 +136,7 @@ pub fn create_test_x509_cert() -> X509Certificate {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use keetanetwork_account::KeyPair;
+	use keetanetwork_account::AccountPublicKey;
 
 	#[test]
 	fn test_create_secp256k1_test_account() {

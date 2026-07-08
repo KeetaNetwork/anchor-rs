@@ -10,7 +10,8 @@ use wasmtime_p2::bindings::exports::keeta::anchor::certificates::IssueAttribute;
 use wasmtime_p2::bindings::exports::keeta::anchor::kyc::{
 	CertificatesOutcome, KycProvider, StatusOutcome, VerificationOutcome,
 };
-use wasmtime_p2::{coded, instantiate};
+use wasmtime_p2::bindings::exports::keeta::client::crypto::KeyAlgorithm;
+use wasmtime_p2::{account_from_address, coded, instantiate};
 
 /// Project a decrypted attribute's bytes into the JSON value the reference holds:
 /// a scalar attribute is its UTF-8 text; a structured attribute is its JSON object.
@@ -45,12 +46,13 @@ async fn p2_kyc_signs_against_live_anchor() -> Result<(), BoxError> {
 	// resolves the root account over wasi:http.
 	let account = crypto
 		.account()
-		.call_from_seed(&mut store, &"11".repeat(32), 0, "ecdsa_secp256k1")
+		.call_from_seed(&mut store, &"11".repeat(32), 0, KeyAlgorithm::EcdsaSecp256k1)
 		.await?
 		.map_err(coded)?;
+	let root_account = account_from_address(&mut store, &bindings, &root).await?;
 	let client = kyc
 		.client()
-		.call_with_account(&mut store, &node_url, &root, account)
+		.call_with_account(&mut store, &node_url, root_account, account)
 		.await?
 		.map_err(coded)?;
 
@@ -63,6 +65,7 @@ async fn p2_kyc_signs_against_live_anchor() -> Result<(), BoxError> {
 		.await?
 		.map_err(coded)?;
 	assert_eq!(providers.len(), 1, "exactly one provider must serve the requested country");
+
 	let provider: KycProvider = providers
 		.into_iter()
 		.next()
@@ -117,7 +120,8 @@ async fn p2_kyc_signs_against_live_anchor() -> Result<(), BoxError> {
 
 	// A leaf issued for a verification is served back as its full `[leaf, ca]`
 	// chain over the same certificate path.
-	let issued = harness.request("issueCertificate", json!({ "subjectSeed": SUBJECT_SEED, "attributes": issue_attributes() }))?;
+	let issued = harness
+		.request("issueCertificate", json!({ "subjectSeed": SUBJECT_SEED, "attributes": issue_attributes() }))?;
 	let verification_id = field_str(&issued, "verificationID")?;
 	let certificates = kyc
 		.client()
@@ -128,31 +132,6 @@ async fn p2_kyc_signs_against_live_anchor() -> Result<(), BoxError> {
 		panic!("an issued verification must serve its certificates")
 	};
 	assert_eq!(groups.len(), 2, "the issued verification must serve its leaf and ca chain");
-
-	// The on-chain ledger read: a fresh holder publishes two certificate
-	// records (with and without intermediates). Both must read back through
-	// the same client resource with the recorded CA bundle intact.
-	let chain = harness.request("publishCertificateChain", json!({}))?;
-	let chain_account = field_str(&chain, "account")?;
-	let chain_ca = field_str(&chain, "ca")?;
-	let published = kyc
-		.client()
-		.call_get_all_certificates(&mut store, client, &chain_account)
-		.await?
-		.map_err(coded)?;
-	assert_eq!(published.len(), 2, "both published records must read back");
-
-	let with_intermediates = published
-		.iter()
-		.find(|record| !record.intermediates.is_empty())
-		.ok_or("a record with intermediates must read back")?;
-	assert_eq!(with_intermediates.intermediates, [chain_ca], "the recorded CA bundle must survive the round trip");
-	assert!(
-		published
-			.iter()
-			.any(|record| record.intermediates.is_empty()),
-		"a record published without intermediates must decode as empty"
-	);
 
 	harness.shutdown()?;
 	Ok(())
@@ -170,12 +149,12 @@ async fn p2_kyc_issues_a_leaf_across_algorithms() -> Result<(), BoxError> {
 	// leaf with the secp256k1 issuer.
 	let subject = crypto
 		.account()
-		.call_from_seed(&mut store, SUBJECT_SEED, 0, "ed25519")
+		.call_from_seed(&mut store, SUBJECT_SEED, 0, KeyAlgorithm::Ed25519)
 		.await?
 		.map_err(coded)?;
 	let issuer = crypto
 		.account()
-		.call_from_seed(&mut store, &"22".repeat(32), 0, "ecdsa_secp256k1")
+		.call_from_seed(&mut store, &"22".repeat(32), 0, KeyAlgorithm::EcdsaSecp256k1)
 		.await?
 		.map_err(coded)?;
 
@@ -269,7 +248,7 @@ async fn p2_kyc_decrypts_issued_leaf_to_reference_values() -> Result<(), BoxErro
 	// to, so the binding can decrypt every sensitive attribute.
 	let account = crypto
 		.account()
-		.call_from_seed(&mut store, SUBJECT_SEED, 0, "ecdsa_secp256k1")
+		.call_from_seed(&mut store, SUBJECT_SEED, 0, KeyAlgorithm::EcdsaSecp256k1)
 		.await?
 		.map_err(coded)?;
 	let leaf = certificates

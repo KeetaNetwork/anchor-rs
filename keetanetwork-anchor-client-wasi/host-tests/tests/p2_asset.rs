@@ -12,7 +12,8 @@ mod wasmtime_p2;
 
 use common::{field_str, BoxError, Harness};
 use wasmtime_p2::bindings::exports::keeta::anchor::asset_movement::AwaitOptions;
-use wasmtime_p2::{coded, instantiate};
+use wasmtime_p2::bindings::exports::keeta::client::crypto::KeyAlgorithm;
+use wasmtime_p2::{account_from_address, coded, instantiate};
 
 /// Parse a JSON document returned across the component boundary.
 fn parse(document: &str) -> Result<Value, BoxError> {
@@ -42,12 +43,13 @@ async fn p2_asset_movement_signs_against_live_anchor() -> Result<(), BoxError> {
 	// component resolves the root account over wasi:http.
 	let account = crypto
 		.account()
-		.call_from_seed(&mut store, &"11".repeat(32), 0, "ecdsa_secp256k1")
+		.call_from_seed(&mut store, &"11".repeat(32), 0, KeyAlgorithm::EcdsaSecp256k1)
 		.await?
 		.map_err(coded)?;
+	let root_account = account_from_address(&mut store, &bindings, &root).await?;
 	let client = asset_movement
 		.asset_client()
-		.call_with_account(&mut store, &node_url, &root, account)
+		.call_with_account(&mut store, &node_url, root_account, account)
 		.await?
 		.map_err(coded)?;
 
@@ -103,7 +105,10 @@ async fn p2_asset_movement_signs_against_live_anchor() -> Result<(), BoxError> {
 		.iter()
 		.filter_map(|entry| entry.get("id").and_then(Value::as_str))
 		.collect();
-	assert!(matched_ids.contains(&provider_id.as_str()), "provider search must surface the provider, got {matched_ids:?}");
+	assert!(
+		matched_ids.contains(&provider_id.as_str()),
+		"provider search must surface the provider, got {matched_ids:?}"
+	);
 
 	let unmatched_search = json!({ "asset": asset, "from": "chain:evm:1" }).to_string();
 	let unmatched = asset_movement
@@ -141,6 +146,7 @@ async fn p2_asset_movement_signs_against_live_anchor() -> Result<(), BoxError> {
 		.map_err(coded)?;
 	let simulated = parse(&simulated)?;
 	assert!(simulated.get("id").is_none(), "a simulated transfer must not carry an id");
+
 	let choices = simulated
 		.get("instructionChoices")
 		.and_then(Value::as_array)
@@ -205,9 +211,10 @@ async fn p2_asset_movement_signs_against_live_anchor() -> Result<(), BoxError> {
 
 	// Account-based discovery: the provider's entry is signed by the harness
 	// metadata signer, so a lookup by that account surfaces it.
+	let signer_account = account_from_address(&mut store, &bindings, &signer).await?;
 	let by_account = asset_movement
 		.asset_client()
-		.call_provider_by_account(&mut store, client, &signer)
+		.call_provider_by_account(&mut store, client, signer_account)
 		.await?
 		.map_err(coded)?;
 	assert_eq!(
@@ -305,7 +312,10 @@ async fn p2_asset_movement_signs_against_live_anchor() -> Result<(), BoxError> {
 		.await?
 		.map_err(coded)?;
 	assert!(
-		parse(&address)?.get("address").and_then(Value::as_str).is_some(),
+		parse(&address)?
+			.get("address")
+			.and_then(Value::as_str)
+			.is_some(),
 		"the created forwarding address must carry its address"
 	);
 

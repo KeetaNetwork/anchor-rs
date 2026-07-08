@@ -3,15 +3,14 @@
 mod harness;
 
 use std::error::Error;
-use std::sync::Arc;
+use std::str::FromStr;
 
 use chrono::{Duration, Utc};
 use harness::KycHarness;
+use keetanetwork_account::GenericAccount;
 use keetanetwork_anchor::doc_utils::create_secp256k1_test_account;
 use keetanetwork_anchor::trust::CertificateChainStatus;
-use keetanetwork_anchor_client::{
-	verify_account_certificate_chain, AccountCertificate, KeetaClient, ReqwestTransport, Resolver,
-};
+use keetanetwork_anchor_client::{verify_account_certificate_chain, AccountCertificate, KeetaClient};
 use keetanetwork_asn1::SubjectPublicKeyInfo;
 use keetanetwork_x509::builder::CertificateBuilder;
 use keetanetwork_x509::certificates::Certificate;
@@ -19,15 +18,6 @@ use keetanetwork_x509::utils::create_dn;
 use keetanetwork_x509::{oids, SerialNumber};
 
 type TestResult = Result<(), Box<dyn Error>>;
-
-/// A resolver over the live node client at `api`, with no metadata roots.
-fn live_resolver(api: &str) -> Result<Resolver, Box<dyn Error>> {
-	let transport = Arc::new(ReqwestTransport::try_default()?);
-	let client = KeetaClient::new(api);
-	let resolver = Resolver::new(client, transport, Vec::new());
-
-	Ok(resolver)
-}
 
 /// A self-signed CA the ledger never saw, to exercise the untrusted path.
 fn foreign_ca() -> Result<Certificate, Box<dyn Error>> {
@@ -61,9 +51,10 @@ async fn published_certificates_read_back_with_and_without_intermediates() -> Te
 	let mut kyc = KycHarness::start()?;
 	let _anchor = kyc.start_kyc_anchor(None, true)?;
 	let chain = kyc.publish_certificate_chain()?;
-	let resolver = live_resolver(&chain.api)?;
+	let client = KeetaClient::new(&chain.api);
 
-	let records = resolver.get_all_certificates(&chain.account).await?;
+	let account = GenericAccount::from_str(&chain.account)?;
+	let records = client.certificates(&account).await?;
 	assert_eq!(records.len(), 2, "both published records must read back");
 
 	let ca: Certificate = chain.ca.parse()?;
@@ -129,7 +120,8 @@ async fn published_chain_status_matches_the_trust_set() -> TestResult {
 	];
 
 	for (label, account, trusted, moment, expected) in cases {
-		let status = verify_account_certificate_chain(&client, account, &trusted, moment).await?;
+		let account = GenericAccount::from_str(account)?;
+		let status = verify_account_certificate_chain(&client, &account, &trusted, moment).await?;
 		assert_eq!(status, expected, "{label}");
 	}
 

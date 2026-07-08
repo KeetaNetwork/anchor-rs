@@ -30,9 +30,16 @@ impl KycGuest for Component {
 }
 
 impl GuestClient for KycSession {
-	fn with_account(node_url: String, root: String, signer: AccountBorrow<'_>) -> Result<Client, CodedError> {
+	fn with_account(
+		node_url: String,
+		root: AccountBorrow<'_>,
+		signer: AccountBorrow<'_>,
+	) -> Result<Client, CodedError> {
+		let root = Arc::clone(&root.get::<AccountResource>().account);
 		let account = Arc::clone(&signer.get::<AccountResource>().account);
-		Ok(Client::new(Self { inner: build_client(node_url, root, account) }))
+		let inner = build_client(node_url, root, account);
+
+		Ok(Client::new(Self { inner }))
 	}
 
 	fn providers(&self, countries: Vec<String>) -> Result<Vec<WitProvider>, CodedError> {
@@ -55,6 +62,7 @@ impl GuestClient for KycSession {
 				.create_verification(&provider, &codes, redirect)
 				.await
 		})?;
+
 		Ok(outcome.into())
 	}
 
@@ -69,27 +77,18 @@ impl GuestClient for KycSession {
 		let outcome = run(async { self.inner.get_verification_status(&provider, &id).await })?;
 		Ok(outcome.into())
 	}
-
-	fn get_all_certificates(&self, account: String) -> Result<Vec<CertificateGroup>, CodedError> {
-		let records = run(async { self.inner.get_all_certificates(&account).await })?;
-		let groups = records
-			.into_iter()
-			.map(|record| CertificateGroup { certificate: record.certificate, intermediates: record.intermediates })
-			.collect();
-
-		Ok(groups)
-	}
 }
 
 /// Build a networked KYC client signed by `signer`: a `wasi:http` transport
 /// wrapped in the resilience policy, a metadata resolver reading `root`
 /// through the node client at `node_url`, and the bound `signer`.
-fn build_client(node_url: String, root: String, signer: Arc<GenericAccount>) -> KycClient {
+fn build_client(node_url: String, root: Arc<GenericAccount>, signer: Arc<GenericAccount>) -> KycClient {
 	let base: Arc<dyn AnchorHttpTransport> = Arc::new(WasiTransport::default());
 	let transport: Arc<dyn AnchorHttpTransport> = Arc::new(ResilientTransport::new(base, WasiRuntime));
 	let client = super::node_client(&node_url);
 	let resolver = Resolver::new(client, transport.clone(), [root]);
 	let context = AnchorContext::new(resolver, transport, signer);
+
 	KycClient::new(context)
 }
 

@@ -37,9 +37,16 @@ impl AssetMovementGuest for Component {
 }
 
 impl GuestAssetClient for AssetSession {
-	fn with_account(node_url: String, root: String, signer: AccountBorrow<'_>) -> Result<WitAssetClient, CodedError> {
+	fn with_account(
+		node_url: String,
+		root: AccountBorrow<'_>,
+		signer: AccountBorrow<'_>,
+	) -> Result<WitAssetClient, CodedError> {
+		let root = Arc::clone(&root.get::<AccountResource>().account);
 		let account = Arc::clone(&signer.get::<AccountResource>().account);
-		Ok(WitAssetClient::new(Self { inner: build_client(node_url, root, account) }))
+		let inner = build_client(node_url, root, account);
+
+		Ok(WitAssetClient::new(Self { inner }))
 	}
 
 	fn providers(&self) -> Result<String, CodedError> {
@@ -56,7 +63,8 @@ impl GuestAssetClient for AssetSession {
 		text(encode_provider(one))
 	}
 
-	fn provider_by_account(&self, account: String) -> Result<String, CodedError> {
+	fn provider_by_account(&self, account: AccountBorrow<'_>) -> Result<String, CodedError> {
+		let account = account.get::<AccountResource>().account.to_string();
 		let all = run(self.inner.providers())?;
 		let one = filter_providers(all, &ProviderFilter::by_account(account))
 			.into_iter()
@@ -212,7 +220,7 @@ impl GuestAssetClient for AssetSession {
 /// Build a networked asset-movement client signed by `signer`: a `wasi:http`
 /// transport wrapped in the resilience policy, a metadata resolver reading
 /// `root` through the node client at `node_url`, and the bound `signer`.
-fn build_client(node_url: String, root: String, signer: Arc<GenericAccount>) -> AssetMovementClient {
+fn build_client(node_url: String, root: Arc<GenericAccount>, signer: Arc<GenericAccount>) -> AssetMovementClient {
 	let base: Arc<dyn AnchorHttpTransport> = Arc::new(WasiTransport::default());
 	let transport: Arc<dyn AnchorHttpTransport> = Arc::new(ResilientTransport::new(base, WasiRuntime));
 	let client = super::node_client(&node_url);

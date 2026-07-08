@@ -4,9 +4,11 @@
 mod harness;
 
 use std::error::Error;
+use std::str::FromStr;
 use std::sync::Arc;
 
 use harness::{HarnessError, KycHarness};
+use keetanetwork_account::GenericAccount;
 use keetanetwork_anchor_client::{
 	decode_base64, parse_metadata, CountryCode, KeetaClient, KycQuery, ReqwestTransport, Resolver,
 };
@@ -19,7 +21,7 @@ type TestResult = Result<(), Box<dyn Error>>;
 fn resolver_for(api: &str, root: &str) -> Result<Resolver, Box<dyn Error>> {
 	let transport = Arc::new(ReqwestTransport::try_default()?);
 	let client = KeetaClient::new(api);
-	let resolver = Resolver::new(client, transport, [root.to_string()]);
+	let resolver = Resolver::new(client, transport, [GenericAccount::from_str(root)?]);
 	Ok(resolver)
 }
 

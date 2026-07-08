@@ -56,6 +56,9 @@ pub unsafe extern "C" fn keeta_asset_with_account(
 	else {
 		return 0;
 	};
+	let Some(root) = super::parse_account(&root) else {
+		return 0;
+	};
 	let Some(signer) = account(account_handle) else {
 		return 0;
 	};
@@ -505,7 +508,7 @@ async fn lookup(
 // ---------------------------------------------------------------------------
 
 /// Build a networked asset-movement client signed by `signer`.
-fn build_client(node_url: String, root: String, signer: Arc<GenericAccount>) -> AssetMovementClient {
+fn build_client(node_url: String, root: Arc<GenericAccount>, signer: Arc<GenericAccount>) -> AssetMovementClient {
 	let transport = host_transport();
 	let client = super::node::node_client(&node_url);
 	let resolver = Resolver::new(client, transport.clone(), [root]);

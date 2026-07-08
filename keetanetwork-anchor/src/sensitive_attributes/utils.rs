@@ -1,7 +1,7 @@
 use alloc::string::ToString;
 use alloc::vec::Vec;
 
-use keetanetwork_account::KeyPair;
+use keetanetwork_account::AccountPrivateKey;
 use keetanetwork_crypto::algorithms::aes_gcm::Aes256Gcm;
 use keetanetwork_crypto::operations::encryption::NonceGeneration;
 use rasn::prelude::*;
@@ -18,7 +18,7 @@ pub(crate) fn setup_cipher_for_decryption<T>(
 	cipher_info: &SensitiveAttributeCipher,
 ) -> Result<(Aes256Gcm, <Aes256Gcm as NonceGeneration>::Nonce)>
 where
-	T: KeyPair,
+	T: AccountPrivateKey,
 {
 	// Decrypt the symmetric key with the keypair
 	let decrypted_symmetric_key = keypair.decrypt(&cipher_info.key)?;
@@ -38,7 +38,6 @@ pub(crate) fn create_hash_input(
 	plaintext_value: impl AsRef<[u8]>,
 ) -> Vec<u8> {
 	let mut hash_input = Vec::new();
-
 	hash_input.extend_from_slice(salt.as_ref());
 	hash_input.extend_from_slice(public_key.as_ref());
 	hash_input.extend_from_slice(encrypted_value.as_ref());
@@ -107,7 +106,7 @@ pub fn assert_attribute_is_plain(attribute: &crate::kyc_schema::Attribute, name:
 
 #[cfg(test)]
 mod tests {
-	use keetanetwork_account::KeyECDSASECP256K1;
+	use keetanetwork_account::{AccountPublicKey, KeyECDSASECP256K1};
 	use keetanetwork_crypto::algorithms::aes_gcm::Aes256Gcm;
 	use keetanetwork_crypto::operations::encryption::{Aead, NonceGeneration};
 	use keetanetwork_crypto::prelude::ExposeSecret;

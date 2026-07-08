@@ -4,10 +4,12 @@ mod harness;
 
 use std::collections::BTreeMap;
 use std::error::Error;
+use std::str::FromStr;
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use harness::KycHarness;
+use keetanetwork_account::GenericAccount;
 use keetanetwork_anchor_client::{
 	AnchorHttpTransport, HttpResponse, KeetaClient, Resolver, ResolverError, ServiceQuery, TransportError,
 };
@@ -116,7 +118,7 @@ fn resolve_ids(
 	for document in roots {
 		let root = kyc.publish_metadata(document)?;
 		api = root.api;
-		published.push(root.root);
+		published.push(GenericAccount::from_str(&root.root)?);
 	}
 
 	let client = KeetaClient::new(&api);
@@ -189,7 +191,7 @@ fn a_keetanet_external_url_resolves_through_the_ledger() -> TestResult {
 
 	let client = KeetaClient::new(&root.api);
 	let host = Arc::new(DocHost::default());
-	let resolver = Resolver::new(client, host, [root.root]);
+	let resolver = Resolver::new(client, host, [GenericAccount::from_str(&root.root)?]);
 	let runtime = tokio::runtime::Builder::new_current_thread()
 		.enable_all()
 		.build()?;

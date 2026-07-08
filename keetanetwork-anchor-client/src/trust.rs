@@ -9,6 +9,7 @@
 use alloc::vec::Vec;
 
 use chrono::{DateTime, Utc};
+use keetanetwork_account::AccountPublicKey;
 use keetanetwork_anchor::trust::{evaluate_certificate_chain, CertificateChainStatus, CertificateRecord};
 use keetanetwork_client::KeetaClient;
 use keetanetwork_x509::certificates::Certificate;
@@ -25,7 +26,7 @@ use crate::resolver::AccountCertificate;
 /// records are skipped, not errored.
 pub async fn verify_account_certificate_chain(
 	client: &KeetaClient,
-	account: &str,
+	account: impl AccountPublicKey,
 	trusted_issuers: &[Certificate],
 	moment: DateTime<Utc>,
 ) -> Result<CertificateChainStatus, ResolverError> {
