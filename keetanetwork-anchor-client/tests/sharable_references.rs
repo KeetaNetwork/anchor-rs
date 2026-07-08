@@ -195,10 +195,7 @@ async fn raw_harness_blobs_pass_through_http_into_a_bundle_typescript_opens() ->
 	harness.shutdown()?;
 
 	let recovered = ts_resolved_blob(&opened, &id)?;
-	assert_eq!(
-		recovered, BLOB_PLAINTEXT,
-		"the reference reader must recover the raw HTTP-sourced blob byte-for-byte"
-	);
+	assert_eq!(recovered, BLOB_PLAINTEXT, "the reference reader must recover the raw HTTP-sourced blob byte-for-byte");
 	Ok(())
 }
 
@@ -219,10 +216,7 @@ async fn typescript_opens_a_rust_bundle_with_references() -> TestResult {
 	harness.shutdown()?;
 
 	let recovered = ts_resolved_blob(&opened, &id)?;
-	assert_eq!(
-		recovered, BLOB_PLAINTEXT,
-		"the reference reader must recover the referenced plaintext byte-for-byte"
-	);
+	assert_eq!(recovered, BLOB_PLAINTEXT, "the reference reader must recover the referenced plaintext byte-for-byte");
 	Ok(())
 }
 
