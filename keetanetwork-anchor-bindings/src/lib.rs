@@ -15,3 +15,6 @@ pub mod error;
 pub mod parse;
 pub mod registry;
 pub mod sharable_attributes;
+
+#[cfg(test)]
+mod testing;

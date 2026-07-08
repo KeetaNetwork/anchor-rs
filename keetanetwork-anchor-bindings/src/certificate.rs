@@ -409,11 +409,13 @@ mod tests {
 
 	use keetanetwork_account::{Account, KeyECDSASECP256K1};
 	use keetanetwork_anchor::doc_utils::{
-		create_ed25519_test_account, create_secp256k1_test_account, create_test_certificate_builder,
+		create_ed25519_test_account, create_network_test_account, create_secp256k1_test_account,
+		create_test_certificate_builder,
 	};
 	use keetanetwork_crypto::prelude::IntoSecret;
 
 	use super::*;
+	use crate::testing::{document_certificate, LICENSE};
 
 	/// Plain attributes embedded in the fixture certificate.
 	const PLAIN: &[(&str, &[u8])] = &[("postalCode", b"12345")];
@@ -606,6 +608,7 @@ mod tests {
 			let proof = prove_attribute(&certificate, name, &subject.keypair)?;
 			assert!(validate_attribute_proof(&certificate, name, &subject.keypair, proof)?);
 		}
+
 		Ok(())
 	}
 
@@ -617,6 +620,7 @@ mod tests {
 			let proof = prove_attribute_with_account(&certificate, name, &account)?;
 			assert!(validate_attribute_proof_with_account(&certificate, name, &account, proof)?);
 		}
+
 		Ok(())
 	}
 
@@ -645,5 +649,45 @@ mod tests {
 		let error = issue(subject.as_ref(), issuer.as_ref(), "Subject", "Issuer", 1, i64::MAX, i64::MAX, false, &[])
 			.unwrap_err();
 		assert_eq!(error.code, INVALID_DATE);
+	}
+
+	#[test]
+	fn lists_one_record_per_discovered_reference() -> Result<(), CodedError> {
+		let (certificate, subject, id) = document_certificate();
+		let names = [LICENSE.to_string()];
+
+		let records = external_references_with_account(&certificate, &subject, &names)?;
+		assert_eq!(records.len(), 1);
+
+		let record = &records[0];
+		assert_eq!(record.attribute, LICENSE);
+		assert_eq!(record.id, id);
+		assert_eq!(record.url, "data:application/octet-string;base64,AAAA");
+		assert_eq!(record.content_type, "image/png");
+		assert_eq!(record.digest_algorithm, "sha3-256");
+		assert_eq!(record.encryption_algorithm, "KeetaEncryptedContainerV1");
+		Ok(())
+	}
+
+	#[test]
+	fn an_unreferenced_attribute_lists_no_records() -> Result<(), CodedError> {
+		let (certificate, subject) = fixture();
+		let account = Arc::new(GenericAccount::EcdsaSecp256k1(subject));
+		let names = ["email".to_string()];
+
+		let records = external_references_with_account(&certificate, &account, &names)?;
+		assert!(records.is_empty());
+		Ok(())
+	}
+
+	#[test]
+	fn an_identifier_subject_cannot_list_references() {
+		let (certificate, _, _) = document_certificate();
+		let network = Arc::new(GenericAccount::Network(create_network_test_account(None)));
+		let names = [LICENSE.to_string()];
+
+		let listed = external_references_with_account(&certificate, &network, &names);
+		let code = listed.err().map(|error| error.code);
+		assert_eq!(code, Some(UNSUPPORTED_KEY_TYPE.to_string()));
 	}
 }

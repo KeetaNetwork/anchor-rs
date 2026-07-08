@@ -1297,11 +1297,13 @@ name = "keetanetwork-anchor-bindings"
 version = "0.2.1"
 dependencies = [
  "chrono",
+ "hex",
  "keetanetwork-account",
  "keetanetwork-anchor",
  "keetanetwork-bindings",
  "keetanetwork-crypto",
  "keetanetwork-x509",
+ "serde_json",
 ]
 
 [[package]]

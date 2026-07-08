@@ -204,6 +204,7 @@ mod tests {
 	use keetanetwork_crypto::prelude::IntoSecret;
 
 	use super::*;
+	use crate::testing::{document_certificate, seal_blob, BLOB_PLAINTEXT, LICENSE};
 
 	/// The plain attribute embedded in the fixture certificate.
 	const PLAIN: (&str, &[u8]) = ("postalCode", b"12345");
@@ -279,5 +280,45 @@ mod tests {
 		let mut opened = from_pem(&pem, &[recipient(2)])?;
 		assert_eq!(attribute_buffer(&mut opened, "doesNotExist")?, None);
 		Ok(())
+	}
+
+	#[test]
+	fn a_supplied_blob_round_trips_through_reference_blob() -> Result<(), CodedError> {
+		let (certificate, subject, id) = document_certificate();
+		let sealed = seal_blob(BLOB_PLAINTEXT, &subject);
+		let blobs = ExternalBlobs::from_iter([(id.clone(), sealed)]);
+		let names = [LICENSE.to_string()];
+		let mut sharable = from_certificate_with_references(&certificate, &subject, &[], &names, blobs)?;
+
+		grant_access(&mut sharable, &[recipient(2)])?;
+
+		let pem = to_pem(&mut sharable)?;
+		let mut opened = from_pem(&pem, &[recipient(2)])?;
+		assert_eq!(reference_blob(&mut opened, LICENSE, &id)?, Some(BLOB_PLAINTEXT.to_vec()));
+		assert_eq!(reference_blob(&mut opened, LICENSE, "00FF")?, None);
+		Ok(())
+	}
+
+	#[test]
+	fn a_corrupted_blob_maps_to_the_digest_mismatch_code() {
+		let (certificate, subject, id) = document_certificate();
+		let sealed = seal_blob(b"tampered content", &subject);
+		let blobs = ExternalBlobs::from_iter([(id, sealed)]);
+		let names = [LICENSE.to_string()];
+
+		let build = from_certificate_with_references(&certificate, &subject, &[], &names, blobs);
+		let code = build.err().map(|error| error.code);
+		assert_eq!(code, Some(REFERENCE_DIGEST_MISMATCH.to_string()));
+	}
+
+	#[test]
+	fn a_non_container_blob_maps_to_the_decrypt_code() {
+		let (certificate, subject, id) = document_certificate();
+		let blobs = ExternalBlobs::from_iter([(id, b"not a container".to_vec())]);
+		let names = [LICENSE.to_string()];
+
+		let build = from_certificate_with_references(&certificate, &subject, &[], &names, blobs);
+		let code = build.err().map(|error| error.code);
+		assert_eq!(code, Some(REFERENCE_DECRYPT.to_string()));
 	}
 }

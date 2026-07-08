@@ -211,7 +211,8 @@ pub enum AnchorClientError {
 	ReferenceFetch {
 		/// The reference URL that was requested.
 		url: String,
-		/// The HTTP status the server returned (`0` for a malformed `data:` URL).
+		/// The HTTP status the server returned (`0` for a malformed `data:`
+		/// URL or container payload).
 		status: u16,
 	},
 
@@ -264,5 +265,28 @@ impl From<serde_json::Error> for AnchorClientError {
 impl From<ParseError> for AnchorClientError {
 	fn from(error: ParseError) -> Self {
 		Self::Url { reason: error.to_string() }
+	}
+}
+
+#[cfg(all(test, feature = "kyc"))]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn a_reference_fetch_failure_reports_its_code() {
+		let error = AnchorClientError::ReferenceFetch { url: "https://example.test/blob".to_string(), status: 404 };
+		assert_eq!(error.code(), "REFERENCE_FETCH");
+	}
+
+	#[test]
+	fn a_sharable_failure_reports_its_code() {
+		let error = AnchorClientError::from(SharableAttributesError::InvalidPem);
+		assert_eq!(error.code(), "SHARABLE");
+	}
+
+	#[test]
+	fn a_certificate_error_routes_through_sharable() {
+		let error = AnchorClientError::from(KycCertificateError::UnsupportedSubjectKey);
+		assert!(matches!(error, AnchorClientError::Sharable { source: SharableAttributesError::Certificate { .. } }));
 	}
 }

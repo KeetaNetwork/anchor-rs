@@ -142,7 +142,6 @@ async fn fetch_external_blobs_decodes_data_urls_offline() -> TestResult {
 
 	let transport = ReqwestTransport::try_default()?;
 	let blobs = fetch_external_blobs(&transport, [&reference]).await?;
-
 	assert_eq!(
 		blobs.get(&reference.id()),
 		Some(BLOB_PLAINTEXT),
@@ -165,6 +164,7 @@ async fn wrapped_harness_blobs_unwrap_through_http() -> TestResult {
 
 	let certificate = issue_license_certificate(&license_value(&url, &digest))?;
 	let pem = export_with_references(&certificate).await?;
+
 	harness.shutdown()?;
 
 	let mut opened = open_as_recipient(&pem)?;
@@ -192,6 +192,7 @@ async fn raw_harness_blobs_pass_through_http_into_a_bundle_typescript_opens() ->
 	let pem = export_with_references(&certificate).await?;
 
 	let opened = harness.open_sharable(&pem, RECIPIENT_SEED, &[LICENSE])?;
+
 	harness.shutdown()?;
 
 	let recovered = ts_resolved_blob(&opened, &id)?;
@@ -213,6 +214,7 @@ async fn typescript_opens_a_rust_bundle_with_references() -> TestResult {
 	// hash-verifies the payload itself (it throws on an access-time mismatch).
 	let mut harness = KycHarness::start()?;
 	let opened = harness.open_sharable(&pem, RECIPIENT_SEED, &[LICENSE])?;
+
 	harness.shutdown()?;
 
 	let recovered = ts_resolved_blob(&opened, &id)?;
@@ -234,6 +236,7 @@ async fn rust_ingests_a_typescript_built_bundle_with_references() -> TestResult 
 	// in-lines the verified payload into the bundle it exports.
 	let mut harness = SharableHarness::start()?;
 	let built = harness.build_sharable(SUBJECT_SEED, RECIPIENT_SEED, &attributes)?;
+
 	harness.shutdown()?;
 
 	let pem = built

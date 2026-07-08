@@ -21,7 +21,8 @@ function reviveMarker(value: object): Date | Buffer | undefined {
 	const typeEntry = entries.find(([key]) => key === 'type');
 	const dataEntry = entries.find(([key]) => key === 'data');
 	const data: unknown = dataEntry?.[1];
-	if (typeEntry?.[1] === 'Buffer' && Array.isArray(data) && data.every((byte): byte is number => typeof byte === 'number')) {
+	const isByte = (byte: unknown): byte is number => Number.isInteger(byte) && typeof byte === 'number' && byte >= 0 && byte <= 255;
+	if (typeEntry?.[1] === 'Buffer' && Array.isArray(data) && data.every(isByte)) {
 		return(Buffer.from(data));
 	}
 

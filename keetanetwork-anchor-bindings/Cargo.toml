@@ -47,3 +47,5 @@ keetanetwork-crypto = { workspace = true, features = [
 	"encryption",
 	"rasn",
 ] }
+hex = { workspace = true, features = ["std"] }
+serde_json = { workspace = true, features = ["std"] }
