@@ -4,6 +4,9 @@
 use std::convert::TryFrom;
 use std::str::FromStr;
 
+#[cfg(feature = "sharable-attributes")]
+use std::sync::Arc;
+
 use keetanetwork_account::{Account, AccountError, Accountable, KeyECDSASECP256K1, KeyPair, Keyable};
 use keetanetwork_asn1::SubjectPublicKeyInfo;
 use keetanetwork_crypto::prelude::IntoSecret;
@@ -15,11 +18,11 @@ use crate::certificates::{KycCertificate, KycCertificateBuilder};
 use crate::kyc_schema::builder::AttributeBuilderLike;
 use crate::kyc_schema::{Attribute, AttributeBuilder, KycAttributes, KycAttributesBuilder};
 use crate::sensitive_attributes::{SensitiveAttribute, SensitiveAttributeBuilder, SensitiveAttributeProof};
-#[cfg(feature = "sharable-attributes")]
-use keetanetwork_account::GenericAccount;
 
 #[cfg(feature = "sharable-attributes")]
-use crate::sharable_attributes::SharableCertificateAttributes;
+use crate::sharable_attributes::{FromCertificateOptions, SharableCertificateAttributes};
+#[cfg(feature = "sharable-attributes")]
+use keetanetwork_account::GenericAccount;
 
 /// Test data from TypeScript test
 pub const TEST_SEED: &str = "D6986115BE7334E50DA8D73B1A4670A510E8BF47E8C5C9960B8F5248EC7D6E3D";
@@ -66,6 +69,7 @@ where
 	let seed_array: [u8; 32] = seed_bytes.try_into().expect("Seed must be 32 bytes");
 	let secret = seed_array.into_secret();
 	let seed = Keyable::Seed((secret, index));
+
 	let accountable = Accountable::KeyAndType(seed, T::KEY_PAIR_TYPE);
 	Account::<T>::try_from(accountable).expect("Failed to create account from seed")
 }
@@ -90,6 +94,7 @@ where
 		.to_public_key_string()
 		.expect("Failed to get public key string");
 	let keyable = Keyable::PublicKeyString(public_key_string);
+
 	let accountable = Accountable::KeyAndType(keyable, T::KEY_PAIR_TYPE);
 	Account::<T>::try_from(accountable).expect("create public-key-only account")
 }
@@ -259,12 +264,13 @@ pub fn export_sharable_pem(
 		.build(&subject.keypair, &issuer.keypair)
 		.expect("leaf certificate");
 
-	let subject_account = GenericAccount::EcdsaSecp256k1(subject);
+	let subject_account = Arc::new(GenericAccount::EcdsaSecp256k1(subject));
 	let recipient = create_account_from_seed_hex::<KeyECDSASECP256K1>(recipient_seed_hex, 0);
 	let recipient_account = GenericAccount::EcdsaSecp256k1(recipient);
 	let names: Vec<&str> = attributes.iter().map(|(name, _, _)| *name).collect();
 
-	let mut sharable = SharableCertificateAttributes::from_certificate(&certificate, &subject_account, &[], names)
+	let options = FromCertificateOptions::default();
+	let mut sharable = SharableCertificateAttributes::from_certificate(&certificate, &subject_account, names, options)
 		.expect("build sharable attributes");
 	sharable
 		.grant_access([recipient_account])

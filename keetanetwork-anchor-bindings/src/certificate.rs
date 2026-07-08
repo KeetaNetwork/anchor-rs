@@ -115,6 +115,54 @@ where
 	certificate.decrypt_attribute(name, keypair).map_err(coded)
 }
 
+/// One discovered external blob reference, flattened for boundary transport:
+/// the carrying `attribute` name, the uppercase-hex digest `id`, and the
+/// reference's location and algorithm fields as strings.
+pub struct ExternalReferenceRecord {
+	/// The attribute name carrying the reference.
+	pub attribute: String,
+	/// The uppercase-hex digest id keying the reference.
+	pub id: String,
+	/// The URL serving the stored blob.
+	pub url: String,
+	/// The MIME type of the blob plaintext.
+	pub content_type: String,
+	/// The digest algorithm's symbolic name.
+	pub digest_algorithm: String,
+	/// The encryption algorithm's symbolic name.
+	pub encryption_algorithm: String,
+}
+
+/// The external blob references carried by the named attributes, discovered
+/// with the erased `subject` account and flattened to one record per reference.
+pub fn external_references_with_account(
+	certificate: &KycCertificate,
+	subject: &Arc<GenericAccount>,
+	names: &[String],
+) -> Result<Vec<ExternalReferenceRecord>, CodedError> {
+	let discovered = certificate
+		.external_references(subject.as_ref(), names)
+		.map_err(coded)?;
+
+	let records = discovered
+		.into_iter()
+		.flat_map(|(attribute, references)| {
+			references
+				.into_iter()
+				.map(move |reference| ExternalReferenceRecord {
+					attribute: attribute.clone(),
+					id: reference.id(),
+					url: reference.external.url,
+					content_type: reference.external.content_type,
+					digest_algorithm: reference.digest.algorithm_name(),
+					encryption_algorithm: reference.encryption.to_string(),
+				})
+		})
+		.collect();
+
+	Ok(records)
+}
+
 /// Decrypt a sensitive attribute for an erased account, dispatching on the
 /// account's signing algorithm. The binding ABIs hold accounts erased over their
 /// key type, so this bridges that erased handle to the typed [`decrypt_attribute`].
@@ -136,8 +184,7 @@ where
 
 /// A proof attesting to a sensitive attribute's committed value, validated
 /// against the certificate with only the subject's public key. `value` is the
-/// base64 attribute value the proof reveals; `salt` is its base64 commitment
-/// salt. Both cross binding boundaries as opaque strings.
+/// base64 attribute value the proof reveals.
 pub struct AttributeProof {
 	pub value: String,
 	pub salt: String,
@@ -352,6 +399,7 @@ pub fn coded(error: KycCertificateError) -> CodedError {
 		KycCertificateError::AttributeNotFound { .. } => CodedError::new(ATTRIBUTE_NOT_FOUND, message),
 		KycCertificateError::InvalidAttributeValue { .. } => CodedError::new(INVALID_ATTRIBUTE_VALUE, message),
 		KycCertificateError::MissingRequiredField { .. } => CodedError::new(MISSING_REQUIRED_FIELD, message),
+		KycCertificateError::UnsupportedSubjectKey => CodedError::new(UNSUPPORTED_KEY_TYPE, message),
 	}
 }
 
@@ -361,11 +409,13 @@ mod tests {
 
 	use keetanetwork_account::{Account, KeyECDSASECP256K1};
 	use keetanetwork_anchor::doc_utils::{
-		create_ed25519_test_account, create_secp256k1_test_account, create_test_certificate_builder,
+		create_ed25519_test_account, create_network_test_account, create_secp256k1_test_account,
+		create_test_certificate_builder,
 	};
 	use keetanetwork_crypto::prelude::IntoSecret;
 
 	use super::*;
+	use crate::testing::{document_certificate, LICENSE};
 
 	/// Plain attributes embedded in the fixture certificate.
 	const PLAIN: &[(&str, &[u8])] = &[("postalCode", b"12345")];
@@ -558,6 +608,7 @@ mod tests {
 			let proof = prove_attribute(&certificate, name, &subject.keypair)?;
 			assert!(validate_attribute_proof(&certificate, name, &subject.keypair, proof)?);
 		}
+
 		Ok(())
 	}
 
@@ -569,6 +620,7 @@ mod tests {
 			let proof = prove_attribute_with_account(&certificate, name, &account)?;
 			assert!(validate_attribute_proof_with_account(&certificate, name, &account, proof)?);
 		}
+
 		Ok(())
 	}
 
@@ -597,5 +649,45 @@ mod tests {
 		let error = issue(subject.as_ref(), issuer.as_ref(), "Subject", "Issuer", 1, i64::MAX, i64::MAX, false, &[])
 			.unwrap_err();
 		assert_eq!(error.code, INVALID_DATE);
+	}
+
+	#[test]
+	fn lists_one_record_per_discovered_reference() -> Result<(), CodedError> {
+		let (certificate, subject, id) = document_certificate();
+		let names = [LICENSE.to_string()];
+
+		let records = external_references_with_account(&certificate, &subject, &names)?;
+		assert_eq!(records.len(), 1);
+
+		let record = &records[0];
+		assert_eq!(record.attribute, LICENSE);
+		assert_eq!(record.id, id);
+		assert_eq!(record.url, "data:application/octet-string;base64,AAAA");
+		assert_eq!(record.content_type, "image/png");
+		assert_eq!(record.digest_algorithm, "sha3-256");
+		assert_eq!(record.encryption_algorithm, "KeetaEncryptedContainerV1");
+		Ok(())
+	}
+
+	#[test]
+	fn an_unreferenced_attribute_lists_no_records() -> Result<(), CodedError> {
+		let (certificate, subject) = fixture();
+		let account = Arc::new(GenericAccount::EcdsaSecp256k1(subject));
+		let names = ["email".to_string()];
+
+		let records = external_references_with_account(&certificate, &account, &names)?;
+		assert!(records.is_empty());
+		Ok(())
+	}
+
+	#[test]
+	fn an_identifier_subject_cannot_list_references() {
+		let (certificate, _, _) = document_certificate();
+		let network = Arc::new(GenericAccount::Network(create_network_test_account(None)));
+		let names = [LICENSE.to_string()];
+
+		let listed = external_references_with_account(&certificate, &network, &names);
+		let code = listed.err().map(|error| error.code);
+		assert_eq!(code, Some(UNSUPPORTED_KEY_TYPE.to_string()));
 	}
 }

@@ -2,9 +2,15 @@
 
 use alloc::string::{String, ToString};
 
-use keetanetwork_anchor::signing::{RequestError, SigningError};
 use snafu::Snafu;
 use url::ParseError;
+
+use keetanetwork_anchor::signing::{RequestError, SigningError};
+
+#[cfg(feature = "kyc")]
+use keetanetwork_anchor::certificates::KycCertificateError;
+#[cfg(feature = "kyc")]
+use keetanetwork_anchor::sharable_attributes::error::SharableAttributesError;
 
 /// A failure reaching an anchor over HTTP.
 #[derive(Debug, Snafu)]
@@ -198,6 +204,25 @@ pub enum AnchorClientError {
 		/// The deadline that elapsed, in milliseconds.
 		timeout_ms: u32,
 	},
+
+	/// A referenced external blob could not be fetched.
+	#[cfg(feature = "kyc")]
+	#[snafu(display("reference fetch failed for `{url}` (status {status})"))]
+	ReferenceFetch {
+		/// The reference URL that was requested.
+		url: String,
+		/// The HTTP status the server returned (`0` for a malformed `data:`
+		/// URL or container payload).
+		status: u16,
+	},
+
+	/// A sharable-attributes operation failed in the core.
+	#[cfg(feature = "kyc")]
+	#[snafu(display("{source}"), context(false))]
+	Sharable {
+		/// The underlying sharable-attributes failure.
+		source: SharableAttributesError,
+	},
 }
 
 impl AnchorClientError {
@@ -214,7 +239,19 @@ impl AnchorClientError {
 			Self::Service { .. } => "SERVICE",
 			Self::UnsupportedOperation { .. } => "UNSUPPORTED_OPERATION",
 			Self::Timeout { .. } => "TIMEOUT",
+
+			#[cfg(feature = "kyc")]
+			Self::ReferenceFetch { .. } => "REFERENCE_FETCH",
+			#[cfg(feature = "kyc")]
+			Self::Sharable { .. } => "SHARABLE",
 		}
+	}
+}
+
+#[cfg(feature = "kyc")]
+impl From<KycCertificateError> for AnchorClientError {
+	fn from(error: KycCertificateError) -> Self {
+		Self::Sharable { source: SharableAttributesError::from(error) }
 	}
 }
 
@@ -228,5 +265,28 @@ impl From<serde_json::Error> for AnchorClientError {
 impl From<ParseError> for AnchorClientError {
 	fn from(error: ParseError) -> Self {
 		Self::Url { reason: error.to_string() }
+	}
+}
+
+#[cfg(all(test, feature = "kyc"))]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn a_reference_fetch_failure_reports_its_code() {
+		let error = AnchorClientError::ReferenceFetch { url: "https://example.test/blob".to_string(), status: 404 };
+		assert_eq!(error.code(), "REFERENCE_FETCH");
+	}
+
+	#[test]
+	fn a_sharable_failure_reports_its_code() {
+		let error = AnchorClientError::from(SharableAttributesError::InvalidPem);
+		assert_eq!(error.code(), "SHARABLE");
+	}
+
+	#[test]
+	fn a_certificate_error_routes_through_sharable() {
+		let error = AnchorClientError::from(KycCertificateError::UnsupportedSubjectKey);
+		assert!(matches!(error, AnchorClientError::Sharable { source: SharableAttributesError::Certificate { .. } }));
 	}
 }

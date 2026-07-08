@@ -14,6 +14,9 @@ pub mod resilience;
 #[cfg(feature = "codec")]
 pub mod resolver;
 
+#[cfg(feature = "kyc")]
+pub mod sharable;
+
 #[cfg(feature = "service")]
 pub mod service;
 
@@ -62,6 +65,9 @@ pub use service::{AnchorCaller, AnchorContext, AnchorOutcome, Auth, BodyEnvelope
 pub use services::kyc::{
 	Certificate, Certificates, ExpectedCost, KycClient, KycQuery, SupportedCountries, Verification, VerificationStatus,
 };
+
+#[cfg(feature = "kyc")]
+pub use sharable::{fetch_external_blobs, sharable_with_references};
 
 #[cfg(feature = "asset")]
 pub use services::asset_movement::{

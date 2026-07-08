@@ -9,7 +9,9 @@ use super::exports::keeta::anchor::certificates::{
 	Guest as CertificatesGuest, GuestKycCertificate, KycCertificate as WitKycCertificate,
 };
 use super::exports::keeta::client::crypto::{AccountBorrow, Certificate as WitCertificate, CertificateBorrow};
-use super::keeta::anchor::types::{AttributeProof as WitAttributeProof, IssueAttribute, KycAttribute};
+use super::keeta::anchor::types::{
+	AttributeProof as WitAttributeProof, AttributeReference as WitAttributeReference, IssueAttribute, KycAttribute,
+};
 use super::{collect_certificates, seconds_to_millis, CodedError, Component};
 
 /// A KYC leaf certificate: a base certificate plus parsed KYC attributes.
@@ -124,5 +126,27 @@ impl GuestKycCertificate for KycCertificateResource {
 		let account = &subject.get::<AccountResource>().account;
 		let proof = kyc_cert_ops::AttributeProof { value: proof.value, salt: proof.salt };
 		Ok(kyc_cert_ops::validate_attribute_proof_with_account(&self.certificate, &name, account, proof)?)
+	}
+
+	fn external_references(
+		&self,
+		subject: AccountBorrow<'_>,
+		names: Vec<String>,
+	) -> Result<Vec<WitAttributeReference>, CodedError> {
+		let account = &subject.get::<AccountResource>().account;
+		let records = kyc_cert_ops::external_references_with_account(&self.certificate, account, &names)?;
+		let references = records
+			.into_iter()
+			.map(|record| WitAttributeReference {
+				attribute: record.attribute,
+				id: record.id,
+				url: record.url,
+				content_type: record.content_type,
+				digest_algorithm: record.digest_algorithm,
+				encryption_algorithm: record.encryption_algorithm,
+			})
+			.collect();
+
+		Ok(references)
 	}
 }

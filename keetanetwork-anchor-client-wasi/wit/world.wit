@@ -82,6 +82,16 @@ interface types {
 		intermediates: list<string>,
 	}
 
+	/// One external blob reference discovered in an attribute's decoded value.
+	record attribute-reference {
+		attribute: string,
+		id: string,
+		url: string,
+		content-type: string,
+		digest-algorithm: string,
+		encryption-algorithm: string,
+	}
+
 	/// A verification result that the provider may report as pending: either
 	/// `ready` with the value, or `retry` after the given milliseconds.
 	variant verification-outcome {
@@ -89,13 +99,14 @@ interface types {
 		retry(u32),
 	}
 
-	/// A status result, ready or retry-after-millis.
+	/// A status result, ready or retry-after-milliseconds.
 	variant status-outcome {
 		ready(verification-status),
 		retry(u32),
 	}
 
-	/// A certificates result: ready with the issued groups, or retry-after-millis.
+	/// A certificates result: ready with the issued groups, or
+	/// retry-after-milliseconds.
 	variant certificates-outcome {
 		ready(list<certificate-group>),
 		retry(u32),
@@ -107,7 +118,7 @@ interface types {
 interface certificates {
 	use keeta:client/types@0.1.0.{coded-error};
 	use keeta:client/crypto@0.1.0.{account, certificate};
-	use types.{kyc-attribute, issue-attribute, attribute-proof};
+	use types.{kyc-attribute, issue-attribute, attribute-proof, attribute-reference};
 
 	/// A KYC leaf certificate.
 	resource kyc-certificate {
@@ -141,6 +152,10 @@ interface certificates {
 		/// Whether `proof` attests to sensitive attribute `name`, validated with
 		/// `subject`'s public key.
 		validate-proof: func(name: string, subject: borrow<account>, proof: attribute-proof) -> result<bool, coded-error>;
+		/// The external blob references carried by the `names` attributes,
+		/// discovered with `subject` (sensitive values are decrypted to walk
+		/// them), one record per reference.
+		external-references: func(subject: borrow<account>, names: list<string>) -> result<list<attribute-reference>, coded-error>;
 	}
 }
 
@@ -201,6 +216,12 @@ interface sharable {
 		/// `subject` account, bridging the trust chain with `intermediates`, and
 		/// seal the result. Grant a recipient before exporting.
 		from-certificate: static func(certificate: borrow<kyc-certificate>, subject: borrow<account>, intermediates: list<borrow<certificate>>, names: list<string>) -> result<sharable-certificate-attributes, coded-error>;
+		/// Build like `from-certificate`, additionally ingesting the
+		/// caller-fetched external `blobs` (`(id, raw fetched bytes)` pairs):
+		/// each named attribute's discovered reference with a supplied blob is
+		/// decrypted with the subject, digest-verified, and inlined; a
+		/// reference without a supplied blob is skipped.
+		from-certificate-with-references: static func(certificate: borrow<kyc-certificate>, subject: borrow<account>, intermediates: list<borrow<certificate>>, names: list<string>, blobs: list<tuple<string, list<u8>>>) -> result<sharable-certificate-attributes, coded-error>;
 		/// Open a bundle from encoded container bytes, resolved with `principals`.
 		from-encoded: static func(data: list<u8>, principals: list<borrow<account>>) -> result<sharable-certificate-attributes, coded-error>;
 		/// Open a bundle from a PEM envelope, resolved with `principals`.
@@ -225,6 +246,10 @@ interface sharable {
 		attribute-buffer: func(name: string) -> result<option<list<u8>>, coded-error>;
 		/// The schema-decoded semantic value for `name`, absent when not disclosed.
 		attribute-value: func(name: string) -> result<option<list<u8>>, coded-error>;
+		/// The inlined, digest-verified blob for reference `id` on the
+		/// disclosed attribute `name`; absent when the attribute, entry, or
+		/// matching reference node is missing.
+		reference-blob: func(name: string, id: string) -> result<option<list<u8>>, coded-error>;
 	}
 }
 

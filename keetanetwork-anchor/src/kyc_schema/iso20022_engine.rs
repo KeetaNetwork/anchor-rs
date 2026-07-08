@@ -1,13 +1,4 @@
-//! ISO 20022 attribute projection over the schema-driven DER codec.
-//!
-//! The generic, projection-free codec lives in
-//! [`keetanetwork_asn1::schema_codec`]: it maps DER bytes to and from an
-//! [`Asn1`] tree under a declarative [`Schema`]. This module is the KYC-specific
-//! projection on top of it — mapping that tree onto the reference TypeScript
-//! `ValidateASN1` JSON shapes: `serde_json` values, symbolic OID names, Node
-//! `Buffer` objects, and ISO-8601 dates. The schema descriptors are generated
-//! from `oids.json` (see [`crate::generated::iso20022_schema`]), so both
-//! languages derive their transport format from one source.
+//! ISO 20022 attribute projection over the schema-driven DER codec
 
 use alloc::borrow::ToOwned;
 use alloc::boxed::Box;
@@ -293,7 +284,7 @@ const OID_NAME_TABLE: [(&str, &str); 14] = [
 ];
 
 /// Render a dotted-decimal OID as its symbolic name if known, else unchanged.
-fn oid_to_name(dotted: &str) -> String {
+pub(crate) fn oid_to_name(dotted: &str) -> String {
 	OID_NAME_TABLE
 		.iter()
 		.find_map(|(name, mapped)| (*mapped == dotted).then(|| (*name).to_string()))
@@ -302,7 +293,7 @@ fn oid_to_name(dotted: &str) -> String {
 
 /// Resolve a symbolic name to its dotted-decimal OID, passing an already-dotted
 /// value through unchanged.
-fn oid_from_name(name: &str) -> String {
+pub(crate) fn oid_from_name(name: &str) -> String {
 	OID_NAME_TABLE
 		.iter()
 		.find_map(|(candidate, mapped)| (*candidate == name).then(|| (*mapped).to_string()))
@@ -362,7 +353,7 @@ mod tests {
 	#[test]
 	fn address_choice_is_bare_positional() -> Result<(), Box<dyn std::error::Error>> {
 		// A bare CHOICE member carries its alternative's own tag: SEQUENCE { [0]
-		// EXPLICIT UTF8String "HOME" } — no positional [1] wrapper.
+		// EXPLICIT UTF8String "HOME" } - no positional [1] wrapper.
 		let der = encode_structured("Address", br#"{"addressType":"HOME"}"#)?;
 		assert_eq!(der[0], 0x30);
 		assert_eq!(der[2], 0xa0);

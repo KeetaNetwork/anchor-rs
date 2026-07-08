@@ -251,6 +251,43 @@ pub unsafe extern "C" fn keeta_kyc_certificate_validate_proof(
 	}
 }
 
+/// The external blob references carried by the attributes named in the JSON
+/// string array, discovered with the account `subject_handle`.
+///
+/// # Safety
+///
+/// `(names_ptr, names_len)` MUST describe an initialized, readable guest buffer.
+#[no_mangle]
+pub unsafe extern "C" fn keeta_kyc_certificate_external_references(
+	handle: i32,
+	subject_handle: i32,
+	names_ptr: i32,
+	names_len: i32,
+) -> i32 {
+	let Some(subject) = account(subject_handle) else {
+		return 0;
+	};
+	let bytes = unsafe { bytes_in(names_ptr, names_len) };
+	let names: Vec<String> = match serde_json::from_slice(&bytes) {
+		Ok(names) => names,
+		Err(error) => return fail(CodedError::new("DECODE", error.to_string())),
+	};
+
+	let outcome =
+		with_leaf(handle, |certificate| cert_ops::external_references_with_account(certificate, &subject, &names));
+	let records = match outcome {
+		Some(Ok(records)) => records,
+		Some(Err(error)) => return fail(error),
+		None => return 0,
+	};
+
+	let listed: Vec<ExternalReferenceDto> = records
+		.into_iter()
+		.map(ExternalReferenceDto::from)
+		.collect();
+	bytes_result(serde_json::to_vec(&listed).map_err(|error| CodedError::new("ENCODE", error.to_string())))
+}
+
 /// Issue a leaf signed by the account `issuer_handle` for the account
 /// `subject_handle`, configured by a JSON `IssueParams` buffer; returns a leaf
 /// handle (`0` on error). Sensitive attributes are encrypted to the subject.
@@ -377,4 +414,29 @@ struct IssueAttributeDto {
 struct AttributeProofDto {
 	value: String,
 	salt: String,
+}
+
+/// One discovered external blob reference on transport.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ExternalReferenceDto {
+	attribute: String,
+	id: String,
+	url: String,
+	content_type: String,
+	digest_algorithm: String,
+	encryption_algorithm: String,
+}
+
+impl From<cert_ops::ExternalReferenceRecord> for ExternalReferenceDto {
+	fn from(record: cert_ops::ExternalReferenceRecord) -> Self {
+		Self {
+			attribute: record.attribute,
+			id: record.id,
+			url: record.url,
+			content_type: record.content_type,
+			digest_algorithm: record.digest_algorithm,
+			encryption_algorithm: record.encryption_algorithm,
+		}
+	}
 }

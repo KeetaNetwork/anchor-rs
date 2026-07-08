@@ -19,12 +19,15 @@
 //! use keetanetwork_x509::utils::create_dn;
 //! use keetanetwork_x509::SerialNumber;
 //!
+//! # use std::sync::Arc;
 //! # let subject = doc_utils::create_secp256k1_test_account(Some(0));
 //! # let issuer = doc_utils::create_secp256k1_test_account(Some(1));
 //! # let subject_dn = create_dn(&[(keetanetwork_x509::oids::CN, "Subject")])?;
 //! # let issuer_dn = create_dn(&[(keetanetwork_x509::oids::CN, "Issuer")])?;
 //! # let reader = doc_utils::create_secp256k1_generic_account(Some(2));
 //! # let reader_again = doc_utils::create_secp256k1_generic_account(Some(2));
+//! use keetanetwork_anchor::sharable_attributes::FromCertificateOptions;
+//!
 //! let certificate = KycCertificateBuilder::for_end_entity()
 //!     .with_subject_dn(subject_dn)
 //!     .with_issuer_dn(issuer_dn)
@@ -34,10 +37,14 @@
 //!     .with_sensitive_attribute("email", b"john@example.com".to_vec().into_secret())
 //!     .build(&subject.keypair, &issuer.keypair)?;
 //!
-//! let subject_account = GenericAccount::EcdsaSecp256k1(subject);
+//! let subject_account = Arc::new(GenericAccount::EcdsaSecp256k1(subject));
 //!
-//! let mut sharable =
-//!     SharableCertificateAttributes::from_certificate(&certificate, &subject_account, &[], ["email"])?;
+//! let mut sharable = SharableCertificateAttributes::from_certificate(
+//!     &certificate,
+//!     &subject_account,
+//!     ["email"],
+//!     FromCertificateOptions::default(),
+//! )?;
 //! sharable.grant_access([reader])?;
 //! let pem = sharable.to_pem()?;
 //!
@@ -69,8 +76,9 @@ use rasn::types::ObjectIdentifier;
 
 use crate::asn1::oids;
 use crate::certificates::KycCertificate;
-use crate::encrypted_container::{EncryptedContainer, FromPlaintextOptions};
+use crate::encrypted_container::{EncryptedContainer, EncryptedContainerError, FromPlaintextOptions};
 use crate::kyc_schema::codec::decode_value;
+use crate::kyc_schema::{AttributeReference, ReferenceEncryption};
 use crate::sensitive_attributes::{SensitiveAttributeProof, SensitiveAttributeProofHash};
 use crate::sharable_attributes::contents::{
 	AttributeEntry, AttributeValueJson, ContentsJson, ProofHashJson, ProofJson,
@@ -94,9 +102,56 @@ pub struct DisclosedAttribute {
 	/// The disclosed plaintext: the decrypted value for sensitive attributes,
 	/// or the raw certificate value for plain attributes.
 	pub value: Vec<u8>,
-	/// External blob references preserved from the source. Resolution of the
-	/// referenced blobs is the caller's concern.
+	/// External blob payloads inlined at build time, keyed by uppercase-hex
+	/// digest id: each value is the base64 of the referenced blob's plaintext,
+	/// digest-verified during ingestion.
 	pub references: BTreeMap<String, String>,
+}
+
+/// External blobs fetched by the caller for reference ingestion, keyed by the
+/// reference's uppercase-hex digest id. Values are the raw bytes as fetched.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ExternalBlobs(BTreeMap<String, Vec<u8>>);
+
+impl ExternalBlobs {
+	/// File the raw fetched bytes for the reference `id`.
+	pub fn insert(&mut self, id: impl Into<String>, bytes: impl Into<Vec<u8>>) {
+		self.0.insert(id.into(), bytes.into());
+	}
+
+	/// The raw fetched bytes for the reference `id`, if supplied.
+	pub fn get(&self, id: impl AsRef<str>) -> Option<&[u8]> {
+		self.0.get(id.as_ref()).map(Vec::as_slice)
+	}
+
+	/// Whether no blobs were supplied.
+	pub fn is_empty(&self) -> bool {
+		self.0.is_empty()
+	}
+}
+
+impl<I, B> FromIterator<(I, B)> for ExternalBlobs
+where
+	I: Into<String>,
+	B: Into<Vec<u8>>,
+{
+	fn from_iter<T: IntoIterator<Item = (I, B)>>(iter: T) -> Self {
+		Self(
+			iter.into_iter()
+				.map(|(id, bytes)| (id.into(), bytes.into()))
+				.collect(),
+		)
+	}
+}
+
+/// Options for building a sharable bundle from a certificate.
+#[derive(Debug, Default)]
+pub struct FromCertificateOptions<'a> {
+	/// The intermediate chain to embed alongside the leaf certificate.
+	pub intermediates: &'a [X509Certificate],
+	/// Caller-fetched blobs for the certificate's external references; empty
+	/// means no reference ingestion.
+	pub blobs: ExternalBlobs,
 }
 
 /// The certificate, intermediate chain, and validated attributes recovered from
@@ -121,22 +176,33 @@ pub struct SharableCertificateAttributes {
 
 impl SharableCertificateAttributes {
 	/// Build a sharable bundle from a certificate, proving or copying each named
-	/// attribute and sealing the result.Grant access to one or more recipients
+	/// attribute and sealing the result. Grant access to one or more recipients
 	/// before exporting.
+	///
+	/// When [`FromCertificateOptions::blobs`] carries fetched blobs, each named
+	/// attribute's external references are ingested: a reference whose blob was
+	/// supplied is decrypted with `subject`, digest-verified, and inlined into
+	/// the entry's references; a reference without a supplied blob is skipped
+	/// (matching the reference implementation's fetch-failure behavior).
 	///
 	/// # Errors
 	///
 	/// - [`SharableAttributesError::UnsupportedSubjectKey`] -- `subject` is not a signing account.
 	/// - [`SharableAttributesError::Certificate`] -- proving a sensitive attribute failed.
 	/// - [`SharableAttributesError::Account`] -- the transient principal could not be generated.
+	/// - [`SharableAttributesError::ReferenceDigestMismatch`] -- a supplied blob does not hash to
+	///   its reference's digest. Unlike the reference implementation, which silently omits a
+	///   corrupted blob from the bundle, this deliberately fails loud.
+	/// - [`SharableAttributesError::ReferenceDecrypt`] -- a supplied blob is not a container the
+	///   subject can open.
 	pub fn from_certificate(
 		kyc_certificate: &KycCertificate,
-		subject: &GenericAccount,
-		intermediates_certs: &[X509Certificate],
+		subject: &Arc<GenericAccount>,
 		names: impl IntoIterator<Item = impl AsRef<str>>,
+		options: FromCertificateOptions<'_>,
 	) -> Result<Self> {
-		let attributes = Self::collect_attributes(kyc_certificate, subject, names)?;
-		let intermediates = Self::encode_intermediates(intermediates_certs)?;
+		let attributes = Self::collect_attributes(kyc_certificate, subject, names, &options.blobs)?;
+		let intermediates = Self::encode_intermediates(options.intermediates)?;
 		let certificate: String = kyc_certificate.to_x509().to_pem()?;
 		let payload = ContentsJson { certificate, intermediates, attributes };
 		let json = serde_json::to_vec(&payload)?;
@@ -310,10 +376,55 @@ impl SharableCertificateAttributes {
 		Ok(Some(decoded))
 	}
 
+	/// The inlined blob for reference `id` on the disclosed attribute `name`,
+	/// base64-decoded and digest-verified against the attribute's decoded
+	/// `Reference` node.
+	///
+	/// # Errors
+	///
+	/// - Any error from opening and validating the contents.
+	/// - [`SharableAttributesError::ReferenceDigestMismatch`] -- the inlined payload does not hash
+	///   to the reference's digest.
+	pub fn reference_blob(&mut self, name: impl AsRef<str>, id: impl AsRef<str>) -> Result<Option<Vec<u8>>> {
+		let name = name.as_ref();
+		let id = id.as_ref();
+		let Some(decoded_value) = self.attribute_value(name)? else {
+			return Ok(None);
+		};
+
+		let populated = self.populated()?;
+		let Some(encoded) = populated
+			.attributes
+			.get(name)
+			.and_then(|disclosed| disclosed.references.get(id))
+		else {
+			return Ok(None);
+		};
+		let payload = base64_decode(encoded)?;
+
+		let Ok(value) = serde_json::from_slice::<serde_json::Value>(&decoded_value) else {
+			return Ok(None);
+		};
+		let references = AttributeReference::collect(&value)?;
+		let Some(reference) = references.iter().find(|reference| reference.id() == id) else {
+			return Ok(None);
+		};
+
+		if !reference.digest.matches(&payload) {
+			return Err(SharableAttributesError::ReferenceDigestMismatch {
+				name: name.to_string(),
+				id: id.to_string(),
+			});
+		}
+
+		Ok(Some(payload))
+	}
+
 	fn collect_attributes(
 		certificate: &KycCertificate,
-		subject: &GenericAccount,
+		subject: &Arc<GenericAccount>,
 		names: impl IntoIterator<Item = impl AsRef<str>>,
+		blobs: &ExternalBlobs,
 	) -> Result<BTreeMap<String, AttributeEntry>> {
 		let mut attributes = BTreeMap::new();
 		for name in names {
@@ -322,6 +433,7 @@ impl SharableCertificateAttributes {
 				continue;
 			};
 
+			let references = ingest_references(certificate, subject, name, blobs)?;
 			let entry = if cert_attribute.is_sensitive() {
 				let proof = prove_attribute(certificate, name, subject)?;
 				AttributeEntry {
@@ -330,15 +442,11 @@ impl SharableCertificateAttributes {
 						value: proof.value.expose_secret().clone(),
 						hash: ProofHashJson { salt: proof.hash.salt },
 					}),
-					references: BTreeMap::new(),
+					references,
 				}
 			} else {
 				let encoded = base64_encode(cert_attribute.as_ref());
-				AttributeEntry {
-					sensitive: false,
-					value: AttributeValueJson::Plain(encoded),
-					references: BTreeMap::new(),
-				}
+				AttributeEntry { sensitive: false, value: AttributeValueJson::Plain(encoded), references }
 			};
 
 			attributes.insert(name.to_string(), entry);
@@ -453,6 +561,61 @@ fn disclose_attribute(
 	};
 
 	Ok(DisclosedAttribute { sensitive: entry.sensitive, value, references: entry.references.clone() })
+}
+
+/// Ingest the external references for attribute `name`: each discovered
+/// reference with a supplied blob is opened with `subject`, digest-verified,
+/// and inlined as base64 plaintext keyed by its digest id. A reference without
+/// a supplied blob is skipped.
+fn ingest_references(
+	certificate: &KycCertificate,
+	subject: &Arc<GenericAccount>,
+	name: &str,
+	blobs: &ExternalBlobs,
+) -> Result<BTreeMap<String, String>> {
+	if blobs.is_empty() {
+		return Ok(BTreeMap::new());
+	}
+
+	let discovered = certificate.external_references(subject.as_ref(), [name])?;
+	let mut inlined = BTreeMap::new();
+	for reference in discovered.get(name).into_iter().flatten() {
+		let id = reference.id();
+		let Some(raw) = blobs.get(&id) else {
+			continue;
+		};
+
+		let plaintext = open_reference_blob(subject, name, &id, reference, raw)?;
+		if !reference.digest.matches(&plaintext) {
+			return Err(SharableAttributesError::ReferenceDigestMismatch { name: name.to_string(), id });
+		}
+
+		inlined.insert(id, base64_encode(&plaintext));
+	}
+
+	Ok(inlined)
+}
+
+/// Open a supplied raw blob according to the reference's encryption algorithm.
+fn open_reference_blob(
+	subject: &Arc<GenericAccount>,
+	name: &str,
+	id: &str,
+	reference: &AttributeReference,
+	raw: &[u8],
+) -> Result<Vec<u8>> {
+	let opened: core::result::Result<Vec<u8>, EncryptedContainerError> = match reference.encryption {
+		ReferenceEncryption::KeetaEncryptedContainerV1 => {
+			EncryptedContainer::from_encrypted(raw, [Arc::clone(subject)])
+				.and_then(|mut container| container.get_plaintext())
+		}
+	};
+
+	opened.map_err(|source| SharableAttributesError::ReferenceDecrypt {
+		name: name.to_string(),
+		id: id.to_string(),
+		source,
+	})
 }
 
 /// Prove a sensitive attribute with the subject account, dispatching on its key
@@ -632,7 +795,7 @@ mod tests {
 
 	/// Issue a leaf certificate carrying one plain and one sensitive attribute,
 	/// returning it alongside the subject signing account.
-	fn issue_certificate() -> (KycCertificate, GenericAccount) {
+	fn issue_certificate() -> (KycCertificate, Arc<GenericAccount>) {
 		let subject = create_secp256k1_test_account(Some(0));
 		let issuer = create_secp256k1_test_account(Some(1));
 		let subject_dn = create_dn(&[(keetanetwork_x509::oids::CN, "Subject")]).expect("subject dn");
@@ -649,7 +812,7 @@ mod tests {
 			.build(&subject.keypair, &issuer.keypair)
 			.expect("certificate");
 
-		(certificate, GenericAccount::EcdsaSecp256k1(subject))
+		(certificate, Arc::new(GenericAccount::EcdsaSecp256k1(subject)))
 	}
 
 	#[test]
@@ -659,15 +822,18 @@ mod tests {
 			.get_attribute("postalCode")
 			.map(|attribute| attribute.as_ref().to_vec());
 
-		let intermediates: [X509Certificate; 0] = [];
 		let names = ["email", "postalCode"];
-		let mut sharable =
-			SharableCertificateAttributes::from_certificate(&certificate, &subject, &intermediates, names)?;
+		let mut sharable = SharableCertificateAttributes::from_certificate(
+			&certificate,
+			&subject,
+			names,
+			FromCertificateOptions::default(),
+		)?;
 
 		let accounts = [create_secp256k1_generic_account(Some(2))];
 		sharable.grant_access(accounts)?;
-		let pem = sharable.to_pem()?;
 
+		let pem = sharable.to_pem()?;
 		let principals = [create_secp256k1_generic_account(Some(2))];
 		let mut opened = SharableCertificateAttributes::from_pem(&pem, principals)?;
 		assert_eq!(opened.attribute_buffer("email")?, Some(der_utf8_string(EMAIL)));
@@ -678,10 +844,13 @@ mod tests {
 	#[test]
 	fn attribute_value_decodes_disclosed_buffers() -> core::result::Result<(), Box<dyn std::error::Error>> {
 		let (certificate, subject) = issue_certificate();
-		let intermediates: [X509Certificate; 0] = [];
 		let names = ["email", "postalCode"];
-		let mut sharable =
-			SharableCertificateAttributes::from_certificate(&certificate, &subject, &intermediates, names)?;
+		let mut sharable = SharableCertificateAttributes::from_certificate(
+			&certificate,
+			&subject,
+			names,
+			FromCertificateOptions::default(),
+		)?;
 
 		let accounts = [create_secp256k1_generic_account(Some(2))];
 		sharable.grant_access(accounts)?;
@@ -698,28 +867,152 @@ mod tests {
 	#[test]
 	fn export_without_principals_is_rejected() -> core::result::Result<(), Box<dyn std::error::Error>> {
 		let (certificate, subject) = issue_certificate();
-		let intermediates: [X509Certificate; 0] = [];
 		let names = ["email"];
-		let mut sharable =
-			SharableCertificateAttributes::from_certificate(&certificate, &subject, &intermediates, names)?;
+		let mut sharable = SharableCertificateAttributes::from_certificate(
+			&certificate,
+			&subject,
+			names,
+			FromCertificateOptions::default(),
+		)?;
 
 		let outcome = sharable.export();
 		assert!(matches!(outcome, Err(SharableAttributesError::NoPrincipals)));
 		Ok(())
 	}
 
+	const BLOB_PLAINTEXT: &[u8] = b"NOT REALLY A PNG";
+	const LICENSE: &str = "documentDriversLicense";
+
+	/// Seal `plaintext` to `subject` as an encrypted container, the raw stored
+	/// form a fetched reference blob arrives in.
+	fn seal_blob(plaintext: &[u8], subject: &Arc<GenericAccount>) -> Vec<u8> {
+		let options = FromPlaintextOptions { locked: Some(true), signer: None };
+		let principals = Some(vec![Arc::clone(subject)]);
+		let mut container = EncryptedContainer::from_plaintext(plaintext.to_vec(), principals, options);
+
+		container.get_encoded().expect("sealed blob")
+	}
+
+	/// Issue a certificate carrying a sensitive drivers-license attribute whose
+	/// `front` field references an external blob, returning the certificate, the
+	/// subject, and the reference id.
+	fn issue_document_certificate() -> (KycCertificate, Arc<GenericAccount>, String) {
+		let subject = create_secp256k1_test_account(Some(0));
+		let issuer = create_secp256k1_test_account(Some(1));
+		let spki = SubjectPublicKeyInfo::try_from(&subject).expect("subject spki");
+		let subject_dn = create_dn(&[(keetanetwork_x509::oids::CN, "Subject")]).expect("subject dn");
+		let issuer_dn = create_dn(&[(keetanetwork_x509::oids::CN, "Issuer")]).expect("issuer dn");
+
+		let digest = keetanetwork_crypto::prelude::HashAlgorithm::Sha3_256.hash(BLOB_PLAINTEXT);
+		let id = hex::encode_upper(&digest);
+		let license = serde_json::json!({
+			"documentNumber": "DL-7",
+			"front": {
+				"external": { "url": "data:application/octet-string;base64,AAAA", "contentType": "image/png" },
+				"digest": { "digestAlgorithm": "sha3-256", "digest": { "type": "Buffer", "data": digest } },
+				"encryptionAlgorithm": "1.3.6.1.4.1.62675.2",
+			},
+		});
+		let license_bytes = serde_json::to_vec(&license).expect("license json");
+
+		let certificate = KycCertificateBuilder::for_end_entity()
+			.with_subject_dn(subject_dn)
+			.with_issuer_dn(issuer_dn)
+			.with_serial_number(SerialNumber::from(11u64))
+			.with_validity_days(365)
+			.with_subject_public_key(spki)
+			.with_sensitive_attribute(LICENSE, license_bytes.into_secret())
+			.build(&subject.keypair, &issuer.keypair)
+			.expect("certificate");
+
+		(certificate, Arc::new(GenericAccount::EcdsaSecp256k1(subject)), id)
+	}
+
+	#[test]
+	fn ingested_reference_round_trips_digest_verified() -> core::result::Result<(), Box<dyn std::error::Error>> {
+		let (certificate, subject, id) = issue_document_certificate();
+		let blobs = ExternalBlobs::from_iter([(id.clone(), seal_blob(BLOB_PLAINTEXT, &subject))]);
+		let options = FromCertificateOptions { intermediates: &[], blobs };
+		let mut sharable = SharableCertificateAttributes::from_certificate(&certificate, &subject, [LICENSE], options)?;
+
+		sharable.grant_access([create_secp256k1_generic_account(Some(2))])?;
+		let pem = sharable.to_pem()?;
+
+		let principals = [create_secp256k1_generic_account(Some(2))];
+		let mut opened = SharableCertificateAttributes::from_pem(&pem, principals)?;
+		assert_eq!(opened.reference_blob(LICENSE, &id)?, Some(BLOB_PLAINTEXT.to_vec()));
+
+		// The contents byte shape: base64 plaintext keyed by uppercase-hex id.
+		let disclosed = opened.attribute(LICENSE)?;
+		let references = disclosed
+			.map(|attribute| attribute.references)
+			.unwrap_or_default();
+		assert_eq!(references.get(&id), Some(&base64_encode(BLOB_PLAINTEXT)));
+
+		// An unknown id and an unreferenced attribute both read as absent.
+		assert_eq!(opened.reference_blob(LICENSE, "00FF")?, None);
+		assert_eq!(opened.reference_blob("missing", &id)?, None);
+		Ok(())
+	}
+
+	#[test]
+	fn corrupted_supplied_blob_fails_loud() {
+		let (certificate, subject, id) = issue_document_certificate();
+		let blobs = ExternalBlobs::from_iter([(id, seal_blob(b"tampered content", &subject))]);
+		let options = FromCertificateOptions { intermediates: &[], blobs };
+
+		let outcome = SharableCertificateAttributes::from_certificate(&certificate, &subject, [LICENSE], options);
+
+		assert!(matches!(outcome, Err(SharableAttributesError::ReferenceDigestMismatch { .. })));
+	}
+
+	#[test]
+	fn non_decrypt_supplied_blob_fails_loud() {
+		let (certificate, subject, id) = issue_document_certificate();
+		let blobs = ExternalBlobs::from_iter([(id, b"not a container".to_vec())]);
+		let options = FromCertificateOptions { intermediates: &[], blobs };
+
+		let outcome = SharableCertificateAttributes::from_certificate(&certificate, &subject, [LICENSE], options);
+		assert!(matches!(outcome, Err(SharableAttributesError::ReferenceDecrypt { .. })));
+	}
+
+	#[test]
+	fn absent_blob_is_skipped() -> core::result::Result<(), Box<dyn std::error::Error>> {
+		let (certificate, subject, id) = issue_document_certificate();
+		let blobs = ExternalBlobs::from_iter([("D00D".to_string(), seal_blob(BLOB_PLAINTEXT, &subject))]);
+		let options = FromCertificateOptions { intermediates: &[], blobs };
+		let mut sharable = SharableCertificateAttributes::from_certificate(&certificate, &subject, [LICENSE], options)?;
+
+		sharable.grant_access([create_secp256k1_generic_account(Some(2))])?;
+
+		let pem = sharable.to_pem()?;
+		let principals = [create_secp256k1_generic_account(Some(2))];
+		let mut opened = SharableCertificateAttributes::from_pem(&pem, principals)?;
+		let disclosed = opened.attribute(LICENSE)?;
+
+		let references = disclosed
+			.map(|attribute| attribute.references)
+			.unwrap_or_default();
+		assert!(references.is_empty());
+		assert_eq!(opened.reference_blob(LICENSE, &id)?, None);
+		Ok(())
+	}
+
 	#[test]
 	fn opening_without_a_granted_principal_fails() -> core::result::Result<(), Box<dyn std::error::Error>> {
 		let (certificate, subject) = issue_certificate();
-		let intermediates: [X509Certificate; 0] = [];
 		let names = ["email"];
-		let mut sharable =
-			SharableCertificateAttributes::from_certificate(&certificate, &subject, &intermediates, names)?;
+		let mut sharable = SharableCertificateAttributes::from_certificate(
+			&certificate,
+			&subject,
+			names,
+			FromCertificateOptions::default(),
+		)?;
 
 		let accounts = [create_secp256k1_generic_account(Some(2))];
 		sharable.grant_access(accounts)?;
-		let pem = sharable.to_pem()?;
 
+		let pem = sharable.to_pem()?;
 		let principals = [create_secp256k1_generic_account(Some(3))];
 		let mut opened = SharableCertificateAttributes::from_pem(&pem, principals)?;
 		assert!(opened.attribute_buffer("email").is_err());

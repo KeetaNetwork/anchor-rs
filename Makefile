@@ -55,7 +55,7 @@ do-docs-ci:
 do-lint: do-docs-ci node-harness
 	cd $(HARNESS_DIR) && npm run lint
 	cd $(CODEGEN_DIR) && npm install && npm run lint
-	cargo clippy --fix --allow-staged --allow-dirty
+	cargo clippy --fix --allow-staged --allow-dirty --all-targets --all-features -- -D warnings
 	cargo fmt
 
 # Lint code for CI (check only, no fixes)

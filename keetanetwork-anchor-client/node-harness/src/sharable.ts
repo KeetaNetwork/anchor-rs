@@ -8,6 +8,7 @@ import type * as KeetaNetModule from '@keetanetwork/keetanet-client';
 import type { HarnessResponse } from './core.js';
 import { accountFromSeed } from './accounts.js';
 import { referenceResolver, runHarness } from './core.js';
+import { reviveValue } from './values.js';
 
 const refs = referenceResolver();
 const certificates = await refs.anchor<typeof CertificatesModule>('lib/certificates.js');
@@ -20,12 +21,12 @@ type BaseCertificate = InstanceType<typeof KeetaNet.lib.Utils.Certificate.Certif
 
 /**
  * A single attribute to embed in the issued leaf: its friendly `name`, whether
- * it is `sensitive` (encrypted and proven) or plain, and its string `value`.
+ * it is `sensitive` (encrypted and proven) or plain, and its `value`.
  */
 interface SharableAttribute {
 	name: string;
 	sensitive: boolean;
-	value: string;
+	value: unknown;
 }
 
 /**
@@ -106,7 +107,7 @@ async function handleBuildSharable(request: BuildSharableRequest): Promise<Harne
 		// eslint-disable-next-line @typescript-eslint/consistent-type-assertions
 		const name = attribute.name as CertificatesModule.CertificateAttributeNames;
 		// eslint-disable-next-line @typescript-eslint/consistent-type-assertions
-		builder.setAttribute(name, attribute.sensitive, attribute.value as never);
+		builder.setAttribute(name, attribute.sensitive, reviveValue(attribute.value) as never);
 	}
 
 	const leaf = await builder.build({ serial: 4 });

@@ -1,7 +1,7 @@
 //! wasmtime P2 offline `encrypted-container` tests.
 //!
 //! These drive the exported `encrypted-container` resource with no network and
-//! no harness — only the prebuilt component and the reused `account` resource.
+//! no harness - only the prebuilt component and the reused `account` resource.
 
 mod common;
 mod wasmtime_p2;

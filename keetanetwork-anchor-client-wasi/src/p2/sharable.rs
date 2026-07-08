@@ -3,7 +3,9 @@
 use core::cell::RefCell;
 use std::sync::Arc;
 
-use keetanetwork_anchor::sharable_attributes::SharableCertificateAttributes as CoreSharableCertificateAttributes;
+use keetanetwork_anchor::sharable_attributes::{
+	ExternalBlobs, SharableCertificateAttributes as CoreSharableCertificateAttributes,
+};
 use keetanetwork_anchor_bindings::sharable_attributes as sharable_ops;
 
 use super::account::AccountResource;
@@ -37,6 +39,23 @@ impl GuestSharableCertificateAttributes for SharableCertificateAttributesResourc
 		let subject = Arc::clone(&subject.get::<AccountResource>().account);
 		let intermediates = collect_certificates(&intermediates);
 		let bundle = sharable_ops::from_certificate(certificate, &subject, &intermediates, &names)?;
+
+		Ok(WitSharableCertificateAttributes::new(Self { bundle: RefCell::new(bundle) }))
+	}
+
+	fn from_certificate_with_references(
+		certificate: KycCertificateBorrow<'_>,
+		subject: AccountBorrow<'_>,
+		intermediates: Vec<CertificateBorrow<'_>>,
+		names: Vec<String>,
+		blobs: Vec<(String, Vec<u8>)>,
+	) -> Result<WitSharableCertificateAttributes, CodedError> {
+		let certificate = &certificate.get::<KycCertificateResource>().certificate;
+		let subject = Arc::clone(&subject.get::<AccountResource>().account);
+		let intermediates = collect_certificates(&intermediates);
+		let blobs = ExternalBlobs::from_iter(blobs);
+		let bundle =
+			sharable_ops::from_certificate_with_references(certificate, &subject, &intermediates, &names, blobs)?;
 
 		Ok(WitSharableCertificateAttributes::new(Self { bundle: RefCell::new(bundle) }))
 	}
@@ -105,5 +124,9 @@ impl GuestSharableCertificateAttributes for SharableCertificateAttributesResourc
 
 	fn attribute_value(&self, name: String) -> Result<Option<Vec<u8>>, CodedError> {
 		Ok(sharable_ops::attribute_value(&mut self.bundle.borrow_mut(), &name)?)
+	}
+
+	fn reference_blob(&self, name: String, id: String) -> Result<Option<Vec<u8>>, CodedError> {
+		Ok(sharable_ops::reference_blob(&mut self.bundle.borrow_mut(), &name, &id)?)
 	}
 }

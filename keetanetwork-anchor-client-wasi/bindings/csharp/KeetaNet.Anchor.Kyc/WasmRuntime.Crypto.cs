@@ -289,6 +289,21 @@ public sealed partial class WasmRuntime
 		}
 	}
 
+	internal byte[] KycCertificateExternalReferences(int handle, int subjectHandle, string namesJson)
+	{
+		var owned = new List<Argument>();
+		try
+		{
+			Argument labels = Write(namesJson, owned);
+			return TakeBytes(Invoke<int, int, int, int, int>(
+				"keeta_kyc_certificate_external_references", handle, subjectHandle, labels.Pointer, labels.Length));
+		}
+		finally
+		{
+			FreeAll(owned);
+		}
+	}
+
 	internal int KycCertificateIssue(int subjectHandle, int issuerHandle, string parameters)
 	{
 		var owned = new List<Argument>();
@@ -429,6 +444,11 @@ public sealed partial class WasmRuntime
 		string export, T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6, T7 arg7) =>
 		(int)(object)Export(export, _instance.GetFunction<T1, T2, T3, T4, T5, T6, T7, TResult>(export))(
 			arg1, arg2, arg3, arg4, arg5, arg6, arg7)!;
+
+	private int Invoke<T1, T2, T3, T4, T5, T6, T7, T8, TResult>(
+		string export, T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6, T7 arg7, T8 arg8) =>
+		(int)(object)Export(export, _instance.GetFunction<T1, T2, T3, T4, T5, T6, T7, T8, TResult>(export))(
+			arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8)!;
 
 	/// <summary>Release a guest handle; a no-op once the runtime is disposed.</summary>
 	private void Free(string export, int handle)

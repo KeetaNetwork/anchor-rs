@@ -8,6 +8,7 @@ using System.Text;
 using System.Text.Json;
 using Account = KeetaNet.Anchor.Kyc.Crypto.Account;
 using AttributeProof = KeetaNet.Anchor.Kyc.Crypto.AttributeProof;
+using AttributeReference = KeetaNet.Anchor.Kyc.Crypto.AttributeReference;
 using CryptoCertificate = KeetaNet.Anchor.Kyc.Crypto.Certificate;
 using EncryptedContainer = KeetaNet.Anchor.Kyc.Crypto.EncryptedContainer;
 using KycCertificate = KeetaNet.Anchor.Kyc.Crypto.KycCertificate;
@@ -55,6 +56,7 @@ if (Environment.GetEnvironmentVariable("KEETA_CONTAINER_ONLY") is not null)
 if (Environment.GetEnvironmentVariable("KEETA_SHARABLE_ONLY") is not null)
 {
 	SharableSelfTest(runtime);
+	SharableReferencesSelfTest(runtime);
 	Console.WriteLine("SHARABLE_OK");
 	return;
 }
@@ -739,6 +741,81 @@ static void SharableSelfTest(WasmRuntime runtime)
 		"the sole principal must be the granted recipient");
 
 	Require(opened.AttributeNames().Count == 2, "the bundle must disclose exactly two attributes");
+}
+
+// Exercise the external-reference surface: issue a leaf whose sensitive
+// document attribute references a blob by `data`.
+static void SharableReferencesSelfTest(WasmRuntime runtime)
+{
+	const string subjectSeed = "1111111111111111111111111111111111111111111111111111111111111111";
+	const string issuerSeed = "2222222222222222222222222222222222222222222222222222222222222222";
+	const string recipientSeed = "3333333333333333333333333333333333333333333333333333333333333333";
+	const string algorithm = "ecdsa_secp256k1";
+	const string license = "documentDriversLicense";
+	// SHA3-256("NOT REALLY A PNG"), the reference id certifying the blob.
+	const string blobId = "6DD92D3B9D488B3C09660664F4B2C5DE3830526EEB96E5BA7D47C70AFB893CBB";
+	byte[] blobPlaintext = Encoding.UTF8.GetBytes("NOT REALLY A PNG");
+
+	using Account subject = Account.FromSeed(runtime, subjectSeed, 0, algorithm);
+	using Account issuer = Account.FromSeed(runtime, issuerSeed, 0, algorithm);
+	using Account recipient = Account.FromSeed(runtime, recipientSeed, 0, algorithm);
+
+	// Seal the blob to the subject; the data: URL carries the sealed form.
+	byte[] sealedBlob;
+	using (EncryptedContainer container =
+		EncryptedContainer.FromPlaintext(runtime, blobPlaintext, new[] { subject }, locked: true))
+	{
+		sealedBlob = container.Encoded();
+	}
+
+	// The Node `Buffer` JSON form carries its bytes as a number array (a bare
+	// byte[] would serialize as base64).
+	int[] digestBytes = Array.ConvertAll(Convert.FromHexString(blobId), value => (int)value);
+	string url = $"data:application/octet-string;base64,{Convert.ToBase64String(sealedBlob)}";
+	string licenseValue = JsonSerializer.Serialize(new
+	{
+		documentNumber = "DL-7",
+		front = new
+		{
+			external = new { url, contentType = "image/png" },
+			digest = new { digestAlgorithm = "sha3-256", digest = new { type = "Buffer", data = digestBytes } },
+			encryptionAlgorithm = "1.3.6.1.4.1.62675.2",
+		},
+	});
+
+	using KycCertificate leaf = KycCertificate.Builder(runtime)
+		.Subject(subject)
+		.Issuer(issuer)
+		.SubjectName("Subject")
+		.IssuerName("Issuer")
+		.Serial(11)
+		.Validity(DateTimeOffset.FromUnixTimeSeconds(1_700_000_000), DateTimeOffset.FromUnixTimeSeconds(1_900_000_000))
+		.SetAttribute(license, sensitive: true, licenseValue)
+		.Issue();
+
+	// List: the reference surfaces from the decrypted attribute walk.
+	IReadOnlyList<AttributeReference> references = leaf.ExternalReferences(subject, new[] { license });
+	Require(references.Count == 1, "exactly one external reference must be discovered");
+	AttributeReference reference = references[0];
+	Require(reference.Attribute == license, "the reference must name its attribute");
+	Require(reference.Id == blobId, "the reference id must be the uppercase-hex digest");
+	Require(reference.Url == url, "the reference must carry the stored URL");
+
+	// Fetch: a data: URL decodes inline, no network involved.
+	string encoded = reference.Url[(reference.Url.IndexOf(',') + 1)..];
+	byte[] fetched = Convert.FromBase64String(encoded);
+	var blobs = new Dictionary<string, byte[]> { [reference.Id] = fetched };
+
+	// Build with the blob ingested, then read it back as the recipient.
+	using SharableCertificateAttributes bundle = SharableCertificateAttributes.FromCertificateWithReferences(
+		runtime, leaf, subject, blobs, names: new[] { license });
+	bundle.GrantAccess(new[] { recipient });
+	string pem = bundle.ToPem();
+
+	using SharableCertificateAttributes opened = SharableCertificateAttributes.FromPem(runtime, pem, new[] { recipient });
+	byte[]? verified = opened.ReferenceBlob(license, blobId);
+	Require(verified is not null && verified.SequenceEqual(blobPlaintext), "the recipient must read the verified referenced blob");
+	Require(opened.ReferenceBlob(license, "00FF") is null, "an unknown reference id must read as absent");
 }
 
 // Cross-implementation compatibility against the reference TypeScript anchor,

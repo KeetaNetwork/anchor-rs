@@ -113,9 +113,17 @@ pub mod error;
 use alloc::string::ToString;
 use alloc::vec::Vec;
 
+#[cfg(feature = "serde")]
+use alloc::collections::BTreeMap;
+#[cfg(feature = "serde")]
+use alloc::string::String;
+
 use keetanetwork_account::KeyPair;
 use keetanetwork_crypto::prelude::ExposeSecret;
 use keetanetwork_x509::certificates::Certificate as X509Certificate;
+
+#[cfg(feature = "serde")]
+use keetanetwork_account::GenericAccount;
 
 use crate::asn1::oids;
 use crate::asn1::utils::{get_plain_attribute_oid, get_sensitive_attribute_oid};
@@ -124,6 +132,9 @@ use crate::kyc_schema::codec::decode_value;
 use crate::kyc_schema::Attribute;
 use crate::sensitive_attributes::utils::{assert_attribute_is_plain, assert_attribute_is_sensitive};
 use crate::sensitive_attributes::{SensitiveAttribute, SensitiveAttributeProof};
+
+#[cfg(feature = "serde")]
+use crate::kyc_schema::AttributeReference;
 
 // Re-export commonly used types
 pub use builder::KycCertificateBuilder;
@@ -339,6 +350,69 @@ impl KycCertificate {
 		let sensitive_attr: SensitiveAttribute = rasn::der::decode(attribute.as_ref())?;
 		let decrypted = sensitive_attr.decrypt(keypair)?;
 		Ok(decode_value(attribute.name.to_string(), decrypted.expose_secret())?)
+	}
+
+	/// The external blob references carried by the named attributes, keyed by
+	/// attribute name (the reference implementation's `$blob` discovery).
+	///
+	/// Each named attribute's value is decoded through the schema codec
+	/// (sensitive values decrypted with `subject`) and walked for `Reference`
+	/// structures. Missing attributes and values that do not decode to
+	/// structured JSON yield no references.
+	///
+	/// # Errors
+	///
+	/// - [`KycCertificateError::UnsupportedSubjectKey`] -- `subject` is not a signing account.
+	/// - [`KycCertificateError::KycSchemaError`] -- a reference names an unknown digest or encryption algorithm.
+	/// - Any decryption failure for a sensitive attribute.
+	#[cfg(feature = "serde")]
+	pub fn external_references(
+		&self,
+		subject: &GenericAccount,
+		names: impl IntoIterator<Item = impl AsRef<str>>,
+	) -> Result<BTreeMap<String, Vec<AttributeReference>>, KycCertificateError> {
+		let mut references = BTreeMap::new();
+		for name in names {
+			let name = name.as_ref();
+			let Some(decoded) = self.decoded_attribute_value(name, subject)? else {
+				continue;
+			};
+			let Ok(value) = serde_json::from_slice::<serde_json::Value>(&decoded) else {
+				continue;
+			};
+
+			let found = AttributeReference::collect(&value)?;
+			if !found.is_empty() {
+				references.insert(name.to_string(), found);
+			}
+		}
+
+		Ok(references)
+	}
+
+	/// The schema-decoded semantic value of attribute `name`, decrypting a
+	/// sensitive value with `subject`.
+	#[cfg(feature = "serde")]
+	fn decoded_attribute_value(
+		&self,
+		name: &str,
+		subject: &GenericAccount,
+	) -> Result<Option<Vec<u8>>, KycCertificateError> {
+		let Some(attribute) = self.get_attribute(name) else {
+			return Ok(None);
+		};
+
+		let decoded = match attribute.is_sensitive() {
+			true => match subject {
+				GenericAccount::Ed25519(account) => self.decrypt_attribute(name, &account.keypair)?,
+				GenericAccount::EcdsaSecp256k1(account) => self.decrypt_attribute(name, &account.keypair)?,
+				GenericAccount::EcdsaSecp256r1(account) => self.decrypt_attribute(name, &account.keypair)?,
+				_ => return Err(KycCertificateError::UnsupportedSubjectKey),
+			},
+			false => decode_value(attribute.name.to_string(), attribute.as_ref())?,
+		};
+
+		Ok(Some(decoded))
 	}
 
 	/// Generate a proof for the sensitive KYC attribute `name`, decrypting it
@@ -697,4 +771,41 @@ mod tests {
 	}
 
 	crate::test_all_key_types!(test_certificate_proof, test_certificate_proof_functionality);
+
+	#[cfg(feature = "serde")]
+	#[test]
+	fn external_references_walks_document_attributes() -> core::result::Result<(), Box<dyn std::error::Error>> {
+		use keetanetwork_crypto::prelude::HashAlgorithm;
+		use serde_json::json;
+
+		let account = create_account_from_seed::<KeyECDSASECP256K1>(0);
+		let digest = HashAlgorithm::Sha3_256.hash(b"NOT REALLY A PNG");
+		let license = json!({
+			"documentNumber": "DL-7",
+			"front": {
+				"external": { "url": "data:application/octet-string;base64,AAAA", "contentType": "image/png" },
+				"digest": { "digestAlgorithm": "sha3-256", "digest": { "type": "Buffer", "data": digest } },
+				"encryptionAlgorithm": "1.3.6.1.4.1.62675.2",
+			},
+		});
+		let license_bytes = serde_json::to_vec(&license)?;
+		let certificate = create_test_certificate_builder(&account)
+			.with_sensitive_attribute("documentDriversLicense", license_bytes.into_secret())
+			.with_plain_attribute("postalCode", "12345")
+			.build(&account.keypair, &account.keypair)?;
+
+		let subject = GenericAccount::EcdsaSecp256k1(account);
+		let names = ["documentDriversLicense", "postalCode", "missing"];
+		let references = certificate.external_references(&subject, names)?;
+
+		assert_eq!(references.len(), 1);
+		let found = references
+			.get("documentDriversLicense")
+			.cloned()
+			.unwrap_or_default();
+		assert_eq!(found.len(), 1);
+		assert_eq!(found[0].id(), hex::encode_upper(&digest));
+		assert_eq!(found[0].external.content_type, "image/png");
+		Ok(())
+	}
 }

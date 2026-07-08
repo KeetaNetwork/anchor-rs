@@ -16,9 +16,9 @@ pub(super) struct ContentsJson {
 	pub attributes: BTreeMap<String, AttributeEntry>,
 }
 
-/// A single disclosed attribute: its sensitivity flag, its value, and any
-/// preserved external blob references (resolution is out of scope here, so the
-/// map is carried opaquely).
+/// A single disclosed attribute: its sensitivity flag, its value, and the
+/// external blob payloads inlined at build time (base64 plaintext keyed by
+/// uppercase-hex digest id, digest-verified during ingestion).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(super) struct AttributeEntry {
 	pub sensitive: bool,

@@ -164,6 +164,21 @@ public sealed record KycAttribute(string Name, bool Sensitive);
 public sealed record AttributeProof(string Value, string Salt);
 
 /// <summary>
+/// One external blob reference discovered in an attribute's decoded value: the
+/// carrying <see cref="Attribute"/> name, the uppercase-hex digest <see cref="Id"/>
+/// keying the blob, where the stored blob lives (<see cref="Url"/>,
+/// <see cref="ContentType"/>), and the digest/encryption algorithms as
+/// symbolic names.
+/// </summary>
+public sealed record AttributeReference(
+	string Attribute,
+	string Id,
+	string Url,
+	string ContentType,
+	string DigestAlgorithm,
+	string EncryptionAlgorithm);
+
+/// <summary>
 /// A KYC leaf certificate: a base certificate plus parsed KYC attributes, some
 /// plain and some encrypted to the subject.
 /// </summary>
@@ -251,6 +266,20 @@ public sealed class KycCertificate : IDisposable
 	/// </summary>
 	public bool ValidateProof(string name, Account subject, AttributeProof proof) =>
 		_runtime.KycCertificateValidateProof(Handle, name, subject.Handle, JsonSerializer.Serialize(proof, Json));
+
+	/// <summary>
+	/// The external blob references carried by the <paramref name="names"/>
+	/// attributes, discovered with <paramref name="subject"/> (sensitive values
+	/// are decrypted to walk them), one record per reference.
+	/// </summary>
+	public IReadOnlyList<AttributeReference> ExternalReferences(Account subject, IEnumerable<string> names)
+	{
+		string labels = JsonSerializer.Serialize(names.ToArray());
+		byte[] payload = _runtime.KycCertificateExternalReferences(Handle, subject.Handle, labels);
+		List<AttributeReference>? references = JsonSerializer.Deserialize<List<AttributeReference>>(payload, Json);
+
+		return references ?? new List<AttributeReference>();
+	}
 
 	/// <summary>
 	/// A plain scalar attribute decoded as text. Scalar and date attributes

@@ -39,6 +39,25 @@ public sealed class SharableCertificateAttributes : IDisposable
 		return new(runtime, runtime.SharableFromCertificate(certificate.Handle, subject.Handle, bridges, labels));
 	}
 
+	/// <summary>
+	/// Build like <see cref="FromCertificate"/>, additionally ingesting the
+	/// caller-fetched external <paramref name="blobs"/> (raw fetched bytes keyed
+	/// by reference id).
+	/// </summary>
+	public static SharableCertificateAttributes FromCertificateWithReferences(
+		WasmRuntime runtime,
+		KycCertificate certificate,
+		Account subject,
+		IReadOnlyDictionary<string, byte[]> blobs,
+		IEnumerable<Certificate>? intermediates = null,
+		IEnumerable<string>? names = null)
+	{
+		int[] bridges = Handles(intermediates);
+		string[] labels = (names ?? Enumerable.Empty<string>()).ToArray();
+		return new(runtime, runtime.SharableFromCertificateWithReferences(
+			certificate.Handle, subject.Handle, bridges, labels, blobs));
+	}
+
 	/// <summary>Open a bundle from encoded container bytes, resolved with <paramref name="principals"/>.</summary>
 	public static SharableCertificateAttributes FromEncoded(
 		WasmRuntime runtime,
@@ -103,6 +122,17 @@ public sealed class SharableCertificateAttributes : IDisposable
 	public byte[]? AttributeValue(string name)
 	{
 		byte[] value = _runtime.SharableAttributeValue(Handle, name);
+		return value.Length == 0 ? null : value;
+	}
+
+	/// <summary>
+	/// The inlined, digest-verified blob for reference <paramref name="id"/> on
+	/// the disclosed attribute <paramref name="name"/>, or <c>null</c> when the
+	/// attribute, entry, or matching reference node is absent.
+	/// </summary>
+	public byte[]? ReferenceBlob(string name, string id)
+	{
+		byte[] value = _runtime.SharableReferenceBlob(Handle, name, id);
 		return value.Length == 0 ? null : value;
 	}
 

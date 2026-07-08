@@ -8,6 +8,8 @@
  * reference client does.
  */
 
+import * as http from 'node:http';
+
 import type * as ResolverModule from '@keetanetwork/anchor/lib/resolver.js';
 import type * as KycServerModule from '@keetanetwork/anchor/services/kyc/server.js';
 import type * as KycCommonModule from '@keetanetwork/anchor/services/kyc/common.js';
@@ -16,9 +18,10 @@ import type * as CertificatesModule from '@keetanetwork/anchor/lib/certificates.
 import type * as KeetaNetModule from '@keetanetwork/keetanet-client';
 
 import type { ChainNode, ServiceMetadata } from './chain.js';
-import { bootChainNode } from './chain.js';
 import type { HarnessResponse } from './core.js';
 import { referenceResolver, runHarness } from './core.js';
+import { bootChainNode } from './chain.js';
+import { reviveValue } from './values.js';
 
 const refs = referenceResolver();
 const resolver = await refs.anchor<typeof ResolverModule>('lib/resolver.js');
@@ -114,6 +117,30 @@ interface IssueCertificateRequest {
 }
 
 /**
+ * Serve a stored blob over HTTP for reference-fetch tests. `data` is the
+ * base64 stored bytes; `wrap` serves them inside the storage-service
+ * `{ data, mimeType }` JSON convention instead of raw.
+ */
+interface ServeBlobRequest {
+	cmd: 'serveBlob';
+	data: string;
+	mimeType: string;
+	wrap?: boolean;
+}
+
+/**
+ * Open a sharable bundle PEM with the reference reader, decode the named
+ * attributes, and resolve every `$blob` reference on them to its verified
+ * bytes (the reference reader throws on an access-time digest mismatch).
+ */
+interface OpenSharableRequest {
+	cmd: 'openSharable';
+	pem: string;
+	recipientSeed: string;
+	attributes: string[];
+}
+
+/**
  * Decode an externally issued leaf with the reference reader. `leaf` is the
  * PEM-encoded certificate, `subjectSeed` the seed whose key decrypts sensitive
  * attributes, and `attributes` the names to read back as reference values.
@@ -160,6 +187,8 @@ type KycRequest =
 	PublishMetadataRequest |
 	PublishCertificateChainRequest |
 	IssueCertificateRequest |
+	ServeBlobRequest |
+	OpenSharableRequest |
 	DecodeCertificateRequest |
 	ProveAttributeRequest |
 	ValidateProofRequest |
@@ -353,44 +382,6 @@ async function handlePublishCertificateChain(): Promise<HarnessResponse> {
 }
 
 /**
- * Recursively revive a JSON request value into the shape the reference builder
- * expects: an object `{ "__date": "<ISO>" }` becomes a `Date` (at any depth),
- * everything else passes through unchanged.
- */
-function reviveValue(value: unknown): unknown {
-	if (Array.isArray(value)) {
-		return(value.map(reviveValue));
-	}
-
-	if (value !== null && typeof value === 'object') {
-		const entries = Object.entries(value);
-		const dateEntry = entries.find(([key]) => key === '__date');
-		if (dateEntry !== undefined && typeof dateEntry[1] === 'string') {
-			return(new Date(dateEntry[1]));
-		}
-
-		// A Node `Buffer` JSON form (`{ type: 'Buffer', data: [..] }`) revives to a
-		// Buffer so an OCTET STRING (e.g. a document reference digest) encodes as
-		// the reference implementation expects.
-		const typeEntry = entries.find(([key]) => key === 'type');
-		const dataEntry = entries.find(([key]) => key === 'data');
-		const data: unknown = dataEntry?.[1];
-		if (typeEntry?.[1] === 'Buffer' && Array.isArray(data) && data.every((byte): byte is number => typeof byte === 'number')) {
-			return(Buffer.from(data));
-		}
-
-		const revived: { [key: string]: unknown } = {};
-		for (const [key, nested] of entries) {
-			revived[key] = reviveValue(nested);
-		}
-
-		return(revived);
-	}
-
-	return(value);
-}
-
-/**
  * Issue a populated KYC leaf for a subject under the running anchor's CA, then
  * read every attribute back through the reference `Certificate` to produce the
  * `getValue()` reference values.
@@ -451,6 +442,158 @@ async function handleIssueCertificate(request: IssueCertificateRequest): Promise
 }
 
 /**
+ * A single-process HTTP blob store for reference-fetch tests: each served blob
+ * gets a unique path on one listener.
+ */
+let blobServer: {
+	server: http.Server;
+	url: string;
+	blobs: Map<string, { body: Buffer; contentType: string }>;
+} | undefined;
+
+/**
+ * Start the blob listener on a random loopback port on first use and reuse it
+ * for every later blob.
+ */
+async function ensureBlobServer(): Promise<NonNullable<typeof blobServer>> {
+	const current = blobServer;
+	if (current !== undefined) {
+		return(current);
+	}
+
+	const blobs = new Map<string, { body: Buffer; contentType: string }>();
+	const server = http.createServer(function(request, response) {
+		const key = (request.url ?? '').replace(/^\//, '');
+		const entry = blobs.get(key);
+		if (entry === undefined) {
+			response.writeHead(404);
+			response.end();
+			return;
+		}
+
+		response.writeHead(200, { 'content-type': entry.contentType });
+		response.end(entry.body);
+	});
+
+	await new Promise<void>(function(resolve) {
+		server.listen(0, '127.0.0.1', resolve);
+	});
+
+	const address = server.address();
+	if (address === null || typeof address === 'string') {
+		throw(new Error('blob server did not report a bound port'));
+	}
+
+	const started = { server, url: `http://127.0.0.1:${address.port}/`, blobs };
+	blobServer = started;
+	return(started);
+}
+
+/**
+ * Close the blob listener if one is running, so the harness process can exit.
+ */
+async function stopBlobServer(): Promise<void> {
+	const current = blobServer;
+	if (current === undefined) {
+		return;
+	}
+
+	blobServer = undefined;
+	await new Promise<void>(function(resolve) {
+		current.server.close(() => { resolve(); });
+	});
+}
+
+/**
+ * Serve the request's bytes over HTTP and return the URL. With `wrap`, the
+ * bytes are served in the storage-service `{data, mimeType}` JSON convention
+ * instead of raw.
+ */
+async function handleServeBlob(request: ServeBlobRequest): Promise<HarnessResponse> {
+	const store = await ensureBlobServer();
+	const raw = Buffer.from(request.data, 'base64');
+
+	let body = raw;
+	let contentType = request.mimeType;
+	if (request.wrap === true) {
+		body = Buffer.from(JSON.stringify({ data: raw.toString('base64'), mimeType: request.mimeType }));
+		contentType = 'application/json';
+	}
+
+	const key = `blob-${store.blobs.size}`;
+	store.blobs.set(key, { body, contentType });
+	return({ event: 'blob-served', url: `${store.url}${key}` });
+}
+
+/**
+ * Resolve every `$blob` closure in a decoded attribute `value`.
+ */
+async function resolveBlobReferences(
+	value: unknown,
+	resolved: { [id: string]: { data: string; type: string }}
+): Promise<void> {
+	const pending: unknown[] = [value];
+	while (pending.length > 0) {
+		const node = pending.pop();
+		if (Array.isArray(node)) {
+			const items: unknown[] = node;
+			pending.push(...items);
+			continue;
+		}
+		if (node === null || typeof node !== 'object' || Buffer.isBuffer(node)) {
+			continue;
+		}
+
+		// eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+		const record = node as { [key: string]: unknown };
+		const blobFunction = record['$blob'];
+		if (typeof blobFunction !== 'function') {
+			pending.push(...Object.values(record));
+			continue;
+		}
+
+		const digestInfo = record['digest'];
+		if (digestInfo === null || typeof digestInfo !== 'object' || !('digest' in digestInfo) || !Buffer.isBuffer(digestInfo.digest)) {
+			throw(new Error('$blob node does not carry a Buffer digest'));
+		}
+
+		const id = digestInfo.digest.toString('hex').toUpperCase();
+		// eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+		const resolve = blobFunction as () => Promise<Blob>;
+		const blob = await resolve();
+		const bytes = Buffer.from(await blob.arrayBuffer());
+		resolved[id] = { data: bytes.toString('base64'), type: blob.type };
+		delete record['$blob'];
+	}
+}
+
+/**
+ * Open a sharable bundle PEM with the reference `SharableCertificateAttributes`
+ * reader and return the decoded attribute values alongside every resolved,
+ * digest-verified `$blob` payload, keyed by attribute name then reference id.
+ */
+async function handleOpenSharable(request: OpenSharableRequest): Promise<HarnessResponse> {
+	const recipient = Account.fromSeed(request.recipientSeed, 0);
+	const sharable = new certificates.SharableCertificateAttributes(request.pem, { principals: recipient });
+
+	const attributes: { [name: string]: unknown } = {};
+	const blobs: { [name: string]: { [id: string]: { data: string; type: string }}} = {};
+	for (const name of request.attributes) {
+		// eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+		const attributeName = name as CertificatesModule.CertificateAttributeNames;
+		const value = await sharable.getAttribute(attributeName);
+		const resolved: { [id: string]: { data: string; type: string }} = {};
+
+		await resolveBlobReferences(value, resolved);
+
+		attributes[name] = value;
+		blobs[name] = resolved;
+	}
+
+	return({ event: 'sharable-opened', attributes, blobs });
+}
+
+/**
  * Read the named attributes from a leaf issued elsewhere (e.g. by the Rust core)
  * through the reference `Certificate`. No running anchor is required: the subject
  * key alone decrypts the sensitive attributes.
@@ -463,11 +606,6 @@ async function handleDecodeCertificate(request: DecodeCertificateRequest): Promi
 		// eslint-disable-next-line @typescript-eslint/consistent-type-assertions
 		const attributeName = name as CertificatesModule.CertificateAttributeNames;
 
-		/*
-		 * The response line is JSON-serialized as a whole, which already turns
-		 * a `Date` into its ISO string, a `Buffer` into its `{ type, data }`
-		 * form, etc.
-		 */
 		attributes[name] = await reader.getAttributeValue(attributeName);
 	}
 
@@ -520,6 +658,8 @@ async function handle(request: KycRequest): Promise<HarnessResponse> {
 		case 'publishMetadata': return(await handlePublishMetadata(request));
 		case 'publishCertificateChain': return(await handlePublishCertificateChain());
 		case 'issueCertificate': return(await handleIssueCertificate(request));
+		case 'serveBlob': return(await handleServeBlob(request));
+		case 'openSharable': return(await handleOpenSharable(request));
 		case 'decodeCertificate': return(await handleDecodeCertificate(request));
 		case 'proveAttribute': return(await handleProveAttribute(request));
 		case 'validateProof': return(await handleValidateProof(request));
@@ -527,4 +667,7 @@ async function handle(request: KycRequest): Promise<HarnessResponse> {
 	}
 }
 
-runHarness<KycRequest>({ event: 'ready' }, handle, stopKycAnchor);
+runHarness<KycRequest>({ event: 'ready' }, handle, async function() {
+	await stopBlobServer();
+	await stopKycAnchor();
+});
