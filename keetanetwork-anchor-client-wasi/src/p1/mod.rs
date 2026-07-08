@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use keetanetwork_account::GenericAccount;
 use keetanetwork_anchor_bindings::error::CodedError;
-use keetanetwork_client_wasi::fail;
+use keetanetwork_client_wasi::{account, fail, string_in};
 
 mod asset_movement;
 mod encrypted_container;
@@ -39,4 +39,26 @@ fn parse_account(address: &str) -> Option<Arc<GenericAccount>> {
 			None
 		}
 	}
+}
+
+/// Read the argument triple every `*_with_account` constructor shares: the
+/// node URL and root address from guest memory, and the signer behind
+/// `account_handle` (from the shared `keeta_account_*` registry).
+///
+/// # Safety
+///
+/// Each `(ptr, len)` pair MUST describe an initialized, readable guest buffer.
+unsafe fn with_account_args(
+	node_url_ptr: i32,
+	node_url_len: i32,
+	root_ptr: i32,
+	root_len: i32,
+	account_handle: i32,
+) -> Option<(String, Arc<GenericAccount>, Arc<GenericAccount>)> {
+	let node_url = unsafe { string_in(node_url_ptr, node_url_len) }?;
+	let root = unsafe { string_in(root_ptr, root_len) }?;
+	let root = parse_account(&root)?;
+	let signer = account(account_handle)?;
+
+	Some((node_url, root, signer))
 }

@@ -16,7 +16,7 @@ use keetanetwork_anchor_client::{
 	AnchorClientError, AnchorContext, AnchorOutcome, Certificate, Certificates, CountryCode, ExpectedCost, KycClient,
 	KycOperations, KycProvider, Resolver, Verification, VerificationStatus,
 };
-use keetanetwork_client_wasi::{account, bytes_result, string_in};
+use keetanetwork_client_wasi::{bytes_result, string_in};
 use serde::{Deserialize, Serialize};
 
 use super::transport::{block_on, host_transport};
@@ -45,15 +45,9 @@ pub unsafe extern "C" fn keeta_kyc_with_account(
 	root_len: i32,
 	account_handle: i32,
 ) -> i32 {
-	let (Some(node_url), Some(root)) =
-		(unsafe { string_in(node_url_ptr, node_url_len) }, unsafe { string_in(root_ptr, root_len) })
+	let Some((node_url, root, signer)) =
+		(unsafe { super::with_account_args(node_url_ptr, node_url_len, root_ptr, root_len, account_handle) })
 	else {
-		return 0;
-	};
-	let Some(root) = super::parse_account(&root) else {
-		return 0;
-	};
-	let Some(signer) = account(account_handle) else {
 		return 0;
 	};
 
