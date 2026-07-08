@@ -106,6 +106,8 @@ pub mod error;
 #[cfg(feature = "serde")]
 pub mod iso20022_engine;
 #[cfg(feature = "serde")]
+pub mod references;
+#[cfg(feature = "serde")]
 pub mod serde;
 
 #[cfg(all(test, feature = "serde"))]
@@ -118,6 +120,9 @@ use alloc::vec::Vec;
 pub use crate::generated::{Attribute, AttributeValue, KycAttributes};
 pub use builder::{AttributeBuilder, AttributeBuilderLike, KycAttributesBuilder};
 pub use error::KycSchemaError;
+
+#[cfg(feature = "serde")]
+pub use references::{AttributeReference, DigestInfo, ExternalReference, ReferenceEncryption};
 
 impl Attribute {
 	/// Check if this attribute is sensitive (encrypted).

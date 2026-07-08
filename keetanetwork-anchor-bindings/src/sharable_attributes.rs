@@ -14,7 +14,7 @@ use keetanetwork_account::account::AccountPublicKey;
 use keetanetwork_account::GenericAccount;
 use keetanetwork_anchor::certificates::KycCertificate;
 use keetanetwork_anchor::sharable_attributes::error::SharableAttributesError;
-use keetanetwork_anchor::sharable_attributes::SharableCertificateAttributes;
+use keetanetwork_anchor::sharable_attributes::{ExternalBlobs, FromCertificateOptions, SharableCertificateAttributes};
 use keetanetwork_x509::certificates::Certificate as X509Certificate;
 
 use crate::error::CodedError;
@@ -44,6 +44,10 @@ pub const INVALID_PEM: &str = "INVALID_PEM";
 pub const INVALID_JSON: &str = "INVALID_JSON";
 /// Code for a malformed base64 value.
 pub const INVALID_BASE64: &str = "INVALID_BASE64";
+/// Code for a reference blob that does not hash to its digest.
+pub const REFERENCE_DIGEST_MISMATCH: &str = "REFERENCE_DIGEST_MISMATCH";
+/// Code for a reference blob the subject cannot decrypt.
+pub const REFERENCE_DECRYPT: &str = "REFERENCE_DECRYPT";
 
 /// Build a sharable bundle from `certificate`, proving or copying each named
 /// attribute with the `subject` account and sealing the result. Grant access to
@@ -54,7 +58,31 @@ pub fn from_certificate(
 	intermediates: &[X509Certificate],
 	names: &[String],
 ) -> Result<SharableCertificateAttributes, CodedError> {
-	SharableCertificateAttributes::from_certificate(certificate, subject.as_ref(), intermediates, names).map_err(coded)
+	let options = FromCertificateOptions { intermediates, ..FromCertificateOptions::default() };
+	SharableCertificateAttributes::from_certificate(certificate, subject, names, options).map_err(coded)
+}
+
+/// Build a sharable bundle like [`from_certificate`], additionally ingesting
+/// the caller-fetched external `blobs`.
+pub fn from_certificate_with_references(
+	certificate: &KycCertificate,
+	subject: &Arc<GenericAccount>,
+	intermediates: &[X509Certificate],
+	names: &[String],
+	blobs: ExternalBlobs,
+) -> Result<SharableCertificateAttributes, CodedError> {
+	let options = FromCertificateOptions { intermediates, blobs };
+	SharableCertificateAttributes::from_certificate(certificate, subject, names, options).map_err(coded)
+}
+
+/// The inlined blob for reference `id` on the disclosed attribute `name`,
+/// digest-verified on access; `None` when absent.
+pub fn reference_blob(
+	sharable: &mut SharableCertificateAttributes,
+	name: impl AsRef<str>,
+	id: impl AsRef<str>,
+) -> Result<Option<Vec<u8>>, CodedError> {
+	sharable.reference_blob(name, id).map_err(coded)
 }
 
 /// Open a sharable bundle from its encoded container bytes with `principals`.
@@ -163,6 +191,8 @@ pub fn coded(error: SharableAttributesError) -> CodedError {
 		SharableAttributesError::InvalidPem => CodedError::new(INVALID_PEM, message),
 		SharableAttributesError::InvalidJson => CodedError::new(INVALID_JSON, message),
 		SharableAttributesError::InvalidBase64 => CodedError::new(INVALID_BASE64, message),
+		SharableAttributesError::ReferenceDigestMismatch { .. } => CodedError::new(REFERENCE_DIGEST_MISMATCH, message),
+		SharableAttributesError::ReferenceDecrypt { .. } => CodedError::new(REFERENCE_DECRYPT, message),
 	}
 }
 

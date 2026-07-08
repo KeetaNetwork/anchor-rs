@@ -1,6 +1,6 @@
 [package]
 name = "keetanetwork-anchor-client"
-version = "0.2.0"
+version = "0.2.1"
 edition.workspace = true
 authors.workspace = true
 license-file.workspace = true
@@ -26,7 +26,7 @@ required-features = ["trust"]
 default = ["std"]
 codec = ["dep:serde", "dep:serde_json", "dep:keetanetwork-client"]
 service = ["codec", "dep:percent-encoding"]
-kyc = ["service"]
+kyc = ["service", "keetanetwork-anchor/sharable-attributes"]
 fx = ["service"]
 storage = ["service"]
 asset = ["service"]

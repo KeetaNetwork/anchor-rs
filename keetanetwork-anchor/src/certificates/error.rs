@@ -30,6 +30,9 @@ pub enum KycCertificateError {
 
 	#[snafu(display("Missing required field: {}", field))]
 	MissingRequiredField { field: String },
+
+	#[snafu(display("Unsupported subject key type"))]
+	UnsupportedSubjectKey,
 }
 
 crate::impl_source_error_from!(KycCertificateError, {
@@ -59,6 +62,7 @@ mod tests {
 			KycCertificateError::AttributeNotFound { name: "test".to_string() },
 			KycCertificateError::InvalidAttributeValue { name: "test".to_string(), reason: "test".to_string() },
 			KycCertificateError::MissingRequiredField { field: "test".to_string() },
+			KycCertificateError::UnsupportedSubjectKey,
 		]
 	);
 }

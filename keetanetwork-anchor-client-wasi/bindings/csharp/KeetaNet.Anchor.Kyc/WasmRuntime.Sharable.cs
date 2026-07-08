@@ -27,6 +27,33 @@ public sealed partial class WasmRuntime
 		}
 	}
 
+	internal int SharableFromCertificateWithReferences(
+		int certificateHandle,
+		int subjectHandle,
+		int[] intermediates,
+		string[] names,
+		IReadOnlyDictionary<string, byte[]> blobs)
+	{
+		var owned = new List<Argument>();
+		try
+		{
+			Argument bridges = WriteHandles(intermediates, owned);
+			Argument labels = WriteBytes(JsonSerializer.SerializeToUtf8Bytes(names), owned);
+			Dictionary<string, string> encoded = blobs.ToDictionary(
+				pair => pair.Key, pair => Convert.ToBase64String(pair.Value));
+			Argument payload = WriteBytes(JsonSerializer.SerializeToUtf8Bytes(encoded), owned);
+
+			return TakeHandle(Invoke<int, int, int, int, int, int, int, int, int>(
+				"keeta_sharable_from_certificate_with_references",
+				certificateHandle, subjectHandle, bridges.Pointer, bridges.Length,
+				labels.Pointer, labels.Length, payload.Pointer, payload.Length));
+		}
+		finally
+		{
+			FreeAll(owned);
+		}
+	}
+
 	internal int SharableFromEncoded(byte[] data, int[] principals) =>
 		SharableFrom("keeta_sharable_from_encoded", data, principals);
 
@@ -121,6 +148,22 @@ public sealed partial class WasmRuntime
 		{
 			Argument label = Write(name, owned);
 			return TakeBytes(Invoke<int, int, int, int>(export, handle, label.Pointer, label.Length));
+		}
+		finally
+		{
+			FreeAll(owned);
+		}
+	}
+
+	internal byte[] SharableReferenceBlob(int handle, string name, string id)
+	{
+		var owned = new List<Argument>();
+		try
+		{
+			Argument label = Write(name, owned);
+			Argument key = Write(id, owned);
+			return TakeBytes(Invoke<int, int, int, int, int, int>(
+				"keeta_sharable_reference_blob", handle, label.Pointer, label.Length, key.Pointer, key.Length));
 		}
 		finally
 		{

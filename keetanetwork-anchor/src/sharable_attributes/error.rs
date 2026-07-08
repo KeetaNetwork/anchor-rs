@@ -5,6 +5,7 @@ use snafu::Snafu;
 use crate::asn1::error::AnchorAsn1Error;
 use crate::certificates::KycCertificateError;
 use crate::encrypted_container::EncryptedContainerError;
+use crate::kyc_schema::KycSchemaError;
 
 /// Result type for
 /// [`SharableCertificateAttributes`](super::SharableCertificateAttributes)
@@ -59,6 +60,14 @@ pub enum SharableAttributesError {
 
 	#[snafu(display("Malformed base64 value"))]
 	InvalidBase64,
+
+	/// A supplied or inlined reference blob does not hash to its digest
+	#[snafu(display("Reference digest mismatch for {name}/{id}"))]
+	ReferenceDigestMismatch { name: String, id: String },
+
+	/// A supplied reference blob is not a container the subject can open
+	#[snafu(display("Reference decrypt failed for {name}/{id}: {source}"))]
+	ReferenceDecrypt { name: String, id: String, source: EncryptedContainerError },
 }
 
 crate::impl_source_error_from!(SharableAttributesError, {
@@ -72,6 +81,7 @@ crate::impl_source_error_from!(SharableAttributesError, {
 crate::impl_source_error_from_via!(SharableAttributesError, {
 	rasn::error::DecodeError => Asn1 via AnchorAsn1Error,
 	rasn::error::EncodeError => Asn1 via AnchorAsn1Error,
+	KycSchemaError => Certificate via KycCertificateError,
 });
 
 crate::impl_variant_error_from!(SharableAttributesError, {
@@ -108,6 +118,15 @@ mod tests {
 			SharableAttributesError::InvalidPem,
 			SharableAttributesError::InvalidJson,
 			SharableAttributesError::InvalidBase64,
+			SharableAttributesError::ReferenceDigestMismatch {
+				name: "documentDriversLicense".to_string(),
+				id: "AB".to_string()
+			},
+			SharableAttributesError::ReferenceDecrypt {
+				name: "documentDriversLicense".to_string(),
+				id: "AB".to_string(),
+				source: EncryptedContainerError::NoMatchingKey,
+			},
 		]
 	);
 }

@@ -1,6 +1,6 @@
 //! wasmtime P1 sharable-attributes core-module test: issue a leaf, seal a
 //! selected subset of its attributes for a recipient, then open the PEM envelope
-//! and read the disclosed values back — no node, harness, or network.
+//! and read the disclosed values back - no node, harness, or network.
 
 mod common;
 mod dotnet;

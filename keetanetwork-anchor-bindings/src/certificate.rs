@@ -115,6 +115,54 @@ where
 	certificate.decrypt_attribute(name, keypair).map_err(coded)
 }
 
+/// One discovered external blob reference, flattened for boundary transport:
+/// the carrying `attribute` name, the uppercase-hex digest `id`, and the
+/// reference's location and algorithm fields as strings.
+pub struct ExternalReferenceRecord {
+	/// The attribute name carrying the reference.
+	pub attribute: String,
+	/// The uppercase-hex digest id keying the reference.
+	pub id: String,
+	/// The URL serving the stored blob.
+	pub url: String,
+	/// The MIME type of the blob plaintext.
+	pub content_type: String,
+	/// The digest algorithm's symbolic name.
+	pub digest_algorithm: String,
+	/// The encryption algorithm's symbolic name.
+	pub encryption_algorithm: String,
+}
+
+/// The external blob references carried by the named attributes, discovered
+/// with the erased `subject` account and flattened to one record per reference.
+pub fn external_references_with_account(
+	certificate: &KycCertificate,
+	subject: &Arc<GenericAccount>,
+	names: &[String],
+) -> Result<Vec<ExternalReferenceRecord>, CodedError> {
+	let discovered = certificate
+		.external_references(subject.as_ref(), names)
+		.map_err(coded)?;
+
+	let records = discovered
+		.into_iter()
+		.flat_map(|(attribute, references)| {
+			references
+				.into_iter()
+				.map(move |reference| ExternalReferenceRecord {
+					attribute: attribute.clone(),
+					id: reference.id(),
+					url: reference.external.url,
+					content_type: reference.external.content_type,
+					digest_algorithm: reference.digest.algorithm_name(),
+					encryption_algorithm: reference.encryption.to_string(),
+				})
+		})
+		.collect();
+
+	Ok(records)
+}
+
 /// Decrypt a sensitive attribute for an erased account, dispatching on the
 /// account's signing algorithm. The binding ABIs hold accounts erased over their
 /// key type, so this bridges that erased handle to the typed [`decrypt_attribute`].
@@ -136,8 +184,7 @@ where
 
 /// A proof attesting to a sensitive attribute's committed value, validated
 /// against the certificate with only the subject's public key. `value` is the
-/// base64 attribute value the proof reveals; `salt` is its base64 commitment
-/// salt. Both cross binding boundaries as opaque strings.
+/// base64 attribute value the proof reveals.
 pub struct AttributeProof {
 	pub value: String,
 	pub salt: String,
@@ -352,6 +399,7 @@ pub fn coded(error: KycCertificateError) -> CodedError {
 		KycCertificateError::AttributeNotFound { .. } => CodedError::new(ATTRIBUTE_NOT_FOUND, message),
 		KycCertificateError::InvalidAttributeValue { .. } => CodedError::new(INVALID_ATTRIBUTE_VALUE, message),
 		KycCertificateError::MissingRequiredField { .. } => CodedError::new(MISSING_REQUIRED_FIELD, message),
+		KycCertificateError::UnsupportedSubjectKey => CodedError::new(UNSUPPORTED_KEY_TYPE, message),
 	}
 }
 

@@ -27,6 +27,14 @@ pub enum KycSchemaError {
 	/// Missing Value
 	#[snafu(display("Missing Value"))]
 	MissingValue,
+
+	/// An external reference names a digest algorithm the crate cannot compute
+	#[snafu(display("Unsupported digest algorithm: {oid}"))]
+	UnsupportedDigestAlgorithm { oid: String },
+
+	/// An external reference names an encryption algorithm the crate cannot open
+	#[snafu(display("Unsupported encryption algorithm: {oid}"))]
+	UnsupportedEncryptionAlgorithm { oid: String },
 }
 
 crate::impl_source_error_from!(KycSchemaError, {
@@ -60,6 +68,8 @@ mod tests {
 			KycSchemaError::Serialization { message: "test serialization error".to_string() },
 			KycSchemaError::MissingOid,
 			KycSchemaError::MissingValue,
+			KycSchemaError::UnsupportedDigestAlgorithm { oid: "md5".to_string() },
+			KycSchemaError::UnsupportedEncryptionAlgorithm { oid: "aes-256-gcm".to_string() },
 		]
 	);
 }

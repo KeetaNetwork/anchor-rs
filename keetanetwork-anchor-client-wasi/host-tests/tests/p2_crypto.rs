@@ -1,7 +1,7 @@
 //! wasmtime P2 offline `crypto` tests.
 //!
 //! These drive the exported `account`, `certificate`, and `kyc-certificate`
-//! resources with no network and no harness — only the prebuilt component.
+//! resources with no network and no harness - only the prebuilt component.
 
 mod common;
 mod wasmtime_p2;

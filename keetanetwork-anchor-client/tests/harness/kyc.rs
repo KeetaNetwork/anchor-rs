@@ -312,6 +312,34 @@ impl KycHarness {
 			.request("issueCertificate", json!({ "subjectSeed": subject_seed, "attributes": attributes }))
 	}
 
+	/// Serve `data` over the harness blob store, wrapped in the storage-service
+	/// `{ data, mimeType }` JSON convention when `wrap` is set, returning the
+	/// URL a reference can point at. No running anchor is required.
+	pub fn serve_blob(&mut self, data: &[u8], mime_type: &str, wrap: bool) -> Result<String, HarnessError> {
+		use base64::engine::general_purpose::STANDARD;
+		use base64::Engine;
+
+		let response = self
+			.driver
+			.request("serveBlob", json!({ "data": STANDARD.encode(data), "mimeType": mime_type, "wrap": wrap }))?;
+
+		Ok(field_str(&response, "url")?.to_string())
+	}
+
+	/// Open a sharable bundle PEM with the reference reader, decoding the named
+	/// `attributes` and resolving every `$blob` reference on them to its
+	/// verified bytes (`blobs[name][id] = { data, type }`). No running anchor
+	/// is required.
+	pub fn open_sharable(
+		&mut self,
+		pem: &str,
+		recipient_seed: &str,
+		attributes: &[&str],
+	) -> Result<Value, HarnessError> {
+		self.driver
+			.request("openSharable", json!({ "pem": pem, "recipientSeed": recipient_seed, "attributes": attributes }))
+	}
+
 	/// Read `attributes` back from an externally issued `leaf` (e.g. one built by
 	/// the Rust core) using `subject_seed` to decrypt the sensitive ones. No
 	/// running anchor is required.

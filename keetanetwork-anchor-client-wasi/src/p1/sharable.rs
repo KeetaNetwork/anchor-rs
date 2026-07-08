@@ -6,8 +6,11 @@
 //! module's shared `keeta_account_*` registry.
 
 use core::cell::RefCell;
+use std::collections::BTreeMap;
 
-use keetanetwork_anchor::sharable_attributes::SharableCertificateAttributes;
+use base64::engine::general_purpose::STANDARD;
+use base64::Engine;
+use keetanetwork_anchor::sharable_attributes::{ExternalBlobs, SharableCertificateAttributes};
 use keetanetwork_anchor_bindings::error::CodedError;
 use keetanetwork_anchor_bindings::registry::HandleRegistry;
 use keetanetwork_anchor_bindings::sharable_attributes as sharable_ops;
@@ -72,6 +75,48 @@ pub unsafe extern "C" fn keeta_sharable_from_certificate(
 
 	let outcome = with_leaf(certificate_handle, |certificate| {
 		sharable_ops::from_certificate(certificate, &subject, &intermediates, &names)
+	});
+	match outcome {
+		Some(Ok(bundle)) => store(bundle),
+		Some(Err(error)) => fail(error),
+		None => 0,
+	}
+}
+
+/// Build a sharable bundle like [`keeta_sharable_from_certificate`],
+/// additionally ingesting the caller-fetched blobs in the JSON object: each named
+/// attribute's discovered reference with a supplied blob is decrypted with the
+/// subject, digest-verified, and inlined.
+///
+/// # Safety
+///
+/// Each `(ptr, len)` MUST describe an initialized, readable guest buffer.
+#[no_mangle]
+pub unsafe extern "C" fn keeta_sharable_from_certificate_with_references(
+	certificate_handle: i32,
+	subject_handle: i32,
+	intermediates_ptr: i32,
+	intermediates_len: i32,
+	names_ptr: i32,
+	names_len: i32,
+	blobs_ptr: i32,
+	blobs_len: i32,
+) -> i32 {
+	let Some(subject) = account(subject_handle) else {
+		return 0;
+	};
+	let Some(intermediates) = (unsafe { resolve_certificates(intermediates_ptr, intermediates_len) }) else {
+		return 0;
+	};
+	let Some(names) = (unsafe { decode_names(names_ptr, names_len) }) else {
+		return 0;
+	};
+	let Some(blobs) = (unsafe { decode_blobs(blobs_ptr, blobs_len) }) else {
+		return 0;
+	};
+
+	let outcome = with_leaf(certificate_handle, |certificate| {
+		sharable_ops::from_certificate_with_references(certificate, &subject, &intermediates, &names, blobs)
 	});
 	match outcome {
 		Some(Ok(bundle)) => store(bundle),
@@ -272,6 +317,34 @@ pub unsafe extern "C" fn keeta_sharable_attribute_value(handle: i32, name_ptr: i
 	}
 }
 
+/// The inlined, digest-verified blob for reference `id` on the disclosed
+/// attribute `name` as a bytes handle; an empty payload means the attribute,
+/// entry, or matching reference node is absent (`0` on error).
+///
+/// # Safety
+///
+/// Each `(ptr, len)` MUST describe an initialized, readable guest buffer.
+#[no_mangle]
+pub unsafe extern "C" fn keeta_sharable_reference_blob(
+	handle: i32,
+	name_ptr: i32,
+	name_len: i32,
+	id_ptr: i32,
+	id_len: i32,
+) -> i32 {
+	let Some(name) = (unsafe { string_in(name_ptr, name_len) }) else {
+		return 0;
+	};
+	let Some(id) = (unsafe { string_in(id_ptr, id_len) }) else {
+		return 0;
+	};
+
+	match with_bundle_mut(handle, |bundle| sharable_ops::reference_blob(bundle, &name, &id)) {
+		Some(result) => bytes_result(result.map(Option::unwrap_or_default)),
+		None => 0,
+	}
+}
+
 /// Release a sharable-bundle handle, ignoring an unknown one.
 #[no_mangle]
 pub extern "C" fn keeta_sharable_free(handle: i32) {
@@ -293,6 +366,38 @@ unsafe fn decode_names(ptr: i32, len: i32) -> Option<Vec<String>> {
 			None
 		}
 	}
+}
+
+/// Decode a `(ptr, len)` buffer holding a JSON `{ id: base64 }` object into
+/// caller-fetched external blobs, recording a `DECODE` error and yielding
+/// `None` when malformed.
+///
+/// # Safety
+///
+/// `(ptr, len)` MUST describe an initialized, readable guest buffer.
+unsafe fn decode_blobs(ptr: i32, len: i32) -> Option<ExternalBlobs> {
+	let bytes = unsafe { bytes_in(ptr, len) };
+	let encoded: BTreeMap<String, String> = match serde_json::from_slice(&bytes) {
+		Ok(encoded) => encoded,
+		Err(error) => {
+			fail(CodedError::new("DECODE", error.to_string()));
+			return None;
+		}
+	};
+
+	let mut blobs = ExternalBlobs::default();
+	for (id, value) in encoded {
+		let raw = match STANDARD.decode(&value) {
+			Ok(raw) => raw,
+			Err(error) => {
+				fail(CodedError::new("DECODE", error.to_string()));
+				return None;
+			}
+		};
+		blobs.insert(id, raw);
+	}
+
+	Some(blobs)
 }
 
 /// JSON-encode a serializable value for transport across the bytes boundary.
