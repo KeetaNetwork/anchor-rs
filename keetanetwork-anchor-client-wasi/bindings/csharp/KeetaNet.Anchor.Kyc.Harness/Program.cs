@@ -480,7 +480,12 @@ static void CryptoSelfTest(WasmRuntime runtime)
 
 	using Account account = Account.FromSeed(runtime, subjectSeed, 0, algorithm);
 	Require(account.Algorithm == algorithm, "account algorithm mismatch");
-	Require(account.Address.StartsWith("keeta_", StringComparison.Ordinal), "account address was not a keeta address");
+	Require(account.PublicKeyString.StartsWith("keeta_", StringComparison.Ordinal), "account public-key string was not a keeta_ string");
+
+	string keyAndType = account.PublicKeyAndTypeString;
+	Require(keyAndType.StartsWith("0x", StringComparison.Ordinal), "the key-and-type string must be 0x-prefixed");
+	using Account reopened = Account.FromPublicKeyAndType(runtime, keyAndType);
+	Require(reopened.PublicKeyString == account.PublicKeyString, "the key-and-type string must round-trip to the same account");
 
 	byte[] message = Encoding.UTF8.GetBytes("crypto over p1");
 	byte[] signature = account.Sign(message);
@@ -512,7 +517,7 @@ static void CryptoSelfTest(WasmRuntime runtime)
 		certificate.NotBefore <= validAt && validAt <= certificate.NotAfter,
 		"the in-window moment must fall inside the reported validity window");
 	Require(
-		certificate.SubjectPublicKey == account.PublicKey,
+		certificate.SubjectPublicKey == account.PublicKeyAndType,
 		"the subject public key must equal the subject account's public key");
 
 	using KycCertificate kyc = KycCertificate.Parse(runtime, pem);
@@ -655,7 +660,7 @@ static void ContainerSelfTest(WasmRuntime runtime)
 		byte[]? recovered = restored.SigningAccount();
 		Require(recovered is not null, "a signed container must recover its signer");
 		Require(
-			Convert.ToHexString(recovered!).Equals(signer.PublicKey, StringComparison.OrdinalIgnoreCase),
+			Convert.ToHexString(recovered!).Equals(signer.PublicKeyAndType, StringComparison.OrdinalIgnoreCase),
 			"the recovered signer key must match the signing account");
 	}
 
@@ -666,7 +671,7 @@ static void ContainerSelfTest(WasmRuntime runtime)
 		container.GrantAccess(new[] { reader });
 		Require(container.Principals().Count == 2, "granting access must add a principal");
 
-		container.RevokeAccess(Convert.FromHexString(reader.PublicKey));
+		container.RevokeAccess(Convert.FromHexString(reader.PublicKeyAndType));
 		Require(container.Principals().Count == 1, "revoking access must remove a principal");
 	}
 }
@@ -737,7 +742,7 @@ static void SharableSelfTest(WasmRuntime runtime)
 	IReadOnlyList<byte[]> principals = opened.Principals();
 	Require(principals.Count == 1, "the granted recipient must be the sole principal");
 	Require(
-		Convert.ToHexString(principals[0]).Equals(recipient.PublicKey, StringComparison.OrdinalIgnoreCase),
+		Convert.ToHexString(principals[0]).Equals(recipient.PublicKeyAndType, StringComparison.OrdinalIgnoreCase),
 		"the sole principal must be the granted recipient");
 
 	Require(opened.AttributeNames().Count == 2, "the bundle must disclose exactly two attributes");
@@ -838,7 +843,7 @@ static void ContainerCompatibility(WasmRuntime runtime)
 
 	byte[]? recovered = decoded.SigningAccount();
 	bool signerOk = recovered is not null
-		&& Convert.ToHexString(recovered).Equals(signer.PublicKey, StringComparison.OrdinalIgnoreCase);
+		&& Convert.ToHexString(recovered).Equals(signer.PublicKeyAndType, StringComparison.OrdinalIgnoreCase);
 	Console.WriteLine($"TS_SIGNER_OK={Bool(signerOk)}");
 
 	// 2. Produce an encrypted, signed container for the TS reader to read back.
@@ -847,7 +852,7 @@ static void ContainerCompatibility(WasmRuntime runtime)
 		EncryptedContainer.FromPlaintext(runtime, payload, new[] { principal }, locked: false, signer: signer);
 	Console.WriteLine($"CS_CONTAINER={Convert.ToBase64String(produced.Encoded())}");
 	Console.WriteLine($"CS_PLAINTEXT={Convert.ToBase64String(payload)}");
-	Console.WriteLine($"CS_SIGNER_KEY={signer.PublicKey}");
+	Console.WriteLine($"CS_SIGNER_KEY={signer.PublicKeyAndType}");
 }
 
 static string RequireEnv(string name) =>

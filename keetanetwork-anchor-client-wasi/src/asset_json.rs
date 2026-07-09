@@ -658,38 +658,8 @@ fn account_status_json(status: &AccountStatus) -> Value {
 	match status {
 		AccountStatus::Ready => json!({ "actionRequired": false }),
 		AccountStatus::ActionRequired { blockers } => {
-			let blockers: Vec<Value> = blockers.iter().map(blocker_json).collect();
+			let blockers: Vec<Value> = blockers.iter().map(AssetMovementBlocker::to_json).collect();
 			json!({ "actionRequired": true, "blockers": blockers })
-		}
-	}
-}
-
-/// Project an [`AssetMovementBlocker`] into its JSON output.
-fn blocker_json(blocker: &AssetMovementBlocker) -> Value {
-	match blocker {
-		AssetMovementBlocker::KycShareNeeded {
-			tos_flow,
-			needed_attributes,
-			share_with_principals,
-			accepted_issuers,
-		} => json!({
-			"type": "kycShareNeeded",
-			"tosFlow": tos_flow,
-			"neededAttributes": needed_attributes,
-			"shareWithPrincipals": share_with_principals,
-			"acceptedIssuers": accepted_issuers,
-		}),
-		AssetMovementBlocker::AdditionalKycNeeded { to_complete_flow } => {
-			json!({ "type": "additionalKycNeeded", "toCompleteFlow": to_complete_flow })
-		}
-		AssetMovementBlocker::OperationNotSupported { for_asset, for_rail } => {
-			json!({ "type": "operationNotSupported", "forAsset": for_asset, "forRail": for_rail })
-		}
-		AssetMovementBlocker::UserActionNeeded { actions_needed } => {
-			json!({ "type": "userActionNeeded", "actionsNeeded": actions_needed })
-		}
-		AssetMovementBlocker::Other { name, code, message } => {
-			json!({ "type": "other", "name": name, "code": code, "message": message })
 		}
 	}
 }

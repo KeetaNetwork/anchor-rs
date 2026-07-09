@@ -189,6 +189,17 @@ pub enum AnchorClientError {
 		status: u16,
 	},
 
+	/// The anchor reported a typed asset-movement blocker the caller must
+	/// resolve before the operation can proceed.
+	#[cfg(feature = "asset")]
+	#[snafu(display("the anchor reported an asset-movement blocker"))]
+	Blocker {
+		/// The blocker rehydrated from the anchor error envelope. Always a
+		/// recognized variant: an unrecognized envelope stays
+		/// [`Service`](Self::Service).
+		blocker: crate::services::asset_movement::AssetMovementBlocker,
+	},
+
 	/// The resolved provider does not advertise a required operation.
 	#[snafu(display("provider does not advertise the `{operation}` operation"))]
 	UnsupportedOperation {
@@ -237,6 +248,10 @@ impl AnchorClientError {
 			Self::Request { .. } => "REQUEST",
 			Self::Body { .. } => "INVALID_BODY",
 			Self::Service { .. } => "SERVICE",
+
+			#[cfg(feature = "asset")]
+			Self::Blocker { blocker } => blocker.transport_code().unwrap_or("SERVICE"),
+
 			Self::UnsupportedOperation { .. } => "UNSUPPORTED_OPERATION",
 			Self::Timeout { .. } => "TIMEOUT",
 
@@ -288,5 +303,21 @@ mod tests {
 	fn a_certificate_error_routes_through_sharable() {
 		let error = AnchorClientError::from(KycCertificateError::UnsupportedSubjectKey);
 		assert!(matches!(error, AnchorClientError::Sharable { source: SharableAttributesError::Certificate { .. } }));
+	}
+
+	#[cfg(feature = "asset")]
+	#[test]
+	fn a_blocker_reports_its_transport_code() {
+		use crate::services::asset_movement::AssetMovementBlocker;
+
+		let blocker = AssetMovementBlocker::from_transport(&serde_json::json!({
+			"code": "KEETA_ANCHOR_ASSET_MOVEMENT_KYC_SHARE_NEEDED",
+			"name": "n",
+			"error": "e",
+			"data": {}
+		}));
+
+		let error = AnchorClientError::Blocker { blocker };
+		assert_eq!(error.code(), "KEETA_ANCHOR_ASSET_MOVEMENT_KYC_SHARE_NEEDED");
 	}
 }

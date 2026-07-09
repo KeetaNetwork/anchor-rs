@@ -1386,9 +1386,9 @@ dependencies = [
 
 [[package]]
 name = "keetanetwork-bindings"
-version = "0.4.1"
+version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e9392a85ed79ff7109e074e59d0d51aa0fd8e7f2494d1fed3f5c503bff7dc245"
+checksum = "2475998744f157cf935718827eea5a200410d17a6eeba003c0b66bfbaa57225f"
 dependencies = [
  "chrono",
  "hex",
@@ -1422,9 +1422,9 @@ dependencies = [
 
 [[package]]
 name = "keetanetwork-client"
-version = "0.4.0"
+version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b43d33dc69ca0571499c19046b016271b66a7f4d9b2aa5539a2351b4c3231270"
+checksum = "783526f9a5696f9d0daa701443b8021c8167f7dd25ef2bdc7ea711d549dbaaad"
 dependencies = [
  "async-trait",
  "base64",
@@ -1461,9 +1461,9 @@ dependencies = [
 
 [[package]]
 name = "keetanetwork-client-wasi"
-version = "0.4.1"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "028cf15716a059c3ebf5952758f1a575f3d4ee047afeaec8b53bb9b1ca8372f4"
+checksum = "42636682f771931fb3ba1c856148ea5824bfaf04d26f3fdc4f8716df654fca44"
 dependencies = [
  "hex",
  "keetanetwork-account",

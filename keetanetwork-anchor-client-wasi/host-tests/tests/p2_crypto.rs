@@ -68,7 +68,7 @@ async fn account_signs_and_verifies_a_message() -> Result<(), BoxError> {
 
 	let account = crypto
 		.account()
-		.call_from_seed(&mut store, SUBJECT_SEED, 0, ALGORITHM)
+		.call_from_seed(&mut store, SUBJECT_SEED, 0, Some(ALGORITHM))
 		.await?
 		.map_err(coded)?;
 
@@ -78,8 +78,39 @@ async fn account_signs_and_verifies_a_message() -> Result<(), BoxError> {
 		"the account must report its derivation algorithm"
 	);
 
-	let address = crypto.account().call_address(&mut store, account).await?;
-	assert!(address.starts_with("keeta_"), "the address must be a textual keeta address");
+	let public_key_string = crypto.account().call_public_key_string(&mut store, account).await?;
+	assert!(
+		public_key_string.starts_with("keeta_"),
+		"the public-key string must be a textual keeta_ string"
+	);
+
+	let key_and_type = crypto
+		.account()
+		.call_public_key_and_type_string(&mut store, account)
+		.await?;
+	assert!(key_and_type.starts_with("0x"), "the key-and-type string must be 0x-prefixed");
+
+	let reopened = crypto
+		.account()
+		.call_from_public_key_and_type(&mut store, &key_and_type)
+		.await?
+		.map_err(coded)?;
+	let reopened_string = crypto.account().call_public_key_string(&mut store, reopened).await?;
+	assert_eq!(
+		reopened_string, public_key_string,
+		"the key-and-type string must round-trip to the same account"
+	);
+
+	let defaulted = crypto
+		.account()
+		.call_from_seed(&mut store, SUBJECT_SEED, 0, None)
+		.await?
+		.map_err(coded)?;
+	let default_kind = crypto.account().call_kind(&mut store, defaulted).await?;
+	assert!(
+		matches!(default_kind, AccountKind::Signing(KeyAlgorithm::EcdsaSecp256k1)),
+		"an omitted algorithm must default to ecdsa-secp256k1"
+	);
 
 	let message = b"sign over wasi".to_vec();
 	let signature = crypto
@@ -193,7 +224,7 @@ async fn certificate_reports_metadata() -> Result<(), BoxError> {
 	// from the same seed, so a holder can match a certificate to its account.
 	let account = crypto
 		.account()
-		.call_from_seed(&mut store, SUBJECT_SEED, 0, ALGORITHM)
+		.call_from_seed(&mut store, SUBJECT_SEED, 0, Some(ALGORITHM))
 		.await?
 		.map_err(coded)?;
 	let account_key = crypto
@@ -283,7 +314,7 @@ async fn kyc_certificate_reads_chains_and_decrypts() -> Result<(), BoxError> {
 	// claim, proving the borrow<account> decryption path round-trips.
 	let subject = crypto
 		.account()
-		.call_from_seed(&mut store, SUBJECT_SEED, 0, ALGORITHM)
+		.call_from_seed(&mut store, SUBJECT_SEED, 0, Some(ALGORITHM))
 		.await?
 		.map_err(coded)?;
 	let email = certificates

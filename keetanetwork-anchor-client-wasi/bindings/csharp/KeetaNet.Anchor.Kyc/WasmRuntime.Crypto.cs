@@ -29,13 +29,13 @@ public sealed partial class WasmRuntime
 		}
 	}
 
-	internal int AccountFromAddress(string address)
+	internal int AccountFromPublicKeyString(string publicKeyString)
 	{
 		var owned = new List<Argument>();
 		try
 		{
-			Argument value = Write(address, owned);
-			return TakeHandle(Invoke<int, int, int>("keeta_account_from_address", value.Pointer, value.Length));
+			Argument value = Write(publicKeyString, owned);
+			return TakeHandle(Invoke<int, int, int>("keeta_account_from_public_key_string", value.Pointer, value.Length));
 		}
 		finally
 		{
@@ -117,8 +117,25 @@ public sealed partial class WasmRuntime
 		}
 	}
 
-	internal string AccountAddress(int handle) =>
-		Text(Invoke<int, int>("keeta_account_address", handle));
+	internal int AccountFromPublicKeyAndType(string keyAndType)
+	{
+		var owned = new List<Argument>();
+		try
+		{
+			Argument value = Write(keyAndType, owned);
+			return TakeHandle(Invoke<int, int, int>("keeta_account_from_public_key_and_type", value.Pointer, value.Length));
+		}
+		finally
+		{
+			FreeAll(owned);
+		}
+	}
+
+	internal string AccountPublicKeyString(int handle) =>
+		Text(Invoke<int, int>("keeta_account_public_key_string", handle));
+
+	internal string AccountPublicKeyAndTypeString(int handle) =>
+		Text(Invoke<int, int>("keeta_account_public_key_and_type_string", handle));
 
 	internal string AccountAlgorithm(int handle) =>
 		Text(Invoke<int, int>("keeta_account_algorithm", handle));

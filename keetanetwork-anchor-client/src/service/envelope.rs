@@ -59,15 +59,17 @@ mod decode {
 	/// Decode `response` into an [`AnchorOutcome`].
 	///
 	/// A `202`, a `404`, or any response carrying `retryAfter`, becomes
-	/// [`AnchorOutcome::Retry`]. Any other non-2xx status, or an `ok: false`
-	/// envelope, becomes [`AnchorClientError::Service`]. A successful body
-	/// decodes into `T`.
+	/// [`AnchorOutcome::Retry`]. A failure envelope carrying a recognized
+	/// asset-movement blocker code becomes the typed
+	/// [`AnchorClientError::Blocker`]. Any other non-2xx status, or an
+	/// `ok: false` envelope, becomes [`AnchorClientError::Service`]. A
+	/// successful body decodes into `T`.
 	///
 	/// # Errors
 	///
-	/// Returns [`AnchorClientError::Service`] when the anchor reports failure,
-	/// or [`AnchorClientError::Body`] when a successful body does not decode
-	/// into `T`.
+	/// Returns [`AnchorClientError::Blocker`] or [`AnchorClientError::Service`]
+	/// when the anchor reports failure, or [`AnchorClientError::Body`] when a
+	/// successful body does not decode into `T`.
 	pub(crate) fn classify<T>(response: HttpResponse) -> Result<AnchorOutcome<T>, AnchorClientError>
 	where
 		T: DeserializeOwned,
@@ -77,11 +79,27 @@ mod decode {
 			return Ok(AnchorOutcome::Retry { after_ms });
 		}
 		if !response.is_success() || envelope.ok == Some(false) {
-			return Err(AnchorClientError::Service { status: response.status });
+			return Err(failure(response));
 		}
 
 		let value: T = serde_json::from_slice(&response.body)?;
 		Ok(AnchorOutcome::Ready(value))
+	}
+
+	/// The typed error for a failure response: a recognized asset-movement
+	/// blocker envelope rehydrates, anything else is a service failure.
+	fn failure(response: HttpResponse) -> AnchorClientError {
+		#[cfg(feature = "asset")]
+		if let Ok(body) = serde_json::from_slice::<serde_json::Value>(&response.body) {
+			use crate::services::asset_movement::AssetMovementBlocker;
+
+			let blocker = AssetMovementBlocker::from_transport(&body);
+			if blocker.is_recognized() {
+				return AnchorClientError::Blocker { blocker };
+			}
+		}
+
+		AnchorClientError::Service { status: response.status }
 	}
 
 	/// The retry delay when `response` reports a pending resource, or [`None`]
@@ -155,6 +173,38 @@ mod decode {
 			let response = HttpResponse::new(202, b"pending".to_vec());
 			let outcome = classify::<Value>(response);
 			assert!(matches!(outcome, Ok(AnchorOutcome::Retry { after_ms: DEFAULT_RETRY_MS })));
+		}
+
+		#[cfg(feature = "asset")]
+		#[test]
+		fn a_recognized_blocker_envelope_survives_a_forbidden_status() {
+			use crate::services::asset_movement::AssetMovementBlocker;
+
+			let body = serde_json::json!({
+				"ok": false,
+				"name": "KeetaAssetMovementAnchorKYCShareNeededError",
+				"code": "KEETA_ANCHOR_ASSET_MOVEMENT_KYC_SHARE_NEEDED",
+				"error": "share needed",
+				"data": { "shareWithPrincipals": ["keeta_principal"], "acceptedIssuers": [] }
+			});
+
+			let response = HttpResponse::new(403, body.to_string().into_bytes());
+			let outcome = classify::<Value>(response);
+			assert!(matches!(
+				outcome,
+				Err(AnchorClientError::Blocker { blocker: AssetMovementBlocker::KycShareNeeded { .. } })
+			));
+		}
+
+		#[cfg(feature = "asset")]
+		#[test]
+		fn an_unrecognized_failure_envelope_stays_a_service_error() {
+			let body =
+				serde_json::json!({ "ok": false, "name": "SomeError", "code": "SOMETHING_ELSE", "error": "boom" });
+			let response = HttpResponse::new(403, body.to_string().into_bytes());
+
+			let outcome = classify::<Value>(response);
+			assert!(matches!(outcome, Err(AnchorClientError::Service { status: 403 })));
 		}
 
 		#[test]
