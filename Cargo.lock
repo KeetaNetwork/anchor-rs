@@ -1266,7 +1266,7 @@ dependencies = [
 
 [[package]]
 name = "keetanetwork-anchor"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "base64",
  "chrono",
@@ -1294,7 +1294,7 @@ dependencies = [
 
 [[package]]
 name = "keetanetwork-anchor-bindings"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "chrono",
  "hex",
@@ -1308,7 +1308,7 @@ dependencies = [
 
 [[package]]
 name = "keetanetwork-anchor-client"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "async-trait",
  "base64",
@@ -1339,7 +1339,7 @@ dependencies = [
 
 [[package]]
 name = "keetanetwork-anchor-client-wasi"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "async-trait",
  "base64",
