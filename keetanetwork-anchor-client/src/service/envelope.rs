@@ -198,6 +198,14 @@ mod decode {
 
 		#[cfg(feature = "asset")]
 		#[test]
+		fn a_non_json_failure_body_stays_a_service_error() {
+			let response = HttpResponse::new(500, b"not json".to_vec());
+			let outcome = classify::<Value>(response);
+			assert!(matches!(outcome, Err(AnchorClientError::Service { status: 500 })));
+		}
+
+		#[cfg(feature = "asset")]
+		#[test]
 		fn an_unrecognized_failure_envelope_stays_a_service_error() {
 			let body =
 				serde_json::json!({ "ok": false, "name": "SomeError", "code": "SOMETHING_ELSE", "error": "boom" });
@@ -205,6 +213,22 @@ mod decode {
 
 			let outcome = classify::<Value>(response);
 			assert!(matches!(outcome, Err(AnchorClientError::Service { status: 403 })));
+		}
+
+		#[test]
+		fn a_ready_outcome_yields_its_value_and_a_retry_yields_none() {
+			assert_eq!(AnchorOutcome::Ready(7).ready(), Some(7));
+			assert_eq!(AnchorOutcome::<u32>::Retry { after_ms: 500 }.ready(), None);
+		}
+
+		#[cfg(feature = "asset")]
+		#[test]
+		fn pending_delay_reads_the_hint_and_settles_on_success() {
+			let pending = HttpResponse::new(ACCEPTED, br#"{"retryAfter":250}"#.to_vec());
+			assert_eq!(pending_delay(&pending), Some(250));
+
+			let settled = HttpResponse::new(200, b"opaque".to_vec());
+			assert_eq!(pending_delay(&settled), None);
 		}
 
 		#[test]

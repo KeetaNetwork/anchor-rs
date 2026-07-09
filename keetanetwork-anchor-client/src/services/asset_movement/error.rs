@@ -273,10 +273,12 @@ mod tests {
 
 	#[test]
 	fn a_recognized_blocker_reports_its_transport_code() {
-		let entry = json!({ "code": KYC_SHARE_NEEDED, "name": "n", "error": "e", "data": {} });
-		let blocker = AssetMovementBlocker::from_transport(&entry);
-		assert_eq!(blocker.transport_code(), Some(KYC_SHARE_NEEDED));
-		assert!(blocker.is_recognized());
+		for code in [KYC_SHARE_NEEDED, ADDITIONAL_KYC_NEEDED, OPERATION_NOT_SUPPORTED, USER_ACTION_NEEDED] {
+			let entry = json!({ "code": code, "name": "n", "error": "e", "data": {} });
+			let blocker = AssetMovementBlocker::from_transport(&entry);
+			assert_eq!(blocker.transport_code(), Some(code));
+			assert!(blocker.is_recognized());
+		}
 	}
 
 	#[test]
@@ -285,6 +287,71 @@ mod tests {
 		let blocker = AssetMovementBlocker::from_transport(&entry);
 		assert_eq!(blocker.transport_code(), None);
 		assert!(!blocker.is_recognized());
+	}
+
+	#[test]
+	fn an_additional_kyc_blocker_rehydrates_its_flow() {
+		let entry = json!({
+			"code": ADDITIONAL_KYC_NEEDED,
+			"name": "n",
+			"error": "e",
+			"data": { "toCompleteFlow": { "url": "https://flow" } }
+		});
+
+		let blocker = AssetMovementBlocker::from_transport(&entry);
+		assert_eq!(
+			blocker,
+			AssetMovementBlocker::AdditionalKycNeeded { to_complete_flow: Some(json!({ "url": "https://flow" })) }
+		);
+	}
+
+	#[test]
+	fn a_user_action_blocker_rehydrates_its_actions() {
+		let entry = json!({
+			"code": USER_ACTION_NEEDED,
+			"name": "n",
+			"error": "e",
+			"data": { "actionsNeeded": [{ "action": "setInfo" }] }
+		});
+
+		let blocker = AssetMovementBlocker::from_transport(&entry);
+		assert_eq!(
+			blocker,
+			AssetMovementBlocker::UserActionNeeded { actions_needed: alloc::vec![json!({ "action": "setInfo" })] }
+		);
+	}
+
+	#[test]
+	fn every_variant_emits_its_type_discriminated_json() {
+		let cases = [
+			(
+				AssetMovementBlocker::AdditionalKycNeeded { to_complete_flow: None },
+				json!({ "type": "additionalKycNeeded", "toCompleteFlow": null }),
+			),
+			(
+				AssetMovementBlocker::OperationNotSupported {
+					for_asset: Some(json!("USD")),
+					for_rail: Some("KEETA_SEND".to_string()),
+				},
+				json!({ "type": "operationNotSupported", "forAsset": "USD", "forRail": "KEETA_SEND" }),
+			),
+			(
+				AssetMovementBlocker::UserActionNeeded { actions_needed: alloc::vec![json!({ "action": "setInfo" })] },
+				json!({ "type": "userActionNeeded", "actionsNeeded": [{ "action": "setInfo" }] }),
+			),
+			(
+				AssetMovementBlocker::Other {
+					name: "SomeError".to_string(),
+					code: Some("SOMETHING_ELSE".to_string()),
+					message: "boom".to_string(),
+				},
+				json!({ "type": "other", "name": "SomeError", "code": "SOMETHING_ELSE", "message": "boom" }),
+			),
+		];
+
+		for (blocker, expected) in cases {
+			assert_eq!(blocker.to_json(), expected);
+		}
 	}
 
 	#[test]
