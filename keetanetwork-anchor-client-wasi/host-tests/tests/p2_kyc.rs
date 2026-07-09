@@ -11,7 +11,7 @@ use wasmtime_p2::bindings::exports::keeta::anchor::kyc::{
 	CertificatesOutcome, KycProvider, StatusOutcome, VerificationOutcome,
 };
 use wasmtime_p2::bindings::exports::keeta::client::crypto::KeyAlgorithm;
-use wasmtime_p2::{account_from_address, coded, instantiate};
+use wasmtime_p2::{account_from_public_key_string, coded, instantiate};
 
 /// Project a decrypted attribute's bytes into the JSON value the reference holds:
 /// a scalar attribute is its UTF-8 text; a structured attribute is its JSON object.
@@ -46,10 +46,10 @@ async fn p2_kyc_signs_against_live_anchor() -> Result<(), BoxError> {
 	// resolves the root account over wasi:http.
 	let account = crypto
 		.account()
-		.call_from_seed(&mut store, &"11".repeat(32), 0, KeyAlgorithm::EcdsaSecp256k1)
+		.call_from_seed(&mut store, &"11".repeat(32), 0, Some(KeyAlgorithm::EcdsaSecp256k1))
 		.await?
 		.map_err(coded)?;
-	let root_account = account_from_address(&mut store, &bindings, &root).await?;
+	let root_account = account_from_public_key_string(&mut store, &bindings, &root).await?;
 	let client = kyc
 		.client()
 		.call_with_account(&mut store, &node_url, root_account, account)
@@ -149,12 +149,12 @@ async fn p2_kyc_issues_a_leaf_across_algorithms() -> Result<(), BoxError> {
 	// leaf with the secp256k1 issuer.
 	let subject = crypto
 		.account()
-		.call_from_seed(&mut store, SUBJECT_SEED, 0, KeyAlgorithm::Ed25519)
+		.call_from_seed(&mut store, SUBJECT_SEED, 0, Some(KeyAlgorithm::Ed25519))
 		.await?
 		.map_err(coded)?;
 	let issuer = crypto
 		.account()
-		.call_from_seed(&mut store, &"22".repeat(32), 0, KeyAlgorithm::EcdsaSecp256k1)
+		.call_from_seed(&mut store, &"22".repeat(32), 0, Some(KeyAlgorithm::EcdsaSecp256k1))
 		.await?
 		.map_err(coded)?;
 
@@ -248,7 +248,7 @@ async fn p2_kyc_decrypts_issued_leaf_to_reference_values() -> Result<(), BoxErro
 	// to, so the binding can decrypt every sensitive attribute.
 	let account = crypto
 		.account()
-		.call_from_seed(&mut store, SUBJECT_SEED, 0, KeyAlgorithm::EcdsaSecp256k1)
+		.call_from_seed(&mut store, SUBJECT_SEED, 0, Some(KeyAlgorithm::EcdsaSecp256k1))
 		.await?
 		.map_err(coded)?;
 	let leaf = certificates

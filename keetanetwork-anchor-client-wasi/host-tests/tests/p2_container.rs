@@ -76,7 +76,7 @@ async fn an_encrypted_container_round_trips_for_a_principal() -> Result<(), BoxE
 
 	let owner = crypto
 		.account()
-		.call_from_seed(&mut store, PRINCIPAL_SEED, 0, ALGORITHM)
+		.call_from_seed(&mut store, PRINCIPAL_SEED, 0, Some(ALGORITHM))
 		.await?
 		.map_err(coded)?;
 
@@ -120,7 +120,7 @@ async fn a_signed_container_verifies_and_recovers_its_signer() -> Result<(), Box
 
 	let signer = crypto
 		.account()
-		.call_from_seed(&mut store, SIGNER_SEED, 0, ALGORITHM)
+		.call_from_seed(&mut store, SIGNER_SEED, 0, Some(ALGORITHM))
 		.await?
 		.map_err(coded)?;
 
@@ -173,12 +173,12 @@ async fn granting_then_revoking_keeps_the_principal_count() -> Result<(), BoxErr
 
 	let owner = crypto
 		.account()
-		.call_from_seed(&mut store, PRINCIPAL_SEED, 0, ALGORITHM)
+		.call_from_seed(&mut store, PRINCIPAL_SEED, 0, Some(ALGORITHM))
 		.await?
 		.map_err(coded)?;
 	let reader = crypto
 		.account()
-		.call_from_seed(&mut store, READER_SEED, 0, ALGORITHM)
+		.call_from_seed(&mut store, READER_SEED, 0, Some(ALGORITHM))
 		.await?
 		.map_err(coded)?;
 

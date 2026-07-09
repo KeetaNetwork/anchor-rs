@@ -44,17 +44,17 @@ async fn a_sealed_bundle_discloses_every_attribute_through_pem() -> Result<(), B
 
 	let subject = crypto
 		.account()
-		.call_from_seed(&mut store, SUBJECT_SEED, 0, ALGORITHM)
+		.call_from_seed(&mut store, SUBJECT_SEED, 0, Some(ALGORITHM))
 		.await?
 		.map_err(coded)?;
 	let issuer = crypto
 		.account()
-		.call_from_seed(&mut store, ISSUER_SEED, 0, ALGORITHM)
+		.call_from_seed(&mut store, ISSUER_SEED, 0, Some(ALGORITHM))
 		.await?
 		.map_err(coded)?;
 	let recipient = crypto
 		.account()
-		.call_from_seed(&mut store, RECIPIENT_SEED, 0, ALGORITHM)
+		.call_from_seed(&mut store, RECIPIENT_SEED, 0, Some(ALGORITHM))
 		.await?
 		.map_err(coded)?;
 
@@ -130,17 +130,17 @@ async fn a_bundle_lists_its_disclosed_names_and_recipient() -> Result<(), BoxErr
 
 	let subject = crypto
 		.account()
-		.call_from_seed(&mut store, SUBJECT_SEED, 0, ALGORITHM)
+		.call_from_seed(&mut store, SUBJECT_SEED, 0, Some(ALGORITHM))
 		.await?
 		.map_err(coded)?;
 	let issuer = crypto
 		.account()
-		.call_from_seed(&mut store, ISSUER_SEED, 0, ALGORITHM)
+		.call_from_seed(&mut store, ISSUER_SEED, 0, Some(ALGORITHM))
 		.await?
 		.map_err(coded)?;
 	let recipient = crypto
 		.account()
-		.call_from_seed(&mut store, RECIPIENT_SEED, 0, ALGORITHM)
+		.call_from_seed(&mut store, RECIPIENT_SEED, 0, Some(ALGORITHM))
 		.await?
 		.map_err(coded)?;
 
@@ -227,17 +227,17 @@ async fn external_references_ingest_and_disclose_through_the_component() -> Resu
 
 	let subject = crypto
 		.account()
-		.call_from_seed(&mut store, SUBJECT_SEED, 0, ALGORITHM)
+		.call_from_seed(&mut store, SUBJECT_SEED, 0, Some(ALGORITHM))
 		.await?
 		.map_err(coded)?;
 	let issuer = crypto
 		.account()
-		.call_from_seed(&mut store, ISSUER_SEED, 0, ALGORITHM)
+		.call_from_seed(&mut store, ISSUER_SEED, 0, Some(ALGORITHM))
 		.await?
 		.map_err(coded)?;
 	let recipient = crypto
 		.account()
-		.call_from_seed(&mut store, RECIPIENT_SEED, 0, ALGORITHM)
+		.call_from_seed(&mut store, RECIPIENT_SEED, 0, Some(ALGORITHM))
 		.await?
 		.map_err(coded)?;
 

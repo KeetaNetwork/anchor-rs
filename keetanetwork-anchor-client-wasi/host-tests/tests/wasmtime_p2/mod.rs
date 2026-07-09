@@ -72,17 +72,17 @@ pub fn coded(error: CodedError) -> wasmtime::Error {
 	wasmtime::Error::msg(format!("{}: {}", error.code, error.message))
 }
 
-/// Parse a textual `keeta_…` address into a guest `account` resource for the
-/// component's `borrow<account>` parameters.
-pub async fn account_from_address(
+/// Parse a textual `keeta_…` public-key string into a guest `account`
+/// resource for the component's `borrow<account>` parameters.
+pub async fn account_from_public_key_string(
 	store: &mut Store<Host>,
 	bindings: &KeetaAnchorKyc,
-	address: &str,
+	public_key_string: &str,
 ) -> wasmtime::Result<wasmtime::component::ResourceAny> {
 	bindings
 		.keeta_client_crypto()
 		.account()
-		.call_from_address(&mut *store, address)
+		.call_from_public_key_string(&mut *store, public_key_string)
 		.await?
 		.map_err(coded)
 }

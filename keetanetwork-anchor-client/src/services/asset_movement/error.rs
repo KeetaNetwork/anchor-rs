@@ -11,7 +11,7 @@
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
-use serde_json::Value;
+use serde_json::{json, Value};
 
 /// A stable transport code identifying an asset-movement blocker.
 const KYC_SHARE_NEEDED: &str = "KEETA_ANCHOR_ASSET_MOVEMENT_KYC_SHARE_NEEDED";
@@ -72,6 +72,48 @@ pub enum AssetMovementBlocker {
 }
 
 impl AssetMovementBlocker {
+	/// The stable transport code identifying a recognized blocker variant.
+	/// [`Other`](Self::Other) has no stable code of its own.
+	pub fn transport_code(&self) -> Option<&'static str> {
+		match self {
+			Self::KycShareNeeded { .. } => Some(KYC_SHARE_NEEDED),
+			Self::AdditionalKycNeeded { .. } => Some(ADDITIONAL_KYC_NEEDED),
+			Self::OperationNotSupported { .. } => Some(OPERATION_NOT_SUPPORTED),
+			Self::UserActionNeeded { .. } => Some(USER_ACTION_NEEDED),
+			Self::Other { .. } => None,
+		}
+	}
+
+	/// Whether the blocker rehydrated from a recognized asset-movement code.
+	pub fn is_recognized(&self) -> bool {
+		self.transport_code().is_some()
+	}
+
+	/// The `type`-discriminated JSON shape every FFI boundary emits.
+	pub fn to_json(&self) -> Value {
+		match self {
+			Self::KycShareNeeded { tos_flow, needed_attributes, share_with_principals, accepted_issuers } => json!({
+				"type": "kycShareNeeded",
+				"tosFlow": tos_flow,
+				"neededAttributes": needed_attributes,
+				"shareWithPrincipals": share_with_principals,
+				"acceptedIssuers": accepted_issuers,
+			}),
+			Self::AdditionalKycNeeded { to_complete_flow } => {
+				json!({ "type": "additionalKycNeeded", "toCompleteFlow": to_complete_flow })
+			}
+			Self::OperationNotSupported { for_asset, for_rail } => {
+				json!({ "type": "operationNotSupported", "forAsset": for_asset, "forRail": for_rail })
+			}
+			Self::UserActionNeeded { actions_needed } => {
+				json!({ "type": "userActionNeeded", "actionsNeeded": actions_needed })
+			}
+			Self::Other { name, code, message } => {
+				json!({ "type": "other", "name": name, "code": code, "message": message })
+			}
+		}
+	}
+
 	/// Rehydrate a blocker from an anchor error envelope
 	/// (`{ ok, name, code, data, error }`).
 	pub fn from_transport(entry: &Value) -> Self {
@@ -226,6 +268,115 @@ mod tests {
 				code: Some("SOMETHING_ELSE".to_string()),
 				message: "boom".to_string(),
 			}
+		);
+	}
+
+	#[test]
+	fn a_recognized_blocker_reports_its_transport_code() {
+		for code in [KYC_SHARE_NEEDED, ADDITIONAL_KYC_NEEDED, OPERATION_NOT_SUPPORTED, USER_ACTION_NEEDED] {
+			let entry = json!({ "code": code, "name": "n", "error": "e", "data": {} });
+			let blocker = AssetMovementBlocker::from_transport(&entry);
+			assert_eq!(blocker.transport_code(), Some(code));
+			assert!(blocker.is_recognized());
+		}
+	}
+
+	#[test]
+	fn an_unknown_blocker_has_no_transport_code() {
+		let entry = json!({ "name": "SomeError", "code": "SOMETHING_ELSE", "error": "boom" });
+		let blocker = AssetMovementBlocker::from_transport(&entry);
+		assert_eq!(blocker.transport_code(), None);
+		assert!(!blocker.is_recognized());
+	}
+
+	#[test]
+	fn an_additional_kyc_blocker_rehydrates_its_flow() {
+		let entry = json!({
+			"code": ADDITIONAL_KYC_NEEDED,
+			"name": "n",
+			"error": "e",
+			"data": { "toCompleteFlow": { "url": "https://flow" } }
+		});
+
+		let blocker = AssetMovementBlocker::from_transport(&entry);
+		assert_eq!(
+			blocker,
+			AssetMovementBlocker::AdditionalKycNeeded { to_complete_flow: Some(json!({ "url": "https://flow" })) }
+		);
+	}
+
+	#[test]
+	fn a_user_action_blocker_rehydrates_its_actions() {
+		let entry = json!({
+			"code": USER_ACTION_NEEDED,
+			"name": "n",
+			"error": "e",
+			"data": { "actionsNeeded": [{ "action": "setInfo" }] }
+		});
+
+		let blocker = AssetMovementBlocker::from_transport(&entry);
+		assert_eq!(
+			blocker,
+			AssetMovementBlocker::UserActionNeeded { actions_needed: alloc::vec![json!({ "action": "setInfo" })] }
+		);
+	}
+
+	#[test]
+	fn every_variant_emits_its_type_discriminated_json() {
+		let cases = [
+			(
+				AssetMovementBlocker::AdditionalKycNeeded { to_complete_flow: None },
+				json!({ "type": "additionalKycNeeded", "toCompleteFlow": null }),
+			),
+			(
+				AssetMovementBlocker::OperationNotSupported {
+					for_asset: Some(json!("USD")),
+					for_rail: Some("KEETA_SEND".to_string()),
+				},
+				json!({ "type": "operationNotSupported", "forAsset": "USD", "forRail": "KEETA_SEND" }),
+			),
+			(
+				AssetMovementBlocker::UserActionNeeded { actions_needed: alloc::vec![json!({ "action": "setInfo" })] },
+				json!({ "type": "userActionNeeded", "actionsNeeded": [{ "action": "setInfo" }] }),
+			),
+			(
+				AssetMovementBlocker::Other {
+					name: "SomeError".to_string(),
+					code: Some("SOMETHING_ELSE".to_string()),
+					message: "boom".to_string(),
+				},
+				json!({ "type": "other", "name": "SomeError", "code": "SOMETHING_ELSE", "message": "boom" }),
+			),
+		];
+
+		for (blocker, expected) in cases {
+			assert_eq!(blocker.to_json(), expected);
+		}
+	}
+
+	#[test]
+	fn to_json_round_trips_through_from_transport() {
+		let entry = json!({
+			"code": KYC_SHARE_NEEDED,
+			"name": "n",
+			"error": "e",
+			"data": {
+				"neededAttributes": ["fullName"],
+				"shareWithPrincipals": ["keeta_principal"],
+				"acceptedIssuers": []
+			}
+		});
+
+		let blocker = AssetMovementBlocker::from_transport(&entry);
+		assert_eq!(
+			blocker.to_json(),
+			json!({
+				"type": "kycShareNeeded",
+				"tosFlow": null,
+				"neededAttributes": ["fullName"],
+				"shareWithPrincipals": ["keeta_principal"],
+				"acceptedIssuers": [],
+			})
 		);
 	}
 }

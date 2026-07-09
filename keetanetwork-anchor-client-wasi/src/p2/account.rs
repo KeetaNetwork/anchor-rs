@@ -31,8 +31,9 @@ fn algorithm_name(algorithm: WitKeyAlgorithm) -> &'static str {
 }
 
 impl GuestAccount for AccountResource {
-	fn from_seed(seed: String, index: u32, algorithm: WitKeyAlgorithm) -> Result<WitAccount, CodedError> {
-		let account = account_ops::account_from_seed(&seed, index, algorithm_name(algorithm))?;
+	fn from_seed(seed: String, index: u32, algorithm: Option<WitKeyAlgorithm>) -> Result<WitAccount, CodedError> {
+		let algorithm = algorithm.map_or(account_ops::DEFAULT_ALGORITHM, algorithm_name);
+		let account = account_ops::account_from_seed(&seed, index, algorithm)?;
 		Ok(WitAccount::new(Self { account }))
 	}
 
@@ -51,8 +52,13 @@ impl GuestAccount for AccountResource {
 		Ok(WitAccount::new(Self { account }))
 	}
 
-	fn from_address(address: String) -> Result<WitAccount, CodedError> {
-		let account = account_ops::account_from_address(&address)?;
+	fn from_public_key_string(public_key_string: String) -> Result<WitAccount, CodedError> {
+		let account = account_ops::account_from_public_key_string(&public_key_string)?;
+		Ok(WitAccount::new(Self { account }))
+	}
+
+	fn from_public_key_and_type(key_and_type: String) -> Result<WitAccount, CodedError> {
+		let account = account_ops::account_from_public_key_and_type(&key_and_type)?;
 		Ok(WitAccount::new(Self { account }))
 	}
 
@@ -64,8 +70,8 @@ impl GuestAccount for AccountResource {
 		account_ops::generate_passphrase().unwrap_or_default()
 	}
 
-	fn address(&self) -> String {
-		account_ops::account_address(&self.account)
+	fn public_key_string(&self) -> String {
+		account_ops::account_public_key_string(&self.account)
 	}
 
 	fn kind(&self) -> WitAccountKind {
@@ -82,6 +88,10 @@ impl GuestAccount for AccountResource {
 
 	fn public_key(&self) -> String {
 		account_ops::account_public_key(&self.account)
+	}
+
+	fn public_key_and_type_string(&self) -> String {
+		account_ops::account_public_key_and_type_string(&self.account)
 	}
 
 	fn sign(&self, message: Vec<u8>) -> Result<Vec<u8>, CodedError> {

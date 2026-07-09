@@ -28,9 +28,9 @@ public sealed class Account : IDisposable
 	public static Account FromSeed(WasmRuntime runtime, string seed, uint index, string algorithm) =>
 		new(runtime, runtime.AccountFromSeed(seed, index, algorithm));
 
-	/// <summary>Build a read-only account from its textual address.</summary>
-	public static Account FromAddress(WasmRuntime runtime, string address) =>
-		new(runtime, runtime.AccountFromAddress(address));
+	/// <summary>Build a read-only account from its textual <c>keeta_...</c> public-key string.</summary>
+	public static Account FromPublicKeyString(WasmRuntime runtime, string publicKeyString) =>
+		new(runtime, runtime.AccountFromPublicKeyString(publicKeyString));
 
 	/// <summary>Derive a signing account from a hex <paramref name="privateKey"/>.</summary>
 	/// <remarks><paramref name="algorithm"/> is <c>ed25519</c>, <c>ecdsa_secp256k1</c>, or <c>ecdsa_secp256r1</c>.</remarks>
@@ -45,6 +45,14 @@ public sealed class Account : IDisposable
 	public static Account FromPublicKey(WasmRuntime runtime, string publicKey, string algorithm) =>
 		new(runtime, runtime.AccountFromPublicKey(publicKey, algorithm));
 
+	/// <summary>
+	/// Build a read-only account from the <c>[key_type_byte || raw_public_key]</c>
+	/// hex layout (optionally <c>0x</c>-prefixed), matching the reference
+	/// <c>Account.fromPublicKeyAndType</c>.
+	/// </summary>
+	public static Account FromPublicKeyAndType(WasmRuntime runtime, string keyAndType) =>
+		new(runtime, runtime.AccountFromPublicKeyAndType(keyAndType));
+
 	/// <summary>Generate a random hex seed.</summary>
 	public static string GenerateSeed(WasmRuntime runtime) => runtime.AccountGenerateSeed();
 
@@ -52,14 +60,23 @@ public sealed class Account : IDisposable
 	public static IReadOnlyList<string> GeneratePassphrase(WasmRuntime runtime) =>
 		runtime.AccountGeneratePassphrase().Split('\n', StringSplitOptions.RemoveEmptyEntries);
 
-	/// <summary>The account's textual <c>keeta_...</c> address.</summary>
-	public string Address => _runtime.AccountAddress(Handle);
+	/// <summary>The account's textual <c>keeta_...</c> public-key string.</summary>
+	public string PublicKeyString => _runtime.AccountPublicKeyString(Handle);
 
 	/// <summary>The account's algorithm name.</summary>
 	public string Algorithm => _runtime.AccountAlgorithm(Handle);
 
-	/// <summary>The account's type-prefixed public key (hex).</summary>
-	public string PublicKey => _runtime.AccountPublicKey(Handle);
+	/// <summary>
+	/// The account's type-prefixed public key transport hex: the lead byte
+	/// names the algorithm, the rest is the raw public key.
+	/// </summary>
+	public string PublicKeyAndType => _runtime.AccountPublicKey(Handle);
+
+	/// <summary>
+	/// The <c>0x</c>-prefixed uppercase <c>[key_type_byte || raw_public_key]</c>
+	/// hex string, matching the reference <c>publicKeyAndTypeString</c> getter.
+	/// </summary>
+	public string PublicKeyAndTypeString => _runtime.AccountPublicKeyAndTypeString(Handle);
 
 	/// <summary>Sign <paramref name="message"/> with the account's private key.</summary>
 	public byte[] Sign(byte[] message) => _runtime.AccountSign(Handle, message);
@@ -136,7 +153,7 @@ public sealed class Certificate : IDisposable
 
 	/// <summary>
 	/// The subject public key, type-prefixed and hex-encoded to match
-	/// <see cref="Account.PublicKey"/>, so a subject can be matched to an account.
+	/// <see cref="Account.PublicKeyAndType"/>, so a subject can be matched to an account.
 	/// </summary>
 	public string SubjectPublicKey => _runtime.CertificateSubjectPublicKey(Handle);
 
@@ -434,8 +451,8 @@ public sealed class KycCertificateBuilder
 		DateTimeOffset notAfter = _notAfter ?? throw new InvalidOperationException("a validity window is required to issue a certificate");
 
 		var parameters = new IssueParamsDto(
-			_subjectName ?? subject.Address,
-			_issuerName ?? issuer.Address,
+			_subjectName ?? subject.PublicKeyString,
+			_issuerName ?? issuer.PublicKeyString,
 			_serial,
 			notBefore.ToUnixTimeSeconds(),
 			notAfter.ToUnixTimeSeconds(),

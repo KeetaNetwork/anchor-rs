@@ -13,7 +13,7 @@ mod wasmtime_p2;
 use common::{field_str, BoxError, Harness};
 use wasmtime_p2::bindings::exports::keeta::anchor::asset_movement::AwaitOptions;
 use wasmtime_p2::bindings::exports::keeta::client::crypto::KeyAlgorithm;
-use wasmtime_p2::{account_from_address, coded, instantiate};
+use wasmtime_p2::{account_from_public_key_string, coded, instantiate};
 
 /// Parse a JSON document returned across the component boundary.
 fn parse(document: &str) -> Result<Value, BoxError> {
@@ -43,10 +43,10 @@ async fn p2_asset_movement_signs_against_live_anchor() -> Result<(), BoxError> {
 	// component resolves the root account over wasi:http.
 	let account = crypto
 		.account()
-		.call_from_seed(&mut store, &"11".repeat(32), 0, KeyAlgorithm::EcdsaSecp256k1)
+		.call_from_seed(&mut store, &"11".repeat(32), 0, Some(KeyAlgorithm::EcdsaSecp256k1))
 		.await?
 		.map_err(coded)?;
-	let root_account = account_from_address(&mut store, &bindings, &root).await?;
+	let root_account = account_from_public_key_string(&mut store, &bindings, &root).await?;
 	let client = asset_movement
 		.asset_client()
 		.call_with_account(&mut store, &node_url, root_account, account)
@@ -211,7 +211,7 @@ async fn p2_asset_movement_signs_against_live_anchor() -> Result<(), BoxError> {
 
 	// Account-based discovery: the provider's entry is signed by the harness
 	// metadata signer, so a lookup by that account surfaces it.
-	let signer_account = account_from_address(&mut store, &bindings, &signer).await?;
+	let signer_account = account_from_public_key_string(&mut store, &bindings, &signer).await?;
 	let by_account = asset_movement
 		.asset_client()
 		.call_provider_by_account(&mut store, client, signer_account)

@@ -552,7 +552,14 @@ fn unreadable() -> CodedError {
 	CodedError::new("INVALID_INPUT", "unreadable argument buffer")
 }
 
-/// The coded error for an anchor client failure.
+/// The coded error for an anchor client failure. A typed blocker crosses with
+/// its stable transport code and its `type`-discriminated JSON as the message,
+/// so bindings rehydrate the full blocker instead of a generic service error.
 fn coded(error: AnchorClientError) -> CodedError {
-	CodedError::new(error.code(), error.to_string())
+	match error {
+		AnchorClientError::Blocker { blocker } => {
+			CodedError::new(blocker.transport_code().unwrap_or("SERVICE"), blocker.to_json().to_string())
+		}
+		other => CodedError::new(other.code(), other.to_string()),
+	}
 }
