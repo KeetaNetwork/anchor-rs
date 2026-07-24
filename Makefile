@@ -246,7 +246,7 @@ developer:
 		echo "Cargo version: $$(cargo --version)"; \
 		echo "Installing development tools..."; \
 		$(MAKE) coverage-setup; \
-		cargo install cargo-audit --quiet || echo "cargo-audit installation failed or already installed"; \
+		cargo install cargo-audit --locked --quiet || echo "cargo-audit installation failed or already installed"; \
 		echo "Running initial build and test..."; \
 		$(MAKE) check; \
 		$(MAKE) test; \
