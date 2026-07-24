@@ -246,7 +246,7 @@ developer:
 		echo "Cargo version: $$(cargo --version)"; \
 		echo "Installing development tools..."; \
 		$(MAKE) coverage-setup; \
-		cargo install cargo-audit --quiet || echo "cargo-audit installation failed or already installed"; \
+		cargo install cargo-audit --locked --quiet || echo "cargo-audit installation failed or already installed"; \
 		echo "Running initial build and test..."; \
 		$(MAKE) check; \
 		$(MAKE) test; \
@@ -305,8 +305,8 @@ help:
 	@echo "  make coverage-ci    - Generate LCOV coverage report for CI/SonarCloud"
 	@echo ""
 	@echo "Release Commands:"
-	@echo "  make release                       - Publish all packages to crates.io and create signed release tag"
-	@echo "  make release PKG=\"crate-a crate-b\" - Publish only the named crates (skips workspace tag)"
-	@echo "  make release DIRTY=1               - Allow publishing with a dirty working tree"
-	@echo "  make release SKIP_TESTS=1          - Skip the test suite (lints still run)"
-	@echo "  make release --dry-run             - Preview the release without publishing"
+	@echo "  make release                         - Publish changed packages to crates.io with signed per-crate tags"
+	@echo "  make release PKG=\"crate-a crate-b\" - Publish only the named crates"
+	@echo "  make release DIRTY=1                 - Allow publishing with a dirty working tree"
+	@echo "  make release SKIP_TESTS=1            - Skip the test suite (lints still run)"
+	@echo "  make release --dry-run               - Preview the release without publishing"
