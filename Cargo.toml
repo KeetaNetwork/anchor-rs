@@ -48,15 +48,15 @@ version = "0.4.1"
 version = "0.4.0"
 
 [workspace.dependencies.keetanetwork-bindings]
-version = "0.4.3"
+version = "0.4.4"
 default-features = false
 
 [workspace.dependencies.keetanetwork-client]
-version = "0.5.0"
+version = "0.5.1"
 default-features = false
 
 [workspace.dependencies.keetanetwork-client-wasi]
-version = "0.6.0"
+version = "0.6.1"
 default-features = false
 
 [workspace.dependencies.keetanetwork-anchor]
@@ -65,17 +65,17 @@ path = "keetanetwork-anchor"
 default-features = false
 
 [workspace.dependencies.keetanetwork-anchor-bindings]
-version = "0.2.2"
+version = "0.2.3"
 path = "keetanetwork-anchor-bindings"
 default-features = false
 
 [workspace.dependencies.keetanetwork-anchor-client]
-version = "0.3.0"
+version = "0.3.1"
 path = "keetanetwork-anchor-client"
 default-features = false
 
 [workspace.dependencies.keetanetwork-anchor-client-wasi]
-version = "0.3.0"
+version = "0.3.1"
 path = "keetanetwork-anchor-client-wasi"
 default-features = false
 

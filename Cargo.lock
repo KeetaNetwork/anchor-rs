@@ -1294,7 +1294,7 @@ dependencies = [
 
 [[package]]
 name = "keetanetwork-anchor-bindings"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "chrono",
  "hex",
@@ -1308,7 +1308,7 @@ dependencies = [
 
 [[package]]
 name = "keetanetwork-anchor-client"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "async-trait",
  "base64",
@@ -1339,7 +1339,7 @@ dependencies = [
 
 [[package]]
 name = "keetanetwork-anchor-client-wasi"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "async-trait",
  "base64",
@@ -1386,9 +1386,9 @@ dependencies = [
 
 [[package]]
 name = "keetanetwork-bindings"
-version = "0.4.3"
+version = "0.4.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "35803fad2bc32f39f126c29bcc676d44e7f3e7b93162add411ca32fbd597b0ad"
+checksum = "30fe64983125260390febccb00d4d7fd352f9158f4f44afe6bddc30a909259b2"
 dependencies = [
  "chrono",
  "hex",
@@ -1422,9 +1422,9 @@ dependencies = [
 
 [[package]]
 name = "keetanetwork-client"
-version = "0.5.0"
+version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8a2dd20a07ee3a6b34cd4b0fe7937134aa4ebad87054756da8423f1a653985fe"
+checksum = "5fec3674e8721635018576842e1f65066a16bcc6b3601f62f3c6e682a48f54c6"
 dependencies = [
  "async-trait",
  "base64",
@@ -1445,7 +1445,6 @@ dependencies = [
  "prettyplease",
  "progenitor",
  "progenitor-client",
- "rand_core 0.9.5",
  "reqwest",
  "serde",
  "serde_json",
@@ -1461,9 +1460,9 @@ dependencies = [
 
 [[package]]
 name = "keetanetwork-client-wasi"
-version = "0.6.0"
+version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f2dcd7e8556ad5e6c2e601e024b51ec61567ec41e5c6e809c0eca697b8f7e264"
+checksum = "13ef8126d25345b03680dfc9a3c0c5f3d66b610f3b961440d606448269bd178d"
 dependencies = [
  "hex",
  "keetanetwork-account",
