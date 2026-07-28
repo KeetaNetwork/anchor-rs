@@ -873,10 +873,25 @@ mod tests {
 	// differently-cased id misses, unlike provider searches.
 	#[test]
 	fn asset_metadata_requires_the_published_casing() {
-		let provider = decorated_provider();
+		let check_summed = "evm:0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed";
+		let entry = json!({
+			"operations": {},
+			"locationMetadata": {
+				"chain:evm:100": {
+					"assets": {
+						(check_summed): { "decimalPlaces": 6 }
+					}
+				}
+			}
+		});
+
+		let provider = AssetMovementProvider::from_entry("p".into(), &entry);
 		assert!(provider
-			.asset_metadata_for_location("chain:evm:100", "evm:0X5")
+			.asset_metadata_for_location("chain:evm:100", "evm:0x5aaeb6053f3e94c9b9a09f33669435e7ef1beaed")
 			.is_none());
+		assert!(provider
+			.asset_metadata_for_location("chain:evm:100", check_summed)
+			.is_some());
 	}
 
 	#[test]
@@ -893,6 +908,7 @@ mod tests {
 				}]
 			}]
 		});
+
 		let provider = AssetMovementProvider::from_entry("p".into(), &entry);
 		let search = ProviderSearch::for_asset("token");
 		assert!(!search.accepts(&provider));
