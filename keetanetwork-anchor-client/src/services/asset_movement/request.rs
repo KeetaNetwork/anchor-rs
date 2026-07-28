@@ -592,19 +592,17 @@ mod tests {
 
 	#[test]
 	fn a_pair_address_filter_serializes_its_from_and_to_legs() {
-		let filter = ForwardingAddressFilter {
-			asset: Some(AssetOrPair::Pair { from: "USD".into(), to: "EUR".into() }),
-			..ForwardingAddressFilter::default()
-		};
+		let asset = AssetOrPair::Pair { from: "USD".into(), to: "EUR".into() };
+		let forward_default = ForwardingAddressFilter::default();
+		let filter = ForwardingAddressFilter { asset: Some(asset), ..forward_default };
 		assert_eq!(filter.to_value(), json!({ "asset": { "from": "USD", "to": "EUR" } }));
 	}
 
 	#[test]
 	fn a_single_asset_address_filter_serializes_a_bare_string() {
-		let filter = ForwardingAddressFilter {
-			asset: Some(AssetOrPair::from("USD")),
-			..ForwardingAddressFilter::default()
-		};
+		let asset = AssetOrPair::from("USD");
+		let forward_default = ForwardingAddressFilter::default();
+		let filter = ForwardingAddressFilter { asset: Some(asset), ..forward_default };
 		assert_eq!(filter.to_value(), json!({ "asset": "USD" }));
 	}
 }

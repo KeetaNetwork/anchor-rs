@@ -101,7 +101,11 @@ fn eip55_checksum(address: &str) -> String {
 		.enumerate()
 		.map(|(position, character)| {
 			let byte = hash.get(position / 2).copied().unwrap_or_default();
-			let nibble = if position % 2 == 0 { byte >> 4 } else { byte & 0x0f };
+			let nibble = if position % 2 == 0 {
+				byte >> 4
+			} else {
+				byte & 0x0f
+			};
 			if nibble >= 8 {
 				character.to_ascii_uppercase()
 			} else {
@@ -155,7 +159,10 @@ mod tests {
 
 	#[test]
 	fn a_non_evm_asset_is_passed_through_untouched() {
-		assert_eq!(canonicalize_asset("tron:TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"), "tron:TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t");
+		assert_eq!(
+			canonicalize_asset("tron:TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"),
+			"tron:TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t"
+		);
 		assert_eq!(canonicalize_asset("USD"), "USD");
 	}
 
@@ -177,7 +184,8 @@ mod tests {
 
 	#[test]
 	fn a_pair_canonicalizes_each_evm_leg() {
-		let pair = AssetOrPair::Pair { from: "evm:0x5aaeb6053f3e94c9b9a09f33669435e7ef1beaed".into(), to: "USD".into() };
+		let pair =
+			AssetOrPair::Pair { from: "evm:0x5aaeb6053f3e94c9b9a09f33669435e7ef1beaed".into(), to: "USD".into() };
 		assert_eq!(pair.to_pair_value(), json!({ "from": CHECKSUMMED, "to": "USD" }));
 	}
 }

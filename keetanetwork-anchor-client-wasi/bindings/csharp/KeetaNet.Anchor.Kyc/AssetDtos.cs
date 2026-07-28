@@ -98,11 +98,15 @@ public sealed record AssetCreateAddressRequest(
 	object? DestinationAddress = null,
 	string? PersistentAddressTemplateId = null);
 
-/// <summary>One filter over persistent-forwarding addresses.</summary>
+/// <summary>
+/// One filter over persistent-forwarding addresses. <see cref="Asset"/> is a
+/// canonical string or a <c>{ from, to }</c> pair, matching
+/// <see cref="AssetProviderSearch.Asset"/>.
+/// </summary>
 public sealed record AssetAddressFilter(
 	string? SourceLocation = null,
 	string? DestinationLocation = null,
-	string? Asset = null,
+	object? Asset = null,
 	string? DestinationAddress = null,
 	string? PersistentAddressTemplateId = null);
 

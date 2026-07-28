@@ -279,7 +279,6 @@ impl AssetMovementProvider {
 
 	/// The token metadata advertised for `asset` at the canonical `location`
 	/// (e.g. `chain:evm:100`), or [`None`] when the provider publishes none.
-	/// Mirrors the reference `getAssetMetadataForLocation`.
 	pub fn asset_metadata_for_location(
 		&self,
 		location: impl AsRef<str>,
@@ -866,6 +865,17 @@ mod tests {
 			.is_none());
 		assert!(provider
 			.asset_metadata_for_location("chain:evm:100", "evm:0x6")
+			.is_none());
+	}
+
+	// The reference `getAssetMetadataForLocation` looks the asset up by its
+	// exact published key without canonicalizing either side, so a
+	// differently-cased id misses, unlike provider searches.
+	#[test]
+	fn asset_metadata_requires_the_published_casing() {
+		let provider = decorated_provider();
+		assert!(provider
+			.asset_metadata_for_location("chain:evm:100", "evm:0X5")
 			.is_none());
 	}
 

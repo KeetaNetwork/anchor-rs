@@ -62,9 +62,7 @@ fn endpoint_url<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Option<Str
 	#[serde(untagged)]
 	enum Raw {
 		Url(String),
-		Object {
-			url: String,
-		},
+		Object { url: String },
 	}
 
 	let raw = Option::<Raw>::deserialize(deserializer)?;
