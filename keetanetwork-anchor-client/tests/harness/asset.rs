@@ -60,6 +60,18 @@ impl AssetHarness {
 		Ok(AssetAnchor { url, api, root, provider_id, asset, send_to_address, signer, blob })
 	}
 
+	/// Canonicalize `asset` through the reference client's
+	/// `convertAssetSearchInputToCanonical` (EIP-55 casing for EVM assets).
+	pub fn canonicalize_asset(&mut self, asset: &str) -> Result<String, HarnessError> {
+		let mut request = Map::new();
+		request.insert("asset".to_string(), Value::String(asset.to_string()));
+
+		let response = self
+			.driver
+			.request("canonicalizeAsset", Value::Object(request))?;
+		Ok(field_str(&response, "canonical")?.to_string())
+	}
+
 	/// Stop the harness and wait for it to exit.
 	pub fn shutdown(self) -> Result<(), HarnessError> {
 		self.driver.shutdown()

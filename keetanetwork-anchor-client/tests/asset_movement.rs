@@ -301,8 +301,18 @@ async fn forwarding_and_listing_run_against_the_live_anchor() -> TestResult {
 			},
 		)
 		.await?;
-	assert_eq!(created["address"], json!(anchor.send_to_address), "the created address must decode");
-	assert_eq!(created["fees"]["total"], json!("10"), "the created address must carry its fee total");
+	assert_eq!(created.address, json!(anchor.send_to_address), "the created address must decode");
+
+	let fees = created
+		.fees
+		.ok_or(HarnessError::MissingField { field: "fees" })?;
+	assert_eq!(fees.total.as_deref(), Some("10"), "the created address must carry its fee total");
+	assert_eq!(fees.line_items.len(), 1, "the fee breakdown must carry its line item");
+	let basis_points = fees.line_items[0]
+		.basis_points
+		.as_ref()
+		.and_then(serde_json::Number::as_u64);
+	assert_eq!(basis_points, Some(50), "the variable fee must carry its basis points");
 
 	let from_template = client
 		.create_persistent_forwarding_address(
@@ -316,7 +326,7 @@ async fn forwarding_and_listing_run_against_the_live_anchor() -> TestResult {
 			},
 		)
 		.await?;
-	assert_eq!(from_template["address"], json!(anchor.send_to_address), "a template-backed create must decode");
+	assert_eq!(from_template.address, json!(anchor.send_to_address), "a template-backed create must decode");
 
 	let addresses = client
 		.list_forwarding_addresses(
@@ -324,7 +334,7 @@ async fn forwarding_and_listing_run_against_the_live_anchor() -> TestResult {
 			&ListForwardingAddressesRequest {
 				search: Some(vec![ForwardingAddressFilter {
 					source_location: Some(EVM_LOCATION.to_string()),
-					asset: Some(anchor.asset.clone()),
+					asset: Some(AssetOrPair::from(anchor.asset.clone())),
 					..ForwardingAddressFilter::default()
 				}]),
 				pagination: Pagination { limit: Some(10), offset: Some(0) },
@@ -386,6 +396,50 @@ async fn forwarding_and_listing_run_against_the_live_anchor() -> TestResult {
 	assert!(
 		matches!(unadvertised, Err(AnchorClientError::UnsupportedOperation { .. })),
 		"an unadvertised operation must surface a typed error, got {unadvertised:?}"
+	);
+
+	harness.shutdown()?;
+	Ok(())
+}
+
+#[tokio::test]
+async fn asset_canonicalization_matches_the_reference_client() -> TestResult {
+	let mut harness = AssetHarness::start()?;
+
+	// EIP-55 vectors (mixed, lower, upper input casings), non-EVM assets the
+	// canonicalization must pass through untouched, and the degenerate bodies
+	// the reference still checksums (its hex check only tests the `0x`
+	// prefix): non-hex ASCII, odd length, and empty.
+	let inputs = [
+		"evm:0x5aaeb6053f3e94c9b9a09f33669435e7ef1beaed",
+		"evm:0xFB6916095CA1DF60BB79CE92CE3EA74C37C5D359",
+		"evm:0xdbF03B407c01E7cD3CBea99509d93f8DDDC8C6FB",
+		"evm:0xD1220A0cf47c7B9Be7A2E6BA89F429762e7b9aDb",
+		"evm:0xZZ99ff00abcdef",
+		"evm:0xabc",
+		"evm:0x",
+		"tron:TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t",
+		"solana:EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+		"USD",
+		"$CUSTOM",
+	];
+	for input in inputs {
+		let reference = harness.canonicalize_asset(input)?;
+		let canonical = keetanetwork_anchor_client::canonicalize_asset(input);
+		assert_eq!(canonical, reference, "Rust canonicalization diverges from the reference for `{input}`");
+	}
+
+	// The reference `parseEVMAsset` errors on a further `:` separator; the
+	// infallible Rust canonicalization passes such inputs through verbatim.
+	let rejected = harness.canonicalize_asset("evm:0xabc:def");
+	assert!(
+		matches!(rejected, Err(HarnessError::CommandFailed { .. })),
+		"the reference must reject an EVM asset with an extra separator, got {rejected:?}"
+	);
+	assert_eq!(
+		keetanetwork_anchor_client::canonicalize_asset("evm:0xabc:def"),
+		"evm:0xabc:def",
+		"Rust must pass a malformed EVM asset through verbatim"
 	);
 
 	harness.shutdown()?;

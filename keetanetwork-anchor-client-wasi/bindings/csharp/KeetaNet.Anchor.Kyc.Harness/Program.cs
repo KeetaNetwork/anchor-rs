@@ -414,6 +414,18 @@ static void AssetMovementSelfTest(WasmRuntime runtime)
 		AssetAddressPage addresses = client.ListForwardingAddresses(provider, new AssetListAddressesRequest());
 		Require(addresses.Addresses.Count == 1, $"{algorithm}: the address list must carry the harness address");
 
+		// A filtered list accepts both asset forms: a canonical string and a
+		// { from, to } pair, matching the reference `AssetOrPair` search.
+		AssetAddressPage filtered = client.ListForwardingAddresses(provider, new AssetListAddressesRequest(
+			Search: new[]
+			{
+				new AssetAddressFilter(SourceLocation: "chain:evm:100", Asset: asset),
+				new AssetAddressFilter(Asset: new { from = asset, to = asset })
+			}));
+		Require(
+			filtered.Addresses.Count == 1,
+			$"{algorithm}: a pair-filtered address list must round-trip through the anchor");
+
 		client.DeactivatePersistentForwardingTemplate(provider, "template-id");
 		client.DeactivatePersistentForwardingAddress(provider, "template-id");
 

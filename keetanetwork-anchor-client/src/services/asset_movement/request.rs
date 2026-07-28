@@ -360,8 +360,8 @@ pub struct ForwardingAddressFilter {
 	pub source_location: Option<String>,
 	/// Canonical destination location.
 	pub destination_location: Option<String>,
-	/// Canonical asset.
-	pub asset: Option<String>,
+	/// The asset (or conversion pair) forwarded`.
+	pub asset: Option<AssetOrPair>,
 	/// Destination address.
 	pub destination_address: Option<String>,
 	/// Persistent-address template id.
@@ -373,7 +373,7 @@ impl ForwardingAddressFilter {
 		let mut map = Map::new();
 		insert_some(&mut map, "sourceLocation", self.source_location.clone().map(Value::String));
 		insert_some(&mut map, "destinationLocation", self.destination_location.clone().map(Value::String));
-		insert_some(&mut map, "asset", self.asset.clone().map(Value::String));
+		insert_some(&mut map, "asset", self.asset.as_ref().map(AssetOrPair::to_canonical_value));
 		insert_some(&mut map, "destinationAddress", self.destination_address.clone().map(Value::String));
 		insert_some(
 			&mut map,
@@ -582,4 +582,27 @@ fn insert_u32(fields: &mut Fields, key: &str, value: Option<u32>) {
 /// A JSON array of strings.
 fn string_array(values: Vec<String>) -> Value {
 	Value::Array(values.into_iter().map(Value::String).collect())
+}
+
+#[cfg(test)]
+mod tests {
+	use serde_json::json;
+
+	use super::*;
+
+	#[test]
+	fn a_pair_address_filter_serializes_its_from_and_to_legs() {
+		let asset = AssetOrPair::Pair { from: "USD".into(), to: "EUR".into() };
+		let forward_default = ForwardingAddressFilter::default();
+		let filter = ForwardingAddressFilter { asset: Some(asset), ..forward_default };
+		assert_eq!(filter.to_value(), json!({ "asset": { "from": "USD", "to": "EUR" } }));
+	}
+
+	#[test]
+	fn a_single_asset_address_filter_serializes_a_bare_string() {
+		let asset = AssetOrPair::from("USD");
+		let forward_default = ForwardingAddressFilter::default();
+		let filter = ForwardingAddressFilter { asset: Some(asset), ..forward_default };
+		assert_eq!(filter.to_value(), json!({ "asset": "USD" }));
+	}
 }

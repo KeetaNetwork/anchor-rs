@@ -20,8 +20,8 @@ use super::request::{
 	ListForwardingAddressesRequest, ListTransactionsRequest, ShareKycRequest, TransferRequest,
 };
 use super::response::{
-	AddressPage, ForwardingTemplate, ShareKycOutcome, SimulatedTransfer, TemplatePage, TemplateSession,
-	TransactionPage, Transfer, TransferStatus,
+	AddressPage, ForwardingAddress, ForwardingTemplate, ShareKycOutcome, SimulatedTransfer, TemplatePage,
+	TemplateSession, TransactionPage, Transfer, TransferStatus,
 };
 use crate::error::AnchorClientError;
 use crate::service::{pending_delay, AnchorContext, AnchorOutcome, Auth, BodyEnvelope, Call, Endpoint, Method};
@@ -355,7 +355,7 @@ impl AssetMovementClient {
 		&self,
 		provider: &AssetMovementProvider,
 		request: &CreatePersistentForwardingAddressRequest,
-	) -> Result<Value, AnchorClientError> {
+	) -> Result<ForwardingAddress, AnchorClientError> {
 		let (endpoint, auth) = operation(provider, "createPersistentForwarding")?;
 		let signed = request.signable()?;
 		let fields = request.transport_fields();

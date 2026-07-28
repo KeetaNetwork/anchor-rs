@@ -9,6 +9,7 @@
 
 import type * as ResolverModule from '@keetanetwork/anchor/lib/resolver.js';
 import type * as AssetServerModule from '@keetanetwork/anchor/services/asset-movement/server.js';
+import type * as AssetCommonModule from '@keetanetwork/anchor/services/asset-movement/common.js';
 import type { KeetaAssetMovementTransaction } from '@keetanetwork/anchor/services/asset-movement/common.js';
 import type * as KeetaNetModule from '@keetanetwork/keetanet-client';
 
@@ -20,6 +21,7 @@ import { referenceResolver, runHarness } from './core.js';
 const refs = referenceResolver();
 const resolver = await refs.anchor<typeof ResolverModule>('lib/resolver.js');
 const assetServer = await refs.anchor<typeof AssetServerModule>('services/asset-movement/server.js');
+const assetCommon = await refs.anchor<typeof AssetCommonModule>('services/asset-movement/common.js');
 const KeetaNet = refs.client<typeof KeetaNetModule>();
 
 const KeetaNetLib = KeetaNet.lib;
@@ -53,6 +55,11 @@ interface StopAssetAnchorRequest {
 	cmd: 'stopAssetAnchor';
 }
 
+interface CanonicalizeAssetRequest {
+	cmd: 'canonicalizeAsset';
+	asset: string;
+}
+
 interface ShutdownRequest {
 	cmd: 'shutdown';
 }
@@ -60,6 +67,7 @@ interface ShutdownRequest {
 type AssetRequest =
 	StartAssetAnchorRequest |
 	StopAssetAnchorRequest |
+	CanonicalizeAssetRequest |
 	ShutdownRequest;
 
 /**
@@ -445,10 +453,21 @@ async function handleStopAssetAnchor(): Promise<HarnessResponse> {
 	return({ event: 'asset-anchor-stopped' });
 }
 
+/**
+ * Canonicalize one asset string exactly as the reference client does before
+ * matching or signing (EIP-55 casing for EVM assets, others unchanged).
+ */
+function handleCanonicalizeAsset(request: CanonicalizeAssetRequest): HarnessResponse {
+	// eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+	const input = request.asset as Parameters<typeof assetCommon.convertAssetSearchInputToCanonical>[0];
+	return({ canonical: assetCommon.convertAssetSearchInputToCanonical(input) });
+}
+
 async function handle(request: AssetRequest): Promise<HarnessResponse> {
 	switch (request.cmd) {
 		case 'startAssetAnchor': return(await handleStartAssetAnchor(request));
 		case 'stopAssetAnchor': return(await handleStopAssetAnchor());
+		case 'canonicalizeAsset': return(handleCanonicalizeAsset(request));
 		case 'shutdown': return({ event: 'shutdown' });
 	}
 }

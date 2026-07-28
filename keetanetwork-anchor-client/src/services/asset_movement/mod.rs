@@ -14,9 +14,9 @@ pub use client::{AssetMovementClient, AwaitOptions};
 pub use error::{AccountStatus, AssetMovementBlocker};
 pub use location::{canonicalize_location, AssetLocation, ChainLocation};
 pub use metadata::{
-	AssetMovementOperations, AssetMovementProvider, AssetMovementQuery, ClientRenderableContent, Disclaimer,
-	DisclaimerPurpose, EndpointAuth, OperationEndpoint, ProviderFilter, ProviderSearch, TokenLocationMetadata,
-	OPERATION_NAMES,
+	AnchorDetails, AssetMovementOperations, AssetMovementProvider, AssetMovementQuery, ClientRenderableContent,
+	Disclaimer, DisclaimerPurpose, EndpointAuth, OperationEndpoint, ProviderFilter, ProviderSearch,
+	TokenLocationMetadata, OPERATION_NAMES,
 };
 pub use request::{
 	CreatePersistentForwardingAddressRequest, CreatePersistentForwardingTemplateRequest, ExecuteTransferRequest,
@@ -26,6 +26,7 @@ pub use request::{
 	TransferRequest, TransferSource,
 };
 pub use response::{
-	parse_total, AddressPage, ForwardingTemplate, ShareKycOutcome, SimulatedTransfer, TemplatePage, TemplateSession,
+	parse_total, AddressPage, AssetOrAssetWithLocation, FeeBreakdown, FeeLineItem, ForwardingAddress,
+	ForwardingTemplate, MinimumTransferValue, ShareKycOutcome, SimulatedTransfer, TemplatePage, TemplateSession,
 	TransactionPage, Transfer, TransferStatus,
 };
