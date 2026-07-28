@@ -4,9 +4,40 @@
 
 #![allow(dead_code)]
 
+use std::sync::OnceLock;
+
 use wasmtime::{Caller, Engine, Instance, Linker, Memory, Module, Store};
 use wasmtime_wasi::p1::{self, WasiP1Ctx};
 use wasmtime_wasi::WasiCtxBuilder;
+
+/// The engine, compiled module, and populated linker shared by every test in
+/// a binary, so Cranelift compiles the large debug module once per binary
+/// instead of once per test.
+struct Compiled {
+	engine: Engine,
+	module: Module,
+	linker: Linker<WasiP1Ctx>,
+}
+
+/// Compile the module on first use, sharing the result across the binary.
+fn compiled() -> wasmtime::Result<&'static Compiled> {
+	static COMPILED: OnceLock<wasmtime::Result<Compiled>> = OnceLock::new();
+	COMPILED
+		.get_or_init(compile)
+		.as_ref()
+		.map_err(|error| wasmtime::Error::msg(error.to_string()))
+}
+
+fn compile() -> wasmtime::Result<Compiled> {
+	let engine = super::common::cached_engine()?;
+	let module = Module::from_file(&engine, super::dotnet::module_path())?;
+	let mut linker: Linker<WasiP1Ctx> = Linker::new(&engine);
+
+	p1::add_to_linker_sync(&mut linker, |ctx| ctx)?;
+	P1::stub_host_transport(&mut linker)?;
+
+	Ok(Compiled { engine, module, linker })
+}
 
 /// A P1 module instance with its store and exported linear memory.
 pub struct P1 {
@@ -18,16 +49,10 @@ pub struct P1 {
 impl P1 {
 	/// Instantiate the prebuilt P1 module with WASI Preview 1 granted.
 	pub fn instantiate() -> wasmtime::Result<Self> {
-		let engine = Engine::default();
-		let module = Module::from_file(&engine, super::dotnet::module_path())?;
-		let mut linker: Linker<WasiP1Ctx> = Linker::new(&engine);
-
-		p1::add_to_linker_sync(&mut linker, |ctx| ctx)?;
-		Self::stub_host_transport(&mut linker)?;
-
+		let compiled = compiled()?;
 		let wasi = WasiCtxBuilder::new().inherit_stdio().build_p1();
-		let mut store = Store::new(&engine, wasi);
-		let instance = linker.instantiate(&mut store, &module)?;
+		let mut store = Store::new(&compiled.engine, wasi);
+		let instance = compiled.linker.instantiate(&mut store, &compiled.module)?;
 		if let Ok(initialize) = instance.get_typed_func::<(), ()>(&mut store, "_initialize") {
 			initialize.call(&mut store, ())?;
 		}

@@ -12,9 +12,19 @@ use std::path::PathBuf;
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 
 use serde_json::{json, Map, Value};
+use wasmtime::{Cache, Config, Engine};
 
 /// A boxed, thread-safe error so the driver composes with any test's `?`.
 pub type BoxError = Box<dyn Error + Send + Sync>;
+
+/// A wasmtime engine with the on-disk compilation cache enabled, so repeated
+/// runs (locally and in CI) reuse the Cranelift output for the large debug
+/// wasm artifacts instead of recompiling them.
+pub fn cached_engine() -> wasmtime::Result<Engine> {
+	let mut config = Config::new();
+	config.cache(Some(Cache::from_file(None)?));
+	Engine::new(&config)
+}
 
 /// The subject seed shared by the harness (issuer) and a binding (decryptor)
 pub const SUBJECT_SEED: &str = "1111111111111111111111111111111111111111111111111111111111111111";

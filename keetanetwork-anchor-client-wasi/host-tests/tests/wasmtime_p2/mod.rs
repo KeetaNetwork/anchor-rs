@@ -5,6 +5,7 @@
 #![allow(dead_code)]
 
 use std::path::PathBuf;
+use std::sync::OnceLock;
 
 use wasmtime::component::{Component, Linker, ResourceTable};
 use wasmtime::{Engine, Store};
@@ -87,16 +88,39 @@ pub async fn account_from_public_key_string(
 		.map_err(coded)
 }
 
-/// Instantiate the P2 component with WASI + outbound `wasi:http` granted.
-pub async fn instantiate() -> wasmtime::Result<(Store<Host>, KeetaAnchorKyc)> {
-	let engine = Engine::default();
+/// The engine, compiled component, and populated linker shared by every test
+/// in a binary, so Cranelift compiles the large debug component once per
+/// binary instead of once per test.
+struct Compiled {
+	engine: Engine,
+	component: Component,
+	linker: Linker<Host>,
+}
+
+/// Compile the component on first use, sharing the result across the binary.
+fn compiled() -> wasmtime::Result<&'static Compiled> {
+	static COMPILED: OnceLock<wasmtime::Result<Compiled>> = OnceLock::new();
+	COMPILED
+		.get_or_init(compile)
+		.as_ref()
+		.map_err(|error| wasmtime::Error::msg(error.to_string()))
+}
+
+fn compile() -> wasmtime::Result<Compiled> {
+	let engine = super::common::cached_engine()?;
 	let component = Component::from_file(&engine, component_path())?;
 	let mut linker: Linker<Host> = Linker::new(&engine);
 
 	wasmtime_wasi::p2::add_to_linker_async(&mut linker)?;
 	wasmtime_wasi_http::p2::add_only_http_to_linker_async(&mut linker)?;
 
-	let mut store = Store::new(&engine, Host::default());
-	let bindings = KeetaAnchorKyc::instantiate_async(&mut store, &component, &linker).await?;
+	Ok(Compiled { engine, component, linker })
+}
+
+/// Instantiate the P2 component with WASI + outbound `wasi:http` granted.
+pub async fn instantiate() -> wasmtime::Result<(Store<Host>, KeetaAnchorKyc)> {
+	let compiled = compiled()?;
+	let mut store = Store::new(&compiled.engine, Host::default());
+	let bindings = KeetaAnchorKyc::instantiate_async(&mut store, &compiled.component, &compiled.linker).await?;
 	Ok((store, bindings))
 }
