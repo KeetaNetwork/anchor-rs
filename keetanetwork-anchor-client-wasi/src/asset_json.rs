@@ -496,7 +496,9 @@ impl CreateAddressDto {
 	}
 }
 
-/// One filter over persistent-forwarding addresses.
+/// One filter over persistent-forwarding addresses. The `asset` is a bare
+/// string or a `{ from, to }` pair, mirroring the reference list-request's
+/// `asset?: AssetOrPair`.
 #[derive(Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 struct AddressFilterDto {
@@ -505,22 +507,25 @@ struct AddressFilterDto {
 	#[serde(default)]
 	destination_location: Option<String>,
 	#[serde(default)]
-	asset: Option<String>,
+	asset: Option<Value>,
 	#[serde(default)]
 	destination_address: Option<String>,
 	#[serde(default)]
 	persistent_address_template_id: Option<String>,
 }
 
-impl From<AddressFilterDto> for ForwardingAddressFilter {
-	fn from(dto: AddressFilterDto) -> Self {
-		Self {
+impl TryFrom<AddressFilterDto> for ForwardingAddressFilter {
+	type Error = CodedError;
+
+	fn try_from(dto: AddressFilterDto) -> Result<Self, Self::Error> {
+		let asset = dto.asset.map(asset_or_pair).transpose()?;
+		Ok(Self {
 			source_location: dto.source_location,
 			destination_location: dto.destination_location,
-			asset: dto.asset,
+			asset,
 			destination_address: dto.destination_address,
 			persistent_address_template_id: dto.persistent_address_template_id,
-		}
+		})
 	}
 }
 
@@ -535,12 +540,15 @@ struct ListAddressesDto {
 
 impl ListAddressesDto {
 	fn into_core(self) -> Result<ListForwardingAddressesRequest, CodedError> {
-		let search = self.search.map(|filters| {
-			filters
-				.into_iter()
-				.map(ForwardingAddressFilter::from)
-				.collect()
-		});
+		let search = self
+			.search
+			.map(|filters| {
+				filters
+					.into_iter()
+					.map(ForwardingAddressFilter::try_from)
+					.collect::<Result<Vec<_>, _>>()
+			})
+			.transpose()?;
 		Ok(ListForwardingAddressesRequest { search, pagination: self.pagination.into() })
 	}
 }

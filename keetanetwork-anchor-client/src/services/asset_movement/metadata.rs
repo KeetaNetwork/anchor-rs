@@ -6,10 +6,10 @@ use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
 use serde::de::Error as _;
-use serde::{Deserialize, Deserializer};
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 
-use super::asset::AssetOrPair;
+use super::asset::{canonicalize_asset, AssetOrPair};
 use crate::resolver::ServiceQuery;
 
 /// The authentication an operation requires, read from the published metadata.
@@ -124,7 +124,7 @@ impl FromIterator<(String, OperationEndpoint)> for AssetMovementOperations {
 /// Content a client may render directly, the reference
 /// `ClientRenderableContent`: markdown or plain text with no display
 /// guarantees, so it must carry context only, never critical information.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum ClientRenderableContent {
 	/// Markdown the client may render.
@@ -155,6 +155,18 @@ pub struct Disclaimer {
 	pub purpose: DisclaimerPurpose,
 	/// The renderable disclaimer body.
 	pub content: ClientRenderableContent,
+}
+
+/// The identifying details a provider publishes under `legal.anchorDetails`,
+/// the reference `AnchorMetadataLegalAnchorDetails`.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct AnchorDetails {
+	/// The provider's display name, when advertised.
+	pub name: Option<String>,
+	/// A renderable description of the provider, when advertised.
+	pub description: Option<ClientRenderableContent>,
+	/// The provider's logo URI, when advertised.
+	pub logo: Option<String>,
 }
 
 /// The token metadata a provider advertises for one asset at one location,
@@ -230,6 +242,26 @@ impl AssetMovementProvider {
 			.map(str::to_string);
 
 		Self { id, operations, supported_assets, location_metadata, legal, account }
+	}
+
+	/// The provider details advertised under `legal.anchorDetails`, or
+	/// [`None`] when its metadata carries none. A malformed `description` is
+	/// dropped while `name` and `logo` are kept.
+	pub fn legal_anchor_details(&self) -> Option<AnchorDetails> {
+		let details = self.legal.as_ref()?.get("anchorDetails")?;
+		let name = details
+			.get("name")
+			.and_then(Value::as_str)
+			.map(str::to_string);
+		let logo = details
+			.get("logo")
+			.and_then(Value::as_str)
+			.map(str::to_string);
+		let description = details
+			.get("description")
+			.and_then(|value| serde_json::from_value(value.clone()).ok());
+
+		Some(AnchorDetails { name, description, logo })
 	}
 
 	/// The legal disclaimers the provider advertises, or [`None`] when its
@@ -399,19 +431,34 @@ impl ProviderSearch {
 
 	/// Whether the oriented endpoint ids carry the searched asset. A single
 	/// asset matches on either endpoint id; a pair must match `from`/`to`
-	/// directionally. An unset search asset matches any pair.
+	/// directionally. An unset search asset matches any pair. Both the search
+	/// asset and the published ids are canonicalized.
 	fn asset_matches(&self, source: &Value, dest: &Value) -> bool {
 		let Some(asset) = &self.asset else {
 			return true;
 		};
 
-		let source_id = source.get("id").and_then(Value::as_str);
-		let dest_id = dest.get("id").and_then(Value::as_str);
+		let source_id = endpoint_asset_id(source);
+		let dest_id = endpoint_asset_id(dest);
 		match asset {
-			AssetOrPair::Single(name) => source_id == Some(name.as_str()) || dest_id == Some(name.as_str()),
-			AssetOrPair::Pair { from, to } => source_id == Some(from.as_str()) && dest_id == Some(to.as_str()),
+			AssetOrPair::Single(name) => {
+				let name = canonicalize_asset(name.as_str());
+				source_id.as_deref() == Some(name.as_str()) || dest_id.as_deref() == Some(name.as_str())
+			}
+			AssetOrPair::Pair { from, to } => {
+				source_id.as_deref() == Some(canonicalize_asset(from.as_str()).as_str())
+					&& dest_id.as_deref() == Some(canonicalize_asset(to.as_str()).as_str())
+			}
 		}
 	}
+}
+
+/// The canonicalized asset id of a path endpoint, when it carries one.
+fn endpoint_asset_id(endpoint: &Value) -> Option<String> {
+	endpoint
+		.get("id")
+		.and_then(Value::as_str)
+		.map(canonicalize_asset)
 }
 
 /// The rail direction an endpoint advertises.
@@ -668,6 +715,39 @@ mod tests {
 		assert!(search.accepts(&searchable_provider()));
 	}
 
+	/// A provider publishing an EVM asset id in non-canonical (lowercase)
+	/// casing, mirroring the reference resolver's metadata normalization.
+	fn lowercase_evm_provider() -> AssetMovementProvider {
+		let entry = json!({
+			"operations": {},
+			"supportedAssets": [{
+				"asset": "token",
+				"paths": [{
+					"pair": [
+						{ "id": "evm:0x5aaeb6053f3e94c9b9a09f33669435e7ef1beaed", "location": "chain:evm:100", "rails": { "common": ["KEETA_SEND"] } },
+						{ "id": "token", "location": "chain:keeta:100", "rails": { "common": ["KEETA_SEND"] } }
+					]
+				}]
+			}]
+		});
+		AssetMovementProvider::from_entry("p".into(), &entry)
+	}
+
+	#[test]
+	fn an_evm_search_matches_metadata_published_in_a_different_casing() {
+		let search = ProviderSearch::for_asset("evm:0x5AAEB6053F3E94C9B9A09F33669435E7EF1BEAED");
+		assert!(search.accepts(&lowercase_evm_provider()));
+	}
+
+	#[test]
+	fn an_evm_pair_search_matches_metadata_published_in_a_different_casing() {
+		let search = ProviderSearch::for_asset(AssetOrPair::Pair {
+			from: "evm:0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed".into(),
+			to: "token".into(),
+		});
+		assert!(search.accepts(&lowercase_evm_provider()));
+	}
+
 	#[test]
 	fn a_pair_with_an_unadvertised_leg_is_rejected() {
 		let search = ProviderSearch::for_asset(AssetOrPair::Pair { from: "evm:0x5".into(), to: "unlisted".into() });
@@ -715,6 +795,55 @@ mod tests {
 	fn a_provider_without_legal_metadata_has_no_disclaimers() {
 		let provider = AssetMovementProvider::from_entry("p".into(), &json!({ "operations": {} }));
 		assert!(provider.legal_disclaimers().is_none());
+	}
+
+	#[test]
+	fn legal_anchor_details_parse_name_description_and_logo() {
+		let entry = json!({
+			"operations": {},
+			"legal": {
+				"anchorDetails": {
+					"name": "Example Anchor",
+					"description": { "type": "markdown", "content": "About us." },
+					"logo": "https://cdn.example/logo.svg"
+				},
+				"disclaimers": []
+			}
+		});
+		let provider = AssetMovementProvider::from_entry("p".into(), &entry);
+		assert!(matches!(
+			provider.legal_anchor_details(),
+			Some(AnchorDetails {
+				name: Some(name),
+				description: Some(ClientRenderableContent::Markdown { content }),
+				logo: Some(logo),
+			}) if name == "Example Anchor" && content == "About us." && logo == "https://cdn.example/logo.svg"
+		));
+	}
+
+	#[test]
+	fn anchor_details_keep_name_and_logo_when_the_description_is_malformed() {
+		let entry = json!({
+			"operations": {},
+			"legal": {
+				"anchorDetails": {
+					"name": "Example Anchor",
+					"description": { "type": "unsupported" },
+					"logo": "https://cdn.example/logo.svg"
+				}
+			}
+		});
+		let provider = AssetMovementProvider::from_entry("p".into(), &entry);
+		assert!(matches!(
+			provider.legal_anchor_details(),
+			Some(AnchorDetails { name: Some(_), description: None, logo: Some(_) })
+		));
+	}
+
+	#[test]
+	fn a_provider_without_anchor_details_has_none() {
+		let provider = AssetMovementProvider::from_entry("p".into(), &json!({ "operations": {} }));
+		assert!(provider.legal_anchor_details().is_none());
 	}
 
 	#[test]

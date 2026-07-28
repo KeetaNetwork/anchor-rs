@@ -1,6 +1,6 @@
 [package]
 name = "keetanetwork-anchor-client"
-version = "0.3.1"
+version = "0.4.0"
 edition.workspace = true
 authors.workspace = true
 license-file.workspace = true
@@ -29,7 +29,7 @@ service = ["codec", "dep:percent-encoding"]
 kyc = ["service", "keetanetwork-anchor/sharable-attributes"]
 fx = ["service"]
 storage = ["service"]
-asset = ["service"]
+asset = ["service", "dep:sha3"]
 trust = [
 	"codec",
 	"keetanetwork-anchor/x509",
@@ -82,6 +82,7 @@ snafu = { workspace = true }
 serde = { workspace = true, features = ["derive"], optional = true }
 serde_json = { workspace = true, features = ["alloc"], optional = true }
 percent-encoding = { workspace = true, optional = true }
+sha3 = { workspace = true, optional = true }
 spin = { workspace = true, features = ["mutex", "spin_mutex"], optional = true }
 
 [dependencies.reqwest]

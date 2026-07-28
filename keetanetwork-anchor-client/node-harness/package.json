@@ -12,9 +12,9 @@
 		"lint": "eslint"
 	},
 	"dependencies": {
-		"@keetanetwork/anchor": "0.0.82",
-		"@keetanetwork/keetanet-client": "0.18.2",
-		"@keetanetwork/keetanet-node": "0.18.2"
+		"@keetanetwork/anchor": "0.0.95",
+		"@keetanetwork/keetanet-client": "0.18.3",
+		"@keetanetwork/keetanet-node": "0.18.3"
 	},
 	"devDependencies": {
 		"@keetanetwork/eslint-config-typescript": "1.4.7",

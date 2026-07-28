@@ -6,7 +6,7 @@
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
 use serde_json::Value;
 
 use crate::error::ResolverError;
@@ -32,24 +32,45 @@ pub(crate) struct SignedJson {
 }
 
 /// The KYC operation endpoints a provider exposes.
+///
+/// Each endpoint is a reference `ServiceMetadataEndpoint`: a bare URL string
+/// or a `{ url, options }` object.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct KycOperations {
 	/// Begin the KYC verification process.
-	#[serde(default)]
+	#[serde(default, deserialize_with = "endpoint_url")]
 	pub create_verification: Option<String>,
 	/// Fetch issued certificates for a verification.
-	#[serde(default)]
+	#[serde(default, deserialize_with = "endpoint_url")]
 	pub get_certificates: Option<String>,
 	/// Read the status of a verification.
-	#[serde(default)]
+	#[serde(default, deserialize_with = "endpoint_url")]
 	pub get_verification_status: Option<String>,
 	/// Check whether the provider can service a more specific locality.
-	#[serde(default)]
+	#[serde(default, deserialize_with = "endpoint_url")]
 	pub check_locality: Option<String>,
 	/// Request a verification cost estimate.
-	#[serde(default)]
+	#[serde(default, deserialize_with = "endpoint_url")]
 	pub get_estimate: Option<String>,
+}
+
+/// Read one `ServiceMetadataEndpoint` value into its URL: a bare string, or a
+/// `{ url, options? }` object.
+fn endpoint_url<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Option<String>, D::Error> {
+	#[derive(Deserialize)]
+	#[serde(untagged)]
+	enum Raw {
+		Url(String),
+		Object {
+			url: String,
+		},
+	}
+
+	let raw = Option::<Raw>::deserialize(deserializer)?;
+	Ok(raw.map(|raw| match raw {
+		Raw::Url(url) | Raw::Object { url } => url,
+	}))
 }
 
 /// A canonical (upper-cased) ISO country code used for KYC locality matching.
@@ -145,7 +166,31 @@ pub(crate) fn signed_fields(account: &str, operations: &Value, legal: Option<&Va
 
 #[cfg(test)]
 mod tests {
+	use serde_json::json;
+
 	use super::*;
+
+	#[test]
+	fn an_object_form_endpoint_parses_to_its_url() {
+		let entry = json!({
+			"operations": {
+				"createVerification": {
+					"url": "https://kyc.example/create",
+					"options": { "authentication": { "method": "keeta-account", "type": "required" } }
+				},
+				"getCertificates": "https://kyc.example/certs"
+			},
+			"ca": "ca-pem"
+		});
+		let provider = KycProvider::try_from(("p".to_string(), &entry));
+		assert!(matches!(
+			provider,
+			Ok(KycProvider {
+				operations: KycOperations { create_verification: Some(create), get_certificates: Some(certs), .. },
+				..
+			}) if create == "https://kyc.example/create" && certs == "https://kyc.example/certs"
+		));
+	}
 
 	#[test]
 	fn country_code_canonicalizes_to_upper() -> Result<(), ResolverError> {

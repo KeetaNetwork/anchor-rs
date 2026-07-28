@@ -71,14 +71,15 @@ pub use sharable::{fetch_external_blobs, sharable_with_references};
 
 #[cfg(feature = "asset")]
 pub use services::asset_movement::{
-	canonicalize_asset, canonicalize_location, parse_total, AccountStatus, AddressPage, AssetLocation,
+	canonicalize_asset, canonicalize_location, parse_total, AccountStatus, AddressPage, AnchorDetails, AssetLocation,
 	AssetMovementBlocker, AssetMovementClient, AssetMovementOperations, AssetMovementProvider, AssetMovementQuery,
-	AssetOrPair, AwaitOptions, ChainLocation, ClientRenderableContent, CreatePersistentForwardingAddressRequest,
-	CreatePersistentForwardingTemplateRequest, Disclaimer, DisclaimerPurpose, EndpointAuth, ExecuteTransferRequest,
+	AssetOrAssetWithLocation, AssetOrPair, AwaitOptions, ChainLocation, ClientRenderableContent,
+	CreatePersistentForwardingAddressRequest, CreatePersistentForwardingTemplateRequest, Disclaimer,
+	DisclaimerPurpose, EndpointAuth, ExecuteTransferRequest, FeeBreakdown, FeeLineItem, ForwardingAddress,
 	ForwardingAddressFilter, ForwardingDestination, ForwardingTemplate, InitiatePersistentForwardingTemplateRequest,
-	ListForwardingAddressTemplatesRequest, ListForwardingAddressesRequest, ListTransactionsRequest, OperationEndpoint,
-	Pagination, PersistentAddressFilter, ProviderFilter, ProviderSearch, ShareKycOutcome, ShareKycRequest,
-	SimulatedTransfer, TemplatePage, TemplateSession, TokenLocationMetadata, TransactionEndpointFilter,
-	TransactionPage, TransactionRefFilter, Transfer, TransferDestination, TransferRequest, TransferSource,
-	TransferStatus, OPERATION_NAMES,
+	ListForwardingAddressTemplatesRequest, ListForwardingAddressesRequest, ListTransactionsRequest,
+	MinimumTransferValue, OperationEndpoint, Pagination, PersistentAddressFilter, ProviderFilter, ProviderSearch,
+	ShareKycOutcome, ShareKycRequest, SimulatedTransfer, TemplatePage, TemplateSession, TokenLocationMetadata,
+	TransactionEndpointFilter, TransactionPage, TransactionRefFilter, Transfer, TransferDestination, TransferRequest,
+	TransferSource, TransferStatus, OPERATION_NAMES,
 };
