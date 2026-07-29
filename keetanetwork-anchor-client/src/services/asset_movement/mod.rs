@@ -10,11 +10,11 @@ pub mod request;
 pub mod response;
 
 pub use asset::{canonicalize_asset, AssetOrPair};
-pub use client::{AssetMovementClient, AwaitOptions};
+pub use client::{AssetMovementClient, AssetMovementProvider, AwaitOptions};
 pub use error::{AccountStatus, AssetMovementBlocker};
 pub use location::{canonicalize_location, AssetLocation, ChainLocation};
 pub use metadata::{
-	AnchorDetails, AssetMovementOperations, AssetMovementProvider, AssetMovementQuery, ClientRenderableContent,
+	AnchorDetails, AssetMovementOperations, AssetMovementProviderInfo, AssetMovementQuery, ClientRenderableContent,
 	Disclaimer, DisclaimerPurpose, EndpointAuth, OperationEndpoint, ProviderFilter, ProviderSearch,
 	TokenLocationMetadata, OPERATION_NAMES,
 };

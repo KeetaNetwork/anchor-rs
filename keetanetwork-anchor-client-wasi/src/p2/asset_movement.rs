@@ -18,7 +18,7 @@ use crate::asset_json::{
 	create_address_request, create_template_request, encode, encode_account_status, encode_ack, encode_provider,
 	encode_providers, execute_request, filter_providers, initiate_template_request, list_addresses_request,
 	list_templates_request, list_transactions_request, parse_provider, parse_provider_search,
-	share_kyc_attributes_request, transfer_request,
+	share_kyc_attributes_request, snapshots, transfer_request,
 };
 
 use super::exports::keeta::anchor::asset_movement::{
@@ -50,12 +50,12 @@ impl GuestAssetClient for AssetSession {
 	}
 
 	fn providers(&self) -> Result<String, CodedError> {
-		let all = run(self.inner.providers())?;
+		let all = snapshots(run(self.inner.providers())?);
 		text(encode_providers(filter_providers(all, &ProviderFilter::default())))
 	}
 
 	fn provider_by_id(&self, id: String) -> Result<String, CodedError> {
-		let all = run(self.inner.providers())?;
+		let all = snapshots(run(self.inner.providers())?);
 		let one = filter_providers(all, &ProviderFilter::by_id(id))
 			.into_iter()
 			.next();
@@ -65,7 +65,7 @@ impl GuestAssetClient for AssetSession {
 
 	fn provider_by_account(&self, account: AccountBorrow<'_>) -> Result<String, CodedError> {
 		let account = account.get::<AccountResource>().account.to_string();
-		let all = run(self.inner.providers())?;
+		let all = snapshots(run(self.inner.providers())?);
 		let one = filter_providers(all, &ProviderFilter::by_account(account))
 			.into_iter()
 			.next();
@@ -74,14 +74,14 @@ impl GuestAssetClient for AssetSession {
 
 	fn providers_for_transfer(&self, search: String) -> Result<String, CodedError> {
 		let search = core(parse_provider_search(&search))?;
-		let providers = run(self.inner.providers_for_transfer(&search))?;
+		let providers = snapshots(run(self.inner.providers_for_transfer(&search))?);
 		text(encode_providers(providers))
 	}
 
 	fn simulate_transfer(&self, provider: String, request: String) -> Result<String, CodedError> {
 		let provider = core(parse_provider(&provider))?;
 		let request = core(transfer_request(&request))?;
-		let outcome = run(self.inner.simulate_transfer(&provider, &request))?;
+		let outcome = run(self.inner.provider(provider).simulate_transfer(&request))?;
 
 		text(encode(&outcome))
 	}
@@ -89,7 +89,7 @@ impl GuestAssetClient for AssetSession {
 	fn initiate_transfer(&self, provider: String, request: String) -> Result<String, CodedError> {
 		let provider = core(parse_provider(&provider))?;
 		let request = core(transfer_request(&request))?;
-		let outcome = run(self.inner.initiate_transfer(&provider, &request))?;
+		let outcome = run(self.inner.provider(provider).initiate_transfer(&request))?;
 
 		text(encode(&outcome))
 	}
@@ -97,20 +97,20 @@ impl GuestAssetClient for AssetSession {
 	fn execute_transfer(&self, provider: String, request: String) -> Result<String, CodedError> {
 		let provider = core(parse_provider(&provider))?;
 		let request = core(execute_request(&request))?;
-		let outcome = run(self.inner.execute_transfer(&provider, &request))?;
+		let outcome = run(self.inner.provider(provider).execute_transfer(&request))?;
 
 		text(encode(&outcome))
 	}
 
 	fn transfer_status(&self, provider: String, id: String) -> Result<String, CodedError> {
 		let provider = core(parse_provider(&provider))?;
-		let outcome = run(self.inner.transfer_status(&provider, &id))?;
+		let outcome = run(self.inner.provider(provider).transfer_status(&id))?;
 		text(encode(&outcome))
 	}
 
 	fn account_status(&self, provider: String) -> Result<String, CodedError> {
 		let provider = core(parse_provider(&provider))?;
-		let status = run(self.inner.account_status(&provider))?;
+		let status = run(self.inner.provider(provider).account_status())?;
 		text(encode_account_status(&status))
 	}
 
@@ -119,7 +119,8 @@ impl GuestAssetClient for AssetSession {
 		let request = core(initiate_template_request(&request))?;
 		let outcome = run(self
 			.inner
-			.initiate_persistent_forwarding_template(&provider, &request))?;
+			.provider(provider)
+			.initiate_persistent_forwarding_template(&request))?;
 
 		text(encode(&outcome))
 	}
@@ -129,7 +130,8 @@ impl GuestAssetClient for AssetSession {
 		let request = core(create_template_request(&request))?;
 		let outcome = run(self
 			.inner
-			.create_persistent_forwarding_template(&provider, &request))?;
+			.provider(provider)
+			.create_persistent_forwarding_template(&request))?;
 
 		text(encode(&outcome))
 	}
@@ -139,7 +141,8 @@ impl GuestAssetClient for AssetSession {
 		let request = core(list_templates_request(&request))?;
 		let outcome = run(self
 			.inner
-			.list_forwarding_address_templates(&provider, &request))?;
+			.provider(provider)
+			.list_forwarding_address_templates(&request))?;
 
 		text(encode(&outcome))
 	}
@@ -149,7 +152,8 @@ impl GuestAssetClient for AssetSession {
 		let request = core(create_address_request(&request))?;
 		let details = run(self
 			.inner
-			.create_persistent_forwarding_address(&provider, &request))?;
+			.provider(provider)
+			.create_persistent_forwarding_address(&request))?;
 
 		text(encode(&details))
 	}
@@ -157,7 +161,10 @@ impl GuestAssetClient for AssetSession {
 	fn list_forwarding_addresses(&self, provider: String, request: String) -> Result<String, CodedError> {
 		let provider = core(parse_provider(&provider))?;
 		let request = core(list_addresses_request(&request))?;
-		let outcome = run(self.inner.list_forwarding_addresses(&provider, &request))?;
+		let outcome = run(self
+			.inner
+			.provider(provider)
+			.list_forwarding_addresses(&request))?;
 
 		text(encode(&outcome))
 	}
@@ -166,7 +173,8 @@ impl GuestAssetClient for AssetSession {
 		let provider = core(parse_provider(&provider))?;
 		run(self
 			.inner
-			.deactivate_persistent_forwarding_template(&provider, &id))?;
+			.provider(provider)
+			.deactivate_persistent_forwarding_template(&id))?;
 		text(encode_ack())
 	}
 
@@ -174,14 +182,15 @@ impl GuestAssetClient for AssetSession {
 		let provider = core(parse_provider(&provider))?;
 		run(self
 			.inner
-			.deactivate_persistent_forwarding_address(&provider, &id))?;
+			.provider(provider)
+			.deactivate_persistent_forwarding_address(&id))?;
 		text(encode_ack())
 	}
 
 	fn list_transactions(&self, provider: String, request: String) -> Result<String, CodedError> {
 		let provider = core(parse_provider(&provider))?;
 		let request = core(list_transactions_request(&request))?;
-		let outcome = run(self.inner.list_transactions(&provider, &request))?;
+		let outcome = run(self.inner.provider(provider).list_transactions(&request))?;
 
 		text(encode(&outcome))
 	}
@@ -189,7 +198,7 @@ impl GuestAssetClient for AssetSession {
 	fn share_kyc_attributes(&self, provider: String, request: String) -> Result<String, CodedError> {
 		let provider = core(parse_provider(&provider))?;
 		let request = core(share_kyc_attributes_request(&request))?;
-		let outcome = run(self.inner.share_kyc_attributes(&provider, &request))?;
+		let outcome = run(self.inner.provider(provider).share_kyc_attributes(&request))?;
 
 		text(encode(&outcome))
 	}
@@ -209,7 +218,8 @@ impl GuestAssetClient for AssetSession {
 		let outcome =
 			run(self
 				.inner
-				.share_kyc_attributes_and_wait(&provider, &request, options, |millis| async move {
+				.provider(provider)
+				.share_kyc_attributes_and_wait(&request, options, |millis| async move {
 					WasiRuntime.sleep_ms(u64::from(millis)).await;
 				}))?;
 

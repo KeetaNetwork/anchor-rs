@@ -7,7 +7,7 @@ use keetanetwork_account::GenericAccount;
 use keetanetwork_anchor_client::resilience::{ResilientTransport, WasiRuntime};
 use keetanetwork_anchor_client::{
 	AnchorContext, AnchorHttpTransport, AnchorOutcome, Certificates, CountryCode, ExpectedCost, KycClient,
-	KycOperations, KycProvider, Resolver, Verification, VerificationStatus, WasiTransport,
+	KycOperations, KycProviderInfo, Resolver, Verification, VerificationStatus, WasiTransport,
 };
 
 use super::account::AccountResource;
@@ -45,7 +45,10 @@ impl GuestClient for KycSession {
 	fn providers(&self, countries: Vec<String>) -> Result<Vec<WitProvider>, CodedError> {
 		let codes = country_codes(&countries)?;
 		let providers = run(async { self.inner.providers(&codes).await })?;
-		Ok(providers.into_iter().map(WitProvider::from).collect())
+		Ok(providers
+			.into_iter()
+			.map(|provider| WitProvider::from(provider.into_info()))
+			.collect())
 	}
 
 	fn create_verification(
@@ -54,12 +57,13 @@ impl GuestClient for KycSession {
 		countries: Vec<String>,
 		redirect_url: Option<String>,
 	) -> Result<VerificationOutcome, CodedError> {
-		let provider = KycProvider::try_from(provider)?;
+		let provider = KycProviderInfo::try_from(provider)?;
 		let codes = country_codes(&countries)?;
 		let redirect = redirect_url.as_deref();
 		let outcome = run(async {
 			self.inner
-				.create_verification(&provider, &codes, redirect)
+				.provider(provider)
+				.create_verification(&codes, redirect)
 				.await
 		})?;
 
@@ -67,14 +71,19 @@ impl GuestClient for KycSession {
 	}
 
 	fn get_certificates(&self, provider: WitProvider, id: String) -> Result<CertificatesOutcome, CodedError> {
-		let provider = KycProvider::try_from(provider)?;
-		let outcome = run(async { self.inner.get_certificates(&provider, &id).await })?;
+		let provider = KycProviderInfo::try_from(provider)?;
+		let outcome = run(async { self.inner.provider(provider).get_certificates(&id).await })?;
 		Ok(outcome.into())
 	}
 
 	fn get_verification_status(&self, provider: WitProvider, id: String) -> Result<StatusOutcome, CodedError> {
-		let provider = KycProvider::try_from(provider)?;
-		let outcome = run(async { self.inner.get_verification_status(&provider, &id).await })?;
+		let provider = KycProviderInfo::try_from(provider)?;
+		let outcome = run(async {
+			self.inner
+				.provider(provider)
+				.get_verification_status(&id)
+				.await
+		})?;
 		Ok(outcome.into())
 	}
 }
@@ -103,8 +112,8 @@ fn country_codes(values: &[String]) -> Result<Vec<CountryCode>, CodedError> {
 		.collect()
 }
 
-impl From<KycProvider> for WitProvider {
-	fn from(provider: KycProvider) -> Self {
+impl From<KycProviderInfo> for WitProvider {
+	fn from(provider: KycProviderInfo) -> Self {
 		let country_codes = provider
 			.country_codes
 			.map(|codes| codes.iter().map(|code| code.as_str().to_string()).collect());
@@ -113,7 +122,7 @@ impl From<KycProvider> for WitProvider {
 	}
 }
 
-impl TryFrom<WitProvider> for KycProvider {
+impl TryFrom<WitProvider> for KycProviderInfo {
 	type Error = CodedError;
 
 	fn try_from(provider: WitProvider) -> Result<Self, Self::Error> {

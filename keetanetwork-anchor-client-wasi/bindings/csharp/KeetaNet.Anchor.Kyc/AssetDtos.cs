@@ -22,12 +22,14 @@ public enum AssetEndpointAuth
 public sealed record AssetEndpoint(string Url, AssetEndpointAuth Auth);
 
 /// <summary>
-/// An asset-movement provider discovered from on-chain service metadata. The
-/// polymorphic <see cref="SupportedAssets"/>, <see cref="LocationMetadata"/>, and
-/// <see cref="Legal"/> members are carried as raw JSON so the value round-trips
-/// unchanged when handed back to an operation.
+/// The metadata snapshot of an asset-movement provider discovered from
+/// on-chain service metadata, the data an <see cref="AssetProvider"/> handle
+/// operates over. The polymorphic <see cref="SupportedAssets"/>,
+/// <see cref="LocationMetadata"/>, and <see cref="Legal"/> members are carried
+/// as raw JSON so the value round-trips unchanged when handed back to an
+/// operation.
 /// </summary>
-public sealed record AssetProvider(
+public sealed record AssetProviderInfo(
 	string Id,
 	IReadOnlyDictionary<string, AssetEndpoint> Operations,
 	IReadOnlyList<JsonElement>? SupportedAssets = null,

@@ -11,7 +11,7 @@ mod query;
 mod read;
 
 pub use decode::{decode_base64, parse_metadata};
-pub use metadata::{CountryCode, KycOperations, KycProvider};
+pub use metadata::{CountryCode, KycOperations, KycProviderInfo};
 pub use query::ServiceQuery;
 
 /// One certificate an account published on-chain: the PEM-encoded leaf and the

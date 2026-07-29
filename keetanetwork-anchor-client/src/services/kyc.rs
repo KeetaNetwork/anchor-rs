@@ -9,7 +9,7 @@ use alloc::vec::Vec;
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::resolver::{CountryCode, KycProvider, ServiceQuery};
+use crate::resolver::{CountryCode, KycProviderInfo, ServiceQuery};
 
 /// Selects KYC providers that serve every requested country.
 pub struct KycQuery;
@@ -17,10 +17,10 @@ pub struct KycQuery;
 impl ServiceQuery for KycQuery {
 	const SERVICE: &'static str = "kyc";
 	type Criteria = [CountryCode];
-	type Provider = KycProvider;
+	type Provider = KycProviderInfo;
 
-	fn parse(id: String, entry: &Value, criteria: &[CountryCode]) -> Option<KycProvider> {
-		let provider = KycProvider::try_from((id, entry)).ok()?;
+	fn parse(id: String, entry: &Value, criteria: &[CountryCode]) -> Option<KycProviderInfo> {
+		let provider = KycProviderInfo::try_from((id, entry)).ok()?;
 		provider.serves(criteria).then_some(provider)
 	}
 }
@@ -37,8 +37,8 @@ pub enum SupportedCountries {
 	Countries(Vec<CountryCode>),
 }
 
-impl FromIterator<KycProvider> for SupportedCountries {
-	fn from_iter<I: IntoIterator<Item = KycProvider>>(providers: I) -> Self {
+impl FromIterator<KycProviderInfo> for SupportedCountries {
+	fn from_iter<I: IntoIterator<Item = KycProviderInfo>>(providers: I) -> Self {
 		let mut countries: Vec<CountryCode> = Vec::new();
 		for provider in providers {
 			let Some(codes) = provider.country_codes else {
@@ -114,23 +114,25 @@ pub struct Certificates {
 	pub results: Vec<Certificate>,
 }
 
-pub use client::KycClient;
+pub use client::{KycClient, KycProvider};
 
 mod client {
 	use alloc::vec::Vec;
+	use core::ops::Deref;
 
 	use serde_json::{Map, Value};
 
 	use super::{Certificates, KycQuery, SupportedCountries, Verification, VerificationStatus};
 	use crate::error::AnchorClientError;
-	use crate::resolver::{CountryCode, KycProvider};
+	use crate::resolver::{CountryCode, KycProviderInfo};
 	use crate::service::{AnchorContext, AnchorOutcome, Auth, BodyEnvelope, Call, Endpoint, Method};
 
 	/// A KYC anchor client over a shared [`AnchorContext`].
 	///
-	/// Each method discovers no transport or signing details of its own: the
-	/// context's resolver finds providers and its caller signs and sends each
-	/// operation.
+	/// Discovery returns [`KycProvider`] handles carrying the resolved
+	/// metadata; each operation lives on the handle. A stored
+	/// [`KycProviderInfo`] snapshot rebinds through
+	/// [`provider`](Self::provider).
 	pub struct KycClient {
 		context: AnchorContext,
 	}
@@ -147,13 +149,12 @@ mod client {
 		///
 		/// Returns [`AnchorClientError`] when a metadata root cannot be fetched
 		/// or decoded. Malformed or out-of-scope entries are skipped.
-		pub async fn providers(&self, countries: &[CountryCode]) -> Result<Vec<KycProvider>, AnchorClientError> {
-			let providers = self
-				.context
-				.resolver()
-				.lookup::<KycQuery>(countries)
-				.await?;
-			Ok(providers)
+		pub async fn providers(&self, countries: &[CountryCode]) -> Result<Vec<KycProvider<'_>>, AnchorClientError> {
+			let providers = self.lookup(countries).await?;
+			Ok(providers
+				.into_iter()
+				.map(|info| self.provider(info))
+				.collect())
 		}
 
 		/// The countries any provider can validate, folded across every root
@@ -164,17 +165,68 @@ mod client {
 		/// Returns [`AnchorClientError`] when a metadata root cannot be fetched
 		/// or decoded.
 		pub async fn get_supported_countries(&self) -> Result<SupportedCountries, AnchorClientError> {
-			let providers = self.providers(&[]).await?;
+			let providers = self.lookup(&[]).await?;
 			let supported = providers.into_iter().collect();
 
 			Ok(supported)
 		}
 
-		/// Begin a verification with `provider` for `countries`, optionally
-		/// directing the user to `redirect_url` when the flow ends.
+		/// Bind a stored [`KycProviderInfo`] snapshot back to this client,
+		/// yielding the operation-carrying handle. This is the stateless
+		/// per-call primitive FFI layers rebind through.
+		pub fn provider(&self, info: KycProviderInfo) -> KycProvider<'_> {
+			KycProvider { client: self, info }
+		}
+
+		/// Discover provider snapshots serving all `countries`.
+		async fn lookup(&self, countries: &[CountryCode]) -> Result<Vec<KycProviderInfo>, AnchorClientError> {
+			let providers = self
+				.context
+				.resolver()
+				.lookup::<KycQuery>(countries)
+				.await?;
+			Ok(providers)
+		}
+	}
+
+	/// A discovered KYC provider bound to its client: every operation lives
+	/// here, and the resolved metadata snapshot is reachable through [`Deref`]
+	/// and [`info`](Self::info).
+	///
+	/// The handle holds nothing live so it is freely cloned and cheaply rebound
+	/// from a stored snapshot via [`KycClient::provider`].
+	#[derive(Clone)]
+	pub struct KycProvider<'c> {
+		client: &'c KycClient,
+		info: KycProviderInfo,
+	}
+
+	impl Deref for KycProvider<'_> {
+		type Target = KycProviderInfo;
+
+		fn deref(&self) -> &Self::Target {
+			&self.info
+		}
+	}
+
+	impl KycProvider<'_> {
+		/// The resolved metadata snapshot.
+		pub fn info(&self) -> &KycProviderInfo {
+			&self.info
+		}
+
+		/// Unwrap the handle into its metadata snapshot, e.g. for storage or
+		/// for crossing an FFI boundary.
+		pub fn into_info(self) -> KycProviderInfo {
+			self.info
+		}
+
+		/// Begin a verification for `countries`, optionally directing the user
+		/// to `redirect_url` when the flow ends.
 		///
 		/// Signs the request body. `countries` are the search countries the
-		/// verification is scoped to (the same set used to discover `provider`).
+		/// verification is scoped to (the same set used to discover this
+		/// provider).
 		///
 		/// # Errors
 		///
@@ -182,11 +234,10 @@ mod client {
 		/// does not advertise `createVerification`, or any request failure.
 		pub async fn create_verification(
 			&self,
-			provider: &KycProvider,
 			countries: &[CountryCode],
 			redirect_url: Option<&str>,
 		) -> Result<AnchorOutcome<Verification>, AnchorClientError> {
-			let endpoint = endpoint_for(provider.operations.create_verification.as_deref(), "createVerification")?;
+			let endpoint = endpoint_for(self.info.operations.create_verification.as_deref(), "createVerification")?;
 			let body = create_request_fields(countries, redirect_url);
 			let method = Method::Post;
 			let auth = Auth::SignedBody;
@@ -200,7 +251,7 @@ mod client {
 				envelope: BodyEnvelope::Request,
 				body: Some(body),
 			};
-			let outcome = self.context.caller().invoke(call).await?;
+			let outcome = self.client.context.caller().invoke(call).await?;
 			Ok(outcome)
 		}
 
@@ -214,10 +265,9 @@ mod client {
 		/// does not advertise `getCertificates`, or any request failure.
 		pub async fn get_certificates(
 			&self,
-			provider: &KycProvider,
 			id: impl AsRef<str>,
 		) -> Result<AnchorOutcome<Certificates>, AnchorClientError> {
-			let endpoint = endpoint_for(provider.operations.get_certificates.as_deref(), "getCertificates")?;
+			let endpoint = endpoint_for(self.info.operations.get_certificates.as_deref(), "getCertificates")?;
 			let params = [("id", id.as_ref())];
 			let method = Method::Get;
 			let auth = Auth::None;
@@ -233,7 +283,7 @@ mod client {
 				body,
 			};
 
-			let outcome = self.context.caller().invoke(call).await?;
+			let outcome = self.client.context.caller().invoke(call).await?;
 			Ok(outcome)
 		}
 
@@ -245,11 +295,10 @@ mod client {
 		/// does not advertise `getVerificationStatus`, or any request failure.
 		pub async fn get_verification_status(
 			&self,
-			provider: &KycProvider,
 			id: impl AsRef<str>,
 		) -> Result<AnchorOutcome<VerificationStatus>, AnchorClientError> {
 			let endpoint =
-				endpoint_for(provider.operations.get_verification_status.as_deref(), "getVerificationStatus")?;
+				endpoint_for(self.info.operations.get_verification_status.as_deref(), "getVerificationStatus")?;
 			let params = [("id", id.as_ref())];
 			let method = Method::Get;
 			let auth = Auth::SignedUrl;
@@ -264,7 +313,7 @@ mod client {
 				envelope: BodyEnvelope::Request,
 				body,
 			};
-			let outcome = self.context.caller().invoke(call).await?;
+			let outcome = self.client.context.caller().invoke(call).await?;
 			Ok(outcome)
 		}
 	}
@@ -305,13 +354,13 @@ mod tests {
 
 	/// A provider entry advertising the given country codes, or none for a
 	/// worldwide provider.
-	fn provider(id: &str, countries: Option<&[&str]>) -> Option<KycProvider> {
+	fn provider(id: &str, countries: Option<&[&str]>) -> Option<KycProviderInfo> {
 		let mut entry = json!({ "operations": {}, "ca": "ca-pem" });
 		if let Some(codes) = countries {
 			entry["countryCodes"] = json!(codes);
 		}
 
-		KycProvider::try_from((id.to_string(), &entry)).ok()
+		KycProviderInfo::try_from((id.to_string(), &entry)).ok()
 	}
 
 	#[test]

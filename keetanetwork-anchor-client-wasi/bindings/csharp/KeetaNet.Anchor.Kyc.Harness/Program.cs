@@ -105,19 +105,27 @@ foreach (string algorithm in algorithms)
 
 	// The provider's advertised CA parses into a certificate handle the caller
 	// can use as a trust root for issued leaves.
-	using CryptoCertificate providerCa = client.ProviderCertificate(provider);
+	using CryptoCertificate providerCa = provider.ProviderCertificate();
 	Require(
 		providerCa.Pem().Contains("BEGIN CERTIFICATE"),
 		$"{algorithm}: the provider CA must parse to a certificate");
 
+	// A stored snapshot rebinds through `client.Provider(info)` and drives the
+	// same operation path.
+	KycProvider reboundProvider = client.Provider(provider.Info);
+	using CryptoCertificate reboundCa = reboundProvider.ProviderCertificate();
+	Require(
+		reboundCa.Pem() == providerCa.Pem(),
+		$"{algorithm}: a rebound provider must parse the same CA certificate");
+
 	// The redirect URL rides the signed create body; the server must accept the
 	// extra field and still assign a verification.
-	VerificationOutcome verification = client.CreateVerification(provider, countries, "https://example.test/done");
+	VerificationOutcome verification = provider.CreateVerification(countries, "https://example.test/done");
 	Require(verification.Ready is not null, $"{algorithm}: create-verification was not ready");
 	Require(!string.IsNullOrEmpty(verification.Ready!.Id), $"{algorithm}: verification id was empty");
 	Require(!string.IsNullOrEmpty(verification.Ready!.WebUrl), $"{algorithm}: verification web url was empty");
 
-	StatusOutcome status = client.GetVerificationStatus(provider, verification.Ready!.Id);
+	StatusOutcome status = provider.GetVerificationStatus(verification.Ready!.Id);
 	Require(status.Ready is not null, $"{algorithm}: status was not ready");
 	Require(!string.IsNullOrEmpty(status.Ready!.Status), $"{algorithm}: status was empty");
 	Require(
@@ -126,10 +134,10 @@ foreach (string algorithm in algorithms)
 
 	// A not-yet-issued certificate reports as a retry (the server's 404); an
 	// issued verification serves its full `[leaf, ca]` chain.
-	CertificatesOutcome pending = client.GetCertificates(provider, "pending");
+	CertificatesOutcome pending = provider.GetCertificates("pending");
 	Require(pending.RetryAfterMs is not null, $"{algorithm}: a pending certificate must report a retry");
 
-	CertificatesOutcome chain = client.GetCertificates(provider, issuedVerificationId);
+	CertificatesOutcome chain = provider.GetCertificates(issuedVerificationId);
 	Require(
 		chain.Ready is not null && chain.Ready!.Results.Count == 2,
 		$"{algorithm}: an issued verification must serve its leaf and ca chain");
@@ -335,13 +343,13 @@ static void AssetMovementSelfTest(WasmRuntime runtime)
 
 		// The advertised operation map answers support queries without a round trip.
 		Require(
-			client.IsOperationSupported(provider, "initiateTransfer"),
+			provider.IsOperationSupported("initiateTransfer"),
 			$"{algorithm}: the provider must advertise initiateTransfer");
 		Require(
-			!client.IsOperationSupported(provider, "operationThatDoesNotExist"),
+			!provider.IsOperationSupported("operationThatDoesNotExist"),
 			$"{algorithm}: an unadvertised operation must report unsupported");
 
-		AssetSimulatedTransfer simulated = client.SimulateTransfer(provider, request);
+		AssetSimulatedTransfer simulated = provider.SimulateTransfer(request);
 		Require(simulated.InstructionChoices.Count > 0, $"{algorithm}: the simulation must carry instruction choices");
 		Require(
 			simulated.InstructionChoices[0].GetProperty("type").GetString() == "KEETA_SEND",
@@ -351,7 +359,7 @@ static void AssetMovementSelfTest(WasmRuntime runtime)
 		AssetTransfer created = simulated.CreateTransfer();
 		Require(created.Id == "123", $"{algorithm}: the fluent CreateTransfer must initiate the transfer");
 
-		AssetTransfer transfer = client.InitiateTransfer(provider, request);
+		AssetTransfer transfer = provider.InitiateTransfer(request);
 		Require(transfer.Id == "123", $"{algorithm}: the initiated transfer must carry its id");
 		Require(transfer.InstructionChoices.Count > 0, $"{algorithm}: the transfer must carry instruction choices");
 
@@ -361,13 +369,21 @@ static void AssetMovementSelfTest(WasmRuntime runtime)
 			fluentStatus.Transaction.GetProperty("id").GetString() == "123",
 			$"{algorithm}: the fluent status must report the harness transaction");
 
-		AssetTransferStatus status = client.TransferStatus(provider, transfer.Id);
+		AssetTransferStatus status = provider.TransferStatus(transfer.Id);
 		Require(
 			status.Transaction.GetProperty("id").GetString() == "123",
 			$"{algorithm}: the status must report the harness transaction");
 
-		AssetAccountStatus accountStatus = client.AccountStatus(provider);
+		AssetAccountStatus accountStatus = provider.AccountStatus();
 		Require(!accountStatus.ActionRequired, $"{algorithm}: a ready account must report actionRequired false");
+
+		// A stored snapshot rebinds through `client.Provider(info)` and drives
+		// the same operation path.
+		AssetProvider reboundProvider = client.Provider(provider.Info);
+		AssetAccountStatus reboundStatus = reboundProvider.AccountStatus();
+		Require(
+			!reboundStatus.ActionRequired,
+			$"{algorithm}: a rebound provider must report the same account status");
 
 		// Account-based discovery: the provider's entry is signed by the harness
 		// metadata signer, so a lookup by that account surfaces it.
@@ -387,22 +403,22 @@ static void AssetMovementSelfTest(WasmRuntime runtime)
 		// Persistent-forwarding lifecycle: open a template session, create a
 		// template directly, list templates, create an address for a destination
 		// pair, list addresses, then deactivate both.
-		AssetTemplateSession session = client.InitiatePersistentForwardingTemplate(
-			provider, new AssetInitiateTemplateRequest(asset, "chain:evm:100"));
+		AssetTemplateSession session = provider.InitiatePersistentForwardingTemplate(
+			new AssetInitiateTemplateRequest(asset, "chain:evm:100"));
 		Require(session.Id == "test-session-id", $"{algorithm}: the template session must carry the harness id");
 		Require(
 			session.Data.GetProperty("type").GetString() == "plaid",
 			$"{algorithm}: the template session must carry the provider-specific data");
 
-		AssetForwardingTemplate template = client.CreatePersistentForwardingTemplate(
-			provider, new AssetCreateTemplateRequest(Asset: asset, Location: "chain:evm:100", Address: sendTo));
+		AssetForwardingTemplate template = provider.CreatePersistentForwardingTemplate(
+			new AssetCreateTemplateRequest(Asset: asset, Location: "chain:evm:100", Address: sendTo));
 		Require(template.Id == "template-id", $"{algorithm}: the created template must carry the harness id");
 
-		AssetTemplatePage templates = client.ListForwardingAddressTemplates(provider, new AssetListTemplatesRequest());
+		AssetTemplatePage templates = provider.ListForwardingAddressTemplates(new AssetListTemplatesRequest());
 		Require(templates.Templates.Count == 1, $"{algorithm}: the template list must carry the harness template");
 		Require(templates.Total == "1", $"{algorithm}: the template list must carry its total");
 
-		JsonElement forwarding = client.CreatePersistentForwardingAddress(provider, new AssetCreateAddressRequest(
+		JsonElement forwarding = provider.CreatePersistentForwardingAddress(new AssetCreateAddressRequest(
 			"chain:evm:100",
 			asset,
 			DestinationLocation: "chain:keeta:100",
@@ -411,12 +427,12 @@ static void AssetMovementSelfTest(WasmRuntime runtime)
 			forwarding.TryGetProperty("address", out _),
 			$"{algorithm}: the created forwarding address must carry its address");
 
-		AssetAddressPage addresses = client.ListForwardingAddresses(provider, new AssetListAddressesRequest());
+		AssetAddressPage addresses = provider.ListForwardingAddresses(new AssetListAddressesRequest());
 		Require(addresses.Addresses.Count == 1, $"{algorithm}: the address list must carry the harness address");
 
 		// A filtered list accepts both asset forms: a canonical string and a
 		// { from, to } pair, matching the reference `AssetOrPair` search.
-		AssetAddressPage filtered = client.ListForwardingAddresses(provider, new AssetListAddressesRequest(
+		AssetAddressPage filtered = provider.ListForwardingAddresses(new AssetListAddressesRequest(
 			Search: new[]
 			{
 				new AssetAddressFilter(SourceLocation: "chain:evm:100", Asset: asset),
@@ -426,11 +442,11 @@ static void AssetMovementSelfTest(WasmRuntime runtime)
 			filtered.Addresses.Count == 1,
 			$"{algorithm}: a pair-filtered address list must round-trip through the anchor");
 
-		client.DeactivatePersistentForwardingTemplate(provider, "template-id");
-		client.DeactivatePersistentForwardingAddress(provider, "template-id");
+		provider.DeactivatePersistentForwardingTemplate("template-id");
+		provider.DeactivatePersistentForwardingAddress("template-id");
 
 		// The transaction query returns the canonical harness transaction.
-		AssetTransactionPage transactions = client.ListTransactions(provider, new AssetListTransactionsRequest());
+		AssetTransactionPage transactions = provider.ListTransactions(new AssetListTransactionsRequest());
 		Require(
 			transactions.Transactions.Count == 1
 				&& transactions.Transactions[0].GetProperty("id").GetString() == "123",
@@ -438,11 +454,10 @@ static void AssetMovementSelfTest(WasmRuntime runtime)
 
 		// A settled share resolves immediately; a pending share hands back a
 		// promise URL, which the await variant polls to the settled outcome.
-		AssetShareKycOutcome shared = client.ShareKycAttributes(provider, new AssetShareKycRequest("immediate-attributes"));
+		AssetShareKycOutcome shared = provider.ShareKycAttributes(new AssetShareKycRequest("immediate-attributes"));
 		Require(!shared.IsPending, $"{algorithm}: a settled share must not be pending");
 
-		AssetShareKycOutcome awaited = client.ShareKycAttributesAndWait(
-			provider,
+		AssetShareKycOutcome awaited = provider.ShareKycAttributesAndWait(
 			new AssetShareKycRequest($"{algorithm}-promise"),
 			pollInterval: TimeSpan.FromMilliseconds(50),
 			timeout: TimeSpan.FromSeconds(30));

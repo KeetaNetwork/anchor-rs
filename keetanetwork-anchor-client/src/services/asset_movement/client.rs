@@ -5,6 +5,7 @@ use alloc::string::{String, ToString};
 use alloc::vec;
 use alloc::vec::Vec;
 use core::future::Future;
+use core::ops::Deref;
 
 use keetanetwork_anchor::signing::Signable;
 use serde::de::DeserializeOwned;
@@ -12,7 +13,7 @@ use serde_json::{Map, Value};
 
 use super::error::{AccountStatus, AssetMovementBlocker};
 use super::metadata::{
-	AssetMovementProvider, AssetMovementQuery, Disclaimer, EndpointAuth, ProviderFilter, ProviderSearch,
+	AssetMovementProviderInfo, AssetMovementQuery, Disclaimer, EndpointAuth, ProviderFilter, ProviderSearch,
 };
 use super::request::{
 	id_literal, literal, CreatePersistentForwardingAddressRequest, CreatePersistentForwardingTemplateRequest,
@@ -48,10 +49,11 @@ impl Default for AwaitOptions {
 
 /// An asset-movement anchor client over a shared [`AnchorContext`].
 ///
-/// Discovery finds providers; each operation fills, signs, and sends a request
-/// through the context's caller. Operation methods take the resolved
-/// [`AssetMovementProvider`] so a caller can reuse one discovery across many
-/// operations.
+/// Discovery returns [`AssetMovementProvider`] handles carrying the resolved
+/// metadata; every operation lives on the handle, mirroring the reference
+/// `KeetaAssetMovementAnchorProvider`. A stored
+/// [`AssetMovementProviderInfo`] snapshot rebinds through
+/// [`provider`](Self::provider).
 pub struct AssetMovementClient {
 	context: AnchorContext,
 }
@@ -67,9 +69,9 @@ impl AssetMovementClient {
 	/// # Errors
 	///
 	/// Returns [`AnchorClientError`] when no metadata root can be read.
-	pub async fn providers(&self) -> Result<Vec<AssetMovementProvider>, AnchorClientError> {
+	pub async fn providers(&self) -> Result<Vec<AssetMovementProvider<'_>>, AnchorClientError> {
 		let providers = self.lookup(ProviderFilter::default()).await?;
-		Ok(providers)
+		Ok(self.handles(providers))
 	}
 
 	/// Every provider whose published `supportedAssets` satisfies `search`
@@ -81,12 +83,11 @@ impl AssetMovementClient {
 	pub async fn providers_for_transfer(
 		&self,
 		search: &ProviderSearch,
-	) -> Result<Vec<AssetMovementProvider>, AnchorClientError> {
-		let providers = self.providers().await?;
-		Ok(providers
-			.into_iter()
-			.filter(|provider| search.accepts(provider))
-			.collect())
+	) -> Result<Vec<AssetMovementProvider<'_>>, AnchorClientError> {
+		let mut providers = self.lookup(ProviderFilter::default()).await?;
+		providers.retain(|info| search.accepts(info));
+
+		Ok(self.handles(providers))
 	}
 
 	/// The provider with `id`, when one advertises asset movement.
@@ -97,9 +98,9 @@ impl AssetMovementClient {
 	pub async fn provider_by_id(
 		&self,
 		id: impl Into<String>,
-	) -> Result<Option<AssetMovementProvider>, AnchorClientError> {
+	) -> Result<Option<AssetMovementProvider<'_>>, AnchorClientError> {
 		let providers = self.lookup(ProviderFilter::by_id(id)).await?;
-		Ok(providers.into_iter().next())
+		Ok(providers.into_iter().next().map(|info| self.provider(info)))
 	}
 
 	/// The provider whose entry was signed by `account`, when present.
@@ -110,9 +111,9 @@ impl AssetMovementClient {
 	pub async fn provider_by_account(
 		&self,
 		account: impl Into<String>,
-	) -> Result<Option<AssetMovementProvider>, AnchorClientError> {
+	) -> Result<Option<AssetMovementProvider<'_>>, AnchorClientError> {
 		let providers = self.lookup(ProviderFilter::by_account(account)).await?;
-		Ok(providers.into_iter().next())
+		Ok(providers.into_iter().next().map(|info| self.provider(info)))
 	}
 
 	/// The legal disclaimers of the provider with `id`, or [`None`] when no
@@ -132,324 +133,11 @@ impl AssetMovementClient {
 		Ok(disclaimers)
 	}
 
-	/// Whether `provider` advertises `operation`.
-	pub fn is_operation_supported(&self, provider: &AssetMovementProvider, operation: impl AsRef<str>) -> bool {
-		provider.operations.contains(operation)
-	}
-
-	/// Simulate a transfer, returning the instruction choices without committing.
-	///
-	/// # Errors
-	///
-	/// Returns [`AnchorClientError::UnsupportedOperation`] when the provider
-	/// does not advertise `simulateTransfer`, or any request failure.
-	pub async fn simulate_transfer(
-		&self,
-		provider: &AssetMovementProvider,
-		request: &TransferRequest,
-	) -> Result<SimulatedTransfer, AnchorClientError> {
-		let (endpoint, auth) = operation(provider, "simulateTransfer")?;
-		let signed = request.signable()?;
-		self.post(&endpoint, auth, &[], request.transport_fields(), &signed)
-			.await
-	}
-
-	/// Initiate a transfer. The request's recipient is required.
-	///
-	/// # Errors
-	///
-	/// Returns [`AnchorClientError::UnsupportedOperation`] when the provider
-	/// does not advertise `initiateTransfer`, [`AnchorClientError::Body`] when
-	/// the recipient is missing, or any request failure.
-	pub async fn initiate_transfer(
-		&self,
-		provider: &AssetMovementProvider,
-		request: &TransferRequest,
-	) -> Result<Transfer, AnchorClientError> {
-		if request.to.recipient.is_none() {
-			return Err(AnchorClientError::Body { reason: "initiateTransfer requires a recipient".to_string() });
-		}
-
-		let (endpoint, auth) = operation(provider, "initiateTransfer")?;
-		let signed = request.signable()?;
-		self.post(&endpoint, auth, &[], request.transport_fields(), &signed)
-			.await
-	}
-
-	/// Execute a pull instruction for a transfer.
-	///
-	/// # Errors
-	///
-	/// Returns [`AnchorClientError::UnsupportedOperation`] when the provider
-	/// does not advertise `executeTransfer`, or any request failure.
-	pub async fn execute_transfer(
-		&self,
-		provider: &AssetMovementProvider,
-		request: &ExecuteTransferRequest,
-	) -> Result<TransferStatus, AnchorClientError> {
-		let (endpoint, auth) = operation(provider, "executeTransfer")?;
-		let signed = request.signable()?;
-		let params = [("id", request.id.as_str())];
-		self.post(&endpoint, auth, &params, request.transport_fields(), &signed)
-			.await
-	}
-
-	/// Read the status of transfer `id` (signed URL).
-	///
-	/// # Errors
-	///
-	/// Returns [`AnchorClientError::UnsupportedOperation`] when the provider
-	/// does not advertise `getTransferStatus`, or any request failure.
-	pub async fn transfer_status(
-		&self,
-		provider: &AssetMovementProvider,
-		id: impl AsRef<str>,
-	) -> Result<TransferStatus, AnchorClientError> {
-		let id = id.as_ref();
-		let (endpoint, auth) = operation(provider, "getTransferStatus")?;
-		let signed = id_literal("get-transaction", id);
-		let params = [("id", id)];
-		self.get(&endpoint, auth, &params, &signed).await
-	}
-
-	/// Read whether the signer's account is ready to use this provider.
-	///
-	/// Resolves the transport `actionRequired` discriminant into [`AccountStatus`],
-	/// folding a recognized asset-movement blocker returned as an error into
-	/// [`AccountStatus::ActionRequired`]. A request-level failure still errors.
-	///
-	/// # Errors
-	///
-	/// Returns [`AnchorClientError::UnsupportedOperation`] when the provider
-	/// does not advertise `getAccountStatus`, [`AnchorClientError::Service`]
-	/// when the anchor returns an unrecognized error, or any request failure.
-	pub async fn account_status(&self, provider: &AssetMovementProvider) -> Result<AccountStatus, AnchorClientError> {
-		let (endpoint, auth) = operation(provider, "getAccountStatus")?;
-		let signed = literal(&["get-account-status"]);
-		let mut fields = Fields::new();
-		fields.insert("account".into(), Value::String(self.account().to_string()));
-		let auth = post_auth(auth);
-		let call = Call {
-			endpoint: &endpoint,
-			params: &[],
-			method: Method::Post,
-			auth,
-			signed: &signed,
-			envelope: BodyEnvelope::Flat,
-			body: Some(Value::Object(fields)),
-		};
-
-		let response = self.context.caller().send(call).await?;
-		let body: Value = serde_json::from_slice(&response.body)
-			.map_err(|error| AnchorClientError::Body { reason: error.to_string() })?;
-		resolve_account_status(&body, response.status)
-	}
-
-	/// Deactivate a persistent-forwarding template by id.
-	///
-	/// # Errors
-	///
-	/// Returns [`AnchorClientError::UnsupportedOperation`] when the provider
-	/// does not advertise `deactivatePersistentForwardingTemplate`, or any
-	/// request failure.
-	pub async fn deactivate_persistent_forwarding_template(
-		&self,
-		provider: &AssetMovementProvider,
-		id: impl AsRef<str>,
-	) -> Result<(), AnchorClientError> {
-		self.deactivate(
-			provider,
-			"deactivatePersistentForwardingTemplate",
-			"deactivate-persistent-forwarding-template",
-			id.as_ref(),
-		)
-		.await
-	}
-
-	/// Deactivate a persistent-forwarding address by id.
-	///
-	/// # Errors
-	///
-	/// Returns [`AnchorClientError::UnsupportedOperation`] when the provider
-	/// does not advertise `deactivatePersistentForwarding`, or any request
-	/// failure.
-	pub async fn deactivate_persistent_forwarding_address(
-		&self,
-		provider: &AssetMovementProvider,
-		id: impl AsRef<str>,
-	) -> Result<(), AnchorClientError> {
-		self.deactivate(
-			provider,
-			"deactivatePersistentForwarding",
-			"deactivate-persistent-forwarding-address",
-			id.as_ref(),
-		)
-		.await
-	}
-
-	/// Open a persistent-forwarding template session.
-	///
-	/// # Errors
-	///
-	/// Returns [`AnchorClientError::UnsupportedOperation`] when the provider
-	/// does not advertise `initiatePersistentForwardingTemplate`, or any
-	/// request failure.
-	pub async fn initiate_persistent_forwarding_template(
-		&self,
-		provider: &AssetMovementProvider,
-		request: &InitiatePersistentForwardingTemplateRequest,
-	) -> Result<TemplateSession, AnchorClientError> {
-		let (endpoint, auth) = operation(provider, "initiatePersistentForwardingTemplate")?;
-		let signed = request.signable()?;
-		let fields = request.transport_fields();
-
-		self.post(&endpoint, auth, &[], fields, &signed).await
-	}
-
-	/// Create a persistent-forwarding template.
-	///
-	/// # Errors
-	///
-	/// Returns [`AnchorClientError::UnsupportedOperation`] when the provider
-	/// does not advertise `createPersistentForwardingTemplate`, or any request
-	/// failure.
-	pub async fn create_persistent_forwarding_template(
-		&self,
-		provider: &AssetMovementProvider,
-		request: &CreatePersistentForwardingTemplateRequest,
-	) -> Result<ForwardingTemplate, AnchorClientError> {
-		let (endpoint, auth) = operation(provider, "createPersistentForwardingTemplate")?;
-		let signed = request.signable()?;
-		let fields = request.transport_fields();
-
-		self.post(&endpoint, auth, &[], fields, &signed).await
-	}
-
-	/// List persistent-forwarding templates.
-	///
-	/// # Errors
-	///
-	/// Returns [`AnchorClientError::UnsupportedOperation`] when the provider
-	/// does not advertise `listPersistentForwardingTemplate`, or any request
-	/// failure.
-	pub async fn list_forwarding_address_templates(
-		&self,
-		provider: &AssetMovementProvider,
-		request: &ListForwardingAddressTemplatesRequest,
-	) -> Result<TemplatePage, AnchorClientError> {
-		let (endpoint, auth) = operation(provider, "listPersistentForwardingTemplate")?;
-		let signed = request.signable();
-		let fields = request.transport_fields();
-
-		self.post(&endpoint, auth, &[], fields, &signed).await
-	}
-
-	/// Create a persistent-forwarding address, returning its (obfuscated)
-	/// details.
-	///
-	/// # Errors
-	///
-	/// Returns [`AnchorClientError::UnsupportedOperation`] when the provider
-	/// does not advertise `createPersistentForwarding`, or any request failure.
-	pub async fn create_persistent_forwarding_address(
-		&self,
-		provider: &AssetMovementProvider,
-		request: &CreatePersistentForwardingAddressRequest,
-	) -> Result<ForwardingAddress, AnchorClientError> {
-		let (endpoint, auth) = operation(provider, "createPersistentForwarding")?;
-		let signed = request.signable()?;
-		let fields = request.transport_fields();
-
-		self.post(&endpoint, auth, &[], fields, &signed).await
-	}
-
-	/// List persistent-forwarding addresses.
-	///
-	/// # Errors
-	///
-	/// Returns [`AnchorClientError::UnsupportedOperation`] when the provider
-	/// does not advertise `listPersistentForwarding`, or any request failure.
-	pub async fn list_forwarding_addresses(
-		&self,
-		provider: &AssetMovementProvider,
-		request: &ListForwardingAddressesRequest,
-	) -> Result<AddressPage, AnchorClientError> {
-		let (endpoint, auth) = operation(provider, "listPersistentForwarding")?;
-		let signed = request.signable();
-		let fields = request.transport_fields();
-
-		self.post(&endpoint, auth, &[], fields, &signed).await
-	}
-
-	/// List asset-movement transactions.
-	///
-	/// # Errors
-	///
-	/// Returns [`AnchorClientError::UnsupportedOperation`] when the provider
-	/// does not advertise `listTransactions`, or any request failure.
-	pub async fn list_transactions(
-		&self,
-		provider: &AssetMovementProvider,
-		request: &ListTransactionsRequest,
-	) -> Result<TransactionPage, AnchorClientError> {
-		let (endpoint, auth) = operation(provider, "listTransactions")?;
-		let signed = request.signable();
-		let fields = request.transport_fields();
-
-		self.post(&endpoint, auth, &[], fields, &signed).await
-	}
-
-	/// Share KYC attributes with the provider.
-	///
-	/// Returns the anchor's outcome; when [`ShareKycOutcome::is_pending`] is set
-	/// the caller polls [`ShareKycOutcome::promise_url`] until it completes.
-	///
-	/// # Errors
-	///
-	/// Returns [`AnchorClientError::UnsupportedOperation`] when the provider
-	/// does not advertise `shareKYC`, or any request failure.
-	pub async fn share_kyc_attributes(
-		&self,
-		provider: &AssetMovementProvider,
-		request: &ShareKycRequest,
-	) -> Result<ShareKycOutcome, AnchorClientError> {
-		let (endpoint, auth) = operation(provider, "shareKYC")?;
-		let signed = request.signable();
-		self.post(&endpoint, auth, &[], request.transport_fields(), &signed)
-			.await
-	}
-
-	/// Share KYC attributes and, when the anchor reports the share pending with
-	/// a promise URL, poll that URL to completion.
-	///
-	/// `sleep` pauses between polls; `options` bounds the interval and overall
-	/// deadline. Elapsed time is summed from the observed delays, so no wall
-	/// clock is required.
-	///
-	/// # Errors
-	///
-	/// Returns [`AnchorClientError::UnsupportedOperation`] when the provider
-	/// does not advertise `shareKYC`, [`AnchorClientError::Timeout`] when the
-	/// promise does not resolve within `options.timeout_ms`, or any request
-	/// failure.
-	pub async fn share_kyc_attributes_and_wait<S, Fut>(
-		&self,
-		provider: &AssetMovementProvider,
-		request: &ShareKycRequest,
-		options: AwaitOptions,
-		sleep: S,
-	) -> Result<ShareKycOutcome, AnchorClientError>
-	where
-		S: Fn(u32) -> Fut,
-		Fut: Future<Output = ()>,
-	{
-		let outcome = self.share_kyc_attributes(provider, request).await?;
-		let Some(promise_url) = outcome.promise_url.clone().filter(|_| outcome.is_pending) else {
-			return Ok(outcome);
-		};
-
-		let url = self.resolve_promise_url(provider, &promise_url)?;
-		self.poll_promise(&url, options, sleep).await
+	/// Bind a stored [`AssetMovementProviderInfo`] snapshot back to this
+	/// client, yielding the operation-carrying handle. This is the stateless
+	/// per-call primitive FFI layers rebind through.
+	pub fn provider(&self, info: AssetMovementProviderInfo) -> AssetMovementProvider<'_> {
+		AssetMovementProvider { client: self, info }
 	}
 
 	/// The signer's account string.
@@ -457,27 +145,13 @@ impl AssetMovementClient {
 		self.context.caller().account()
 	}
 
-	/// Deactivate the resource `id` through the advertised `operation_name`,
-	/// signing the `signed_name` literal, discarding the response body.
-	async fn deactivate(
-		&self,
-		provider: &AssetMovementProvider,
-		operation_name: &'static str,
-		signed_name: &'static str,
-		id: &str,
-	) -> Result<(), AnchorClientError> {
-		let (endpoint, auth) = operation(provider, operation_name)?;
-		let signed = id_literal(signed_name, id);
-		let params = [("id", id)];
-		let _: Value = self
-			.post(&endpoint, auth, &params, Fields::new(), &signed)
-			.await?;
-
-		Ok(())
+	/// Bind each discovered snapshot to this client.
+	fn handles(&self, infos: Vec<AssetMovementProviderInfo>) -> Vec<AssetMovementProvider<'_>> {
+		infos.into_iter().map(|info| self.provider(info)).collect()
 	}
 
-	/// Discover providers matching `filter`.
-	async fn lookup(&self, filter: ProviderFilter) -> Result<Vec<AssetMovementProvider>, AnchorClientError> {
+	/// Discover provider snapshots matching `filter`.
+	async fn lookup(&self, filter: ProviderFilter) -> Result<Vec<AssetMovementProviderInfo>, AnchorClientError> {
 		let providers = self
 			.context
 			.resolver()
@@ -523,24 +197,13 @@ impl AssetMovementClient {
 			true => Auth::SignedUrl,
 			false => Auth::None,
 		};
-		let call =
-			Call { endpoint, params, method: Method::Get, auth, signed, envelope: BodyEnvelope::Flat, body: None };
+
+		let method = Method::Get;
+		let envelope = BodyEnvelope::Flat;
+		let call = Call { endpoint, params, method, auth, signed, envelope, body: None };
 		let outcome = self.context.caller().invoke(call).await?;
 
 		expect_ready(outcome)
-	}
-
-	/// Resolve a (possibly relative) share-KYC promise URL against the
-	/// provider's `shareKYC` endpoint.
-	fn resolve_promise_url(
-		&self,
-		provider: &AssetMovementProvider,
-		promise_url: &str,
-	) -> Result<String, AnchorClientError> {
-		let (endpoint, _auth) = operation(provider, "shareKYC")?;
-		let base = endpoint.url(&[])?;
-
-		join_promise_url(base.as_str(), promise_url)
 	}
 
 	/// Poll `url` until the anchor reports the pending share complete, pausing
@@ -594,6 +257,380 @@ impl AssetMovementClient {
 	}
 }
 
+/// A discovered provider bound to its client, the reference
+/// `KeetaAssetMovementAnchorProvider`: every operation lives here, and the
+/// resolved metadata snapshot is reachable through [`Deref`] and
+/// [`info`](Self::info).
+///
+/// The handle holds nothing live so it is freely cloned and cheaply rebound from
+/// a stored snapshot via [`AssetMovementClient::provider`].
+#[derive(Clone)]
+pub struct AssetMovementProvider<'c> {
+	client: &'c AssetMovementClient,
+	info: AssetMovementProviderInfo,
+}
+
+impl Deref for AssetMovementProvider<'_> {
+	type Target = AssetMovementProviderInfo;
+
+	fn deref(&self) -> &Self::Target {
+		&self.info
+	}
+}
+
+impl AssetMovementProvider<'_> {
+	/// The resolved metadata snapshot.
+	pub fn info(&self) -> &AssetMovementProviderInfo {
+		&self.info
+	}
+
+	/// Unwrap the handle into its metadata snapshot, e.g. for storage or for
+	/// crossing an FFI boundary.
+	pub fn into_info(self) -> AssetMovementProviderInfo {
+		self.info
+	}
+
+	/// Whether the provider advertises `operation`.
+	pub fn is_operation_supported(&self, operation: impl AsRef<str>) -> bool {
+		self.info.operations.contains(operation)
+	}
+
+	/// Simulate a transfer, returning the instruction choices without committing.
+	///
+	/// # Errors
+	///
+	/// Returns [`AnchorClientError::UnsupportedOperation`] when the provider
+	/// does not advertise `simulateTransfer`, or any request failure.
+	pub async fn simulate_transfer(&self, request: &TransferRequest) -> Result<SimulatedTransfer, AnchorClientError> {
+		let (endpoint, auth) = self.operation("simulateTransfer")?;
+		let signed = request.signable()?;
+		self.client
+			.post(&endpoint, auth, &[], request.transport_fields(), &signed)
+			.await
+	}
+
+	/// Initiate a transfer. The request's recipient is required.
+	///
+	/// # Errors
+	///
+	/// Returns [`AnchorClientError::UnsupportedOperation`] when the provider
+	/// does not advertise `initiateTransfer`, [`AnchorClientError::Body`] when
+	/// the recipient is missing, or any request failure.
+	pub async fn initiate_transfer(&self, request: &TransferRequest) -> Result<Transfer, AnchorClientError> {
+		if request.to.recipient.is_none() {
+			return Err(AnchorClientError::Body { reason: "initiateTransfer requires a recipient".to_string() });
+		}
+
+		let (endpoint, auth) = self.operation("initiateTransfer")?;
+		let signed = request.signable()?;
+		self.client
+			.post(&endpoint, auth, &[], request.transport_fields(), &signed)
+			.await
+	}
+
+	/// Execute a pull instruction for a transfer.
+	///
+	/// # Errors
+	///
+	/// Returns [`AnchorClientError::UnsupportedOperation`] when the provider
+	/// does not advertise `executeTransfer`, or any request failure.
+	pub async fn execute_transfer(
+		&self,
+		request: &ExecuteTransferRequest,
+	) -> Result<TransferStatus, AnchorClientError> {
+		let (endpoint, auth) = self.operation("executeTransfer")?;
+		let signed = request.signable()?;
+		let params = [("id", request.id.as_str())];
+		self.client
+			.post(&endpoint, auth, &params, request.transport_fields(), &signed)
+			.await
+	}
+
+	/// Read the status of transfer `id` (signed URL).
+	///
+	/// # Errors
+	///
+	/// Returns [`AnchorClientError::UnsupportedOperation`] when the provider
+	/// does not advertise `getTransferStatus`, or any request failure.
+	pub async fn transfer_status(&self, id: impl AsRef<str>) -> Result<TransferStatus, AnchorClientError> {
+		let id = id.as_ref();
+		let (endpoint, auth) = self.operation("getTransferStatus")?;
+		let signed = id_literal("get-transaction", id);
+		let params = [("id", id)];
+		self.client.get(&endpoint, auth, &params, &signed).await
+	}
+
+	/// Read whether the signer's account is ready to use this provider.
+	///
+	/// Resolves the transport `actionRequired` discriminant into [`AccountStatus`],
+	/// folding a recognized asset-movement blocker returned as an error into
+	/// [`AccountStatus::ActionRequired`]. A request-level failure still errors.
+	///
+	/// # Errors
+	///
+	/// Returns [`AnchorClientError::UnsupportedOperation`] when the provider
+	/// does not advertise `getAccountStatus`, [`AnchorClientError::Service`]
+	/// when the anchor returns an unrecognized error, or any request failure.
+	pub async fn account_status(&self) -> Result<AccountStatus, AnchorClientError> {
+		let (endpoint, auth) = self.operation("getAccountStatus")?;
+		let signed = literal(&["get-account-status"]);
+		let mut fields = Fields::new();
+		fields.insert("account".into(), Value::String(self.client.account().to_string()));
+		let auth = post_auth(auth);
+		let call = Call {
+			endpoint: &endpoint,
+			params: &[],
+			method: Method::Post,
+			auth,
+			signed: &signed,
+			envelope: BodyEnvelope::Flat,
+			body: Some(Value::Object(fields)),
+		};
+
+		let response = self.client.context.caller().send(call).await?;
+		let body: Value = serde_json::from_slice(&response.body)
+			.map_err(|error| AnchorClientError::Body { reason: error.to_string() })?;
+		resolve_account_status(&body, response.status)
+	}
+
+	/// Deactivate a persistent-forwarding template by id.
+	///
+	/// # Errors
+	///
+	/// Returns [`AnchorClientError::UnsupportedOperation`] when the provider
+	/// does not advertise `deactivatePersistentForwardingTemplate`, or any
+	/// request failure.
+	pub async fn deactivate_persistent_forwarding_template(
+		&self,
+		id: impl AsRef<str>,
+	) -> Result<(), AnchorClientError> {
+		self.deactivate(
+			"deactivatePersistentForwardingTemplate",
+			"deactivate-persistent-forwarding-template",
+			id.as_ref(),
+		)
+		.await
+	}
+
+	/// Deactivate a persistent-forwarding address by id.
+	///
+	/// # Errors
+	///
+	/// Returns [`AnchorClientError::UnsupportedOperation`] when the provider
+	/// does not advertise `deactivatePersistentForwarding`, or any request
+	/// failure.
+	pub async fn deactivate_persistent_forwarding_address(&self, id: impl AsRef<str>) -> Result<(), AnchorClientError> {
+		self.deactivate("deactivatePersistentForwarding", "deactivate-persistent-forwarding-address", id.as_ref())
+			.await
+	}
+
+	/// Open a persistent-forwarding template session.
+	///
+	/// # Errors
+	///
+	/// Returns [`AnchorClientError::UnsupportedOperation`] when the provider
+	/// does not advertise `initiatePersistentForwardingTemplate`, or any
+	/// request failure.
+	pub async fn initiate_persistent_forwarding_template(
+		&self,
+		request: &InitiatePersistentForwardingTemplateRequest,
+	) -> Result<TemplateSession, AnchorClientError> {
+		let (endpoint, auth) = self.operation("initiatePersistentForwardingTemplate")?;
+		let signed = request.signable()?;
+		let fields = request.transport_fields();
+
+		self.client
+			.post(&endpoint, auth, &[], fields, &signed)
+			.await
+	}
+
+	/// Create a persistent-forwarding template.
+	///
+	/// # Errors
+	///
+	/// Returns [`AnchorClientError::UnsupportedOperation`] when the provider
+	/// does not advertise `createPersistentForwardingTemplate`, or any request
+	/// failure.
+	pub async fn create_persistent_forwarding_template(
+		&self,
+		request: &CreatePersistentForwardingTemplateRequest,
+	) -> Result<ForwardingTemplate, AnchorClientError> {
+		let (endpoint, auth) = self.operation("createPersistentForwardingTemplate")?;
+		let signed = request.signable()?;
+		let fields = request.transport_fields();
+
+		self.client
+			.post(&endpoint, auth, &[], fields, &signed)
+			.await
+	}
+
+	/// List persistent-forwarding templates.
+	///
+	/// # Errors
+	///
+	/// Returns [`AnchorClientError::UnsupportedOperation`] when the provider
+	/// does not advertise `listPersistentForwardingTemplate`, or any request
+	/// failure.
+	pub async fn list_forwarding_address_templates(
+		&self,
+		request: &ListForwardingAddressTemplatesRequest,
+	) -> Result<TemplatePage, AnchorClientError> {
+		let (endpoint, auth) = self.operation("listPersistentForwardingTemplate")?;
+		let signed = request.signable();
+		let fields = request.transport_fields();
+
+		self.client
+			.post(&endpoint, auth, &[], fields, &signed)
+			.await
+	}
+
+	/// Create a persistent-forwarding address, returning its (obfuscated)
+	/// details.
+	///
+	/// # Errors
+	///
+	/// Returns [`AnchorClientError::UnsupportedOperation`] when the provider
+	/// does not advertise `createPersistentForwarding`, or any request failure.
+	pub async fn create_persistent_forwarding_address(
+		&self,
+		request: &CreatePersistentForwardingAddressRequest,
+	) -> Result<ForwardingAddress, AnchorClientError> {
+		let (endpoint, auth) = self.operation("createPersistentForwarding")?;
+		let signed = request.signable()?;
+		let fields = request.transport_fields();
+
+		self.client
+			.post(&endpoint, auth, &[], fields, &signed)
+			.await
+	}
+
+	/// List persistent-forwarding addresses.
+	///
+	/// # Errors
+	///
+	/// Returns [`AnchorClientError::UnsupportedOperation`] when the provider
+	/// does not advertise `listPersistentForwarding`, or any request failure.
+	pub async fn list_forwarding_addresses(
+		&self,
+		request: &ListForwardingAddressesRequest,
+	) -> Result<AddressPage, AnchorClientError> {
+		let (endpoint, auth) = self.operation("listPersistentForwarding")?;
+		let signed = request.signable();
+		let fields = request.transport_fields();
+
+		self.client
+			.post(&endpoint, auth, &[], fields, &signed)
+			.await
+	}
+
+	/// List asset-movement transactions.
+	///
+	/// # Errors
+	///
+	/// Returns [`AnchorClientError::UnsupportedOperation`] when the provider
+	/// does not advertise `listTransactions`, or any request failure.
+	pub async fn list_transactions(
+		&self,
+		request: &ListTransactionsRequest,
+	) -> Result<TransactionPage, AnchorClientError> {
+		let (endpoint, auth) = self.operation("listTransactions")?;
+		let signed = request.signable();
+		let fields = request.transport_fields();
+
+		self.client
+			.post(&endpoint, auth, &[], fields, &signed)
+			.await
+	}
+
+	/// Share KYC attributes with the provider.
+	///
+	/// Returns the anchor's outcome; when [`ShareKycOutcome::is_pending`] is set
+	/// the caller polls [`ShareKycOutcome::promise_url`] until it completes.
+	///
+	/// # Errors
+	///
+	/// Returns [`AnchorClientError::UnsupportedOperation`] when the provider
+	/// does not advertise `shareKYC`, or any request failure.
+	pub async fn share_kyc_attributes(&self, request: &ShareKycRequest) -> Result<ShareKycOutcome, AnchorClientError> {
+		let (endpoint, auth) = self.operation("shareKYC")?;
+		let signed = request.signable();
+		self.client
+			.post(&endpoint, auth, &[], request.transport_fields(), &signed)
+			.await
+	}
+
+	/// Share KYC attributes and, when the anchor reports the share pending with
+	/// a promise URL, poll that URL to completion.
+	///
+	/// `sleep` pauses between polls; `options` bounds the interval and overall
+	/// deadline. Elapsed time is summed from the observed delays, so no wall
+	/// clock is required.
+	///
+	/// # Errors
+	///
+	/// Returns [`AnchorClientError::UnsupportedOperation`] when the provider
+	/// does not advertise `shareKYC`, [`AnchorClientError::Timeout`] when the
+	/// promise does not resolve within `options.timeout_ms`, or any request
+	/// failure.
+	pub async fn share_kyc_attributes_and_wait<S, Fut>(
+		&self,
+		request: &ShareKycRequest,
+		options: AwaitOptions,
+		sleep: S,
+	) -> Result<ShareKycOutcome, AnchorClientError>
+	where
+		S: Fn(u32) -> Fut,
+		Fut: Future<Output = ()>,
+	{
+		let outcome = self.share_kyc_attributes(request).await?;
+		let Some(promise_url) = outcome.promise_url.clone().filter(|_| outcome.is_pending) else {
+			return Ok(outcome);
+		};
+
+		let url = self.resolve_promise_url(&promise_url)?;
+		self.client.poll_promise(&url, options, sleep).await
+	}
+
+	/// The endpoint and authentication for an advertised operation, or a typed
+	/// error naming the missing one.
+	fn operation(&self, name: &'static str) -> Result<(Endpoint, EndpointAuth), AnchorClientError> {
+		let endpoint = self
+			.info
+			.operations
+			.get(name)
+			.ok_or(AnchorClientError::UnsupportedOperation { operation: name })?;
+		Ok((Endpoint::from(endpoint.url.as_str()), endpoint.auth))
+	}
+
+	/// Deactivate the resource `id` through the advertised `operation_name`,
+	/// signing the `signed_name` literal, discarding the response body.
+	async fn deactivate(
+		&self,
+		operation_name: &'static str,
+		signed_name: &'static str,
+		id: &str,
+	) -> Result<(), AnchorClientError> {
+		let (endpoint, auth) = self.operation(operation_name)?;
+		let signed = id_literal(signed_name, id);
+		let params = [("id", id)];
+		let _: Value = self
+			.client
+			.post(&endpoint, auth, &params, Fields::new(), &signed)
+			.await?;
+
+		Ok(())
+	}
+
+	/// Resolve a (possibly relative) share-KYC promise URL against the
+	/// provider's `shareKYC` endpoint.
+	fn resolve_promise_url(&self, promise_url: &str) -> Result<String, AnchorClientError> {
+		let (endpoint, _auth) = self.operation("shareKYC")?;
+		let base = endpoint.url(&[])?;
+
+		join_promise_url(base.as_str(), promise_url)
+	}
+}
+
 /// Resolve a promise URL against the share-KYC endpoint `base`. An absolute
 /// promise URL replaces the base; a root- or path-relative one is joined onto
 /// it.
@@ -601,19 +638,6 @@ fn join_promise_url(base: &str, promise: &str) -> Result<String, AnchorClientErr
 	let base = url::Url::parse(base)?;
 	let joined = base.join(promise)?;
 	Ok(joined.to_string())
-}
-
-/// The endpoint and authentication for an advertised operation, or a typed
-/// error naming the missing one.
-fn operation(
-	provider: &AssetMovementProvider,
-	name: &'static str,
-) -> Result<(Endpoint, EndpointAuth), AnchorClientError> {
-	let endpoint = provider
-		.operations
-		.get(name)
-		.ok_or(AnchorClientError::UnsupportedOperation { operation: name })?;
-	Ok((Endpoint::from(endpoint.url.as_str()), endpoint.auth))
 }
 
 /// The `POST` auth mode for a metadata auth requirement.

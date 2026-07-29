@@ -6,48 +6,44 @@ mod common;
 mod harness;
 
 use std::error::Error;
-use std::str::FromStr;
-use std::sync::Arc;
 
-use common::account_from_seed;
-use harness::{issue_attributes, HarnessError, KycHarness, SUBJECT_SEED};
-use keetanetwork_account::GenericAccount;
-use keetanetwork_anchor_client::{
-	AnchorContext, AnchorOutcome, CountryCode, KeetaClient, KycClient, ReqwestTransport, Resolver, SupportedCountries,
-};
+use common::live_context;
+use harness::{issue_attributes, HarnessError, KycAnchor, KycHarness, SUBJECT_SEED};
+use keetanetwork_anchor_client::{AnchorOutcome, CountryCode, KycClient, KycProvider, SupportedCountries};
 use serde_json::Value;
 
 type TestResult = Result<(), Box<dyn Error>>;
 
-/// A KYC client whose resolver reads the `root` account's on-chain metadata
-/// through the node client at `api`, and whose caller signs with a
-/// deterministic account over the live reqwest transport.
-fn client_for(api: &str, root: &str) -> Result<KycClient, Box<dyn Error>> {
-	let transport = Arc::new(ReqwestTransport::try_default()?);
-	let client = KeetaClient::new(api);
-	let resolver = Resolver::new(client, transport.clone(), [GenericAccount::from_str(root)?]);
-	let signer = Arc::new(GenericAccount::EcdsaSecp256k1(account_from_seed(0x11)));
-	let context = AnchorContext::new(resolver, transport, signer);
+/// A started harness anchor publishing `countries`, and the live client bound
+/// to it over the shared [`live_context`].
+fn started_anchor(countries: Option<&[&str]>) -> Result<(KycHarness, KycAnchor, KycClient), Box<dyn Error>> {
+	let mut harness = KycHarness::start()?;
+	let anchor = harness.start_kyc_anchor(countries, true)?;
+	let context = live_context(&anchor.api, &anchor.root)?;
+	let client = KycClient::new(context);
 
-	Ok(KycClient::new(context))
+	Ok((harness, anchor, client))
+}
+
+/// The first discovered provider, or the missing-field harness error.
+fn first_provider(providers: Vec<KycProvider<'_>>) -> Result<KycProvider<'_>, HarnessError> {
+	providers
+		.into_iter()
+		.next()
+		.ok_or(HarnessError::MissingField { field: "kyc provider" })
 }
 
 #[tokio::test]
 async fn kyc_client_runs_the_full_verification_path() -> TestResult {
-	let mut harness = KycHarness::start()?;
-	let anchor = harness.start_kyc_anchor(Some(&["US"]), true)?;
-	let client = client_for(&anchor.api, &anchor.root)?;
+	let (mut harness, anchor, client) = started_anchor(Some(&["US"]))?;
 
 	let countries = [CountryCode::try_from("US")?];
 	let providers = client.providers(&countries).await?;
-	let provider = providers
-		.into_iter()
-		.next()
-		.ok_or(HarnessError::MissingField { field: "kyc provider" })?;
+	let provider = first_provider(providers)?;
 	assert_eq!(provider.id, anchor.provider_id, "discovered provider id diverges");
 
-	let verification = client
-		.create_verification(&provider, &countries, None)
+	let verification = provider
+		.create_verification(&countries, None)
 		.await?
 		.ready()
 		.ok_or(HarnessError::MissingField { field: "verification" })?;
@@ -57,15 +53,15 @@ async fn kyc_client_runs_the_full_verification_path() -> TestResult {
 
 	// A redirect URL rides the signed create body; the server must accept the
 	// extra field and still assign a verification.
-	let redirected = client
-		.create_verification(&provider, &countries, Some("https://example.test/done"))
+	let redirected = provider
+		.create_verification(&countries, Some("https://example.test/done"))
 		.await?
 		.ready()
 		.ok_or(HarnessError::MissingField { field: "redirected verification" })?;
 	assert!(!redirected.id.is_empty(), "a redirected create must assign a verification id");
 
-	let status = client
-		.get_verification_status(&provider, &verification.id)
+	let status = provider
+		.get_verification_status(&verification.id)
 		.await?
 		.ready()
 		.ok_or(HarnessError::MissingField { field: "verification status" })?;
@@ -76,11 +72,11 @@ async fn kyc_client_runs_the_full_verification_path() -> TestResult {
 		"the manual-review flag must survive the status decode"
 	);
 
-	let pending = client.get_certificates(&provider, "pending").await?;
+	let pending = provider.get_certificates("pending").await?;
 	assert!(matches!(pending, AnchorOutcome::Retry { .. }), "a pending certificate must ask the caller to retry");
 
-	let certificates = client
-		.get_certificates(&provider, "ready")
+	let certificates = provider
+		.get_certificates("ready")
 		.await?
 		.ready()
 		.ok_or(HarnessError::MissingField { field: "certificates" })?;
@@ -93,8 +89,8 @@ async fn kyc_client_runs_the_full_verification_path() -> TestResult {
 		.get("verificationID")
 		.and_then(Value::as_str)
 		.ok_or(HarnessError::MissingField { field: "verificationID" })?;
-	let chain = client
-		.get_certificates(&provider, verification_id)
+	let chain = provider
+		.get_certificates(verification_id)
 		.await?
 		.ready()
 		.ok_or(HarnessError::MissingField { field: "issued chain" })?;
@@ -106,12 +102,12 @@ async fn kyc_client_runs_the_full_verification_path() -> TestResult {
 
 #[tokio::test]
 async fn supported_countries_fold_across_the_published_providers() -> TestResult {
-	let mut harness = KycHarness::start()?;
-	let anchor = harness.start_kyc_anchor(Some(&["US", "DE", "DE"]), true)?;
-	let client = client_for(&anchor.api, &anchor.root)?;
+	let (harness, _anchor, client) = started_anchor(Some(&["US", "DE", "DE"]))?;
 
 	let supported = client.get_supported_countries().await?;
-	let expected = SupportedCountries::Countries(vec![CountryCode::try_from("DE")?, CountryCode::try_from("US")?]);
+	let germany = CountryCode::try_from("DE")?;
+	let united_states = CountryCode::try_from("US")?;
+	let expected = SupportedCountries::Countries(vec![germany, united_states]);
 	assert_eq!(supported, expected, "the published codes must fold sorted and deduplicated");
 
 	harness.shutdown()?;
@@ -120,9 +116,7 @@ async fn supported_countries_fold_across_the_published_providers() -> TestResult
 
 #[tokio::test]
 async fn an_unconfigured_provider_publishes_an_empty_country_union() -> TestResult {
-	let mut harness = KycHarness::start()?;
-	let anchor = harness.start_kyc_anchor(None, true)?;
-	let client = client_for(&anchor.api, &anchor.root)?;
+	let (harness, _anchor, client) = started_anchor(None)?;
 
 	// The reference server publishes `countryCodes: []` when none are configured.
 	let supported = client.get_supported_countries().await?;
@@ -134,21 +128,19 @@ async fn an_unconfigured_provider_publishes_an_empty_country_union() -> TestResu
 
 #[tokio::test]
 async fn kyc_client_rejects_a_provider_missing_an_operation() -> TestResult {
-	let mut harness = KycHarness::start()?;
-	let anchor = harness.start_kyc_anchor(Some(&["US"]), true)?;
-	let client = client_for(&anchor.api, &anchor.root)?;
+	let (harness, _anchor, client) = started_anchor(Some(&["US"]))?;
 
 	let countries = [CountryCode::try_from("US")?];
 	let providers = client.providers(&countries).await?;
-	let mut provider = providers
-		.into_iter()
-		.next()
-		.ok_or(HarnessError::MissingField { field: "kyc provider" })?;
+	let provider = first_provider(providers)?;
 
-	provider.operations.create_verification = None;
-	let outcome = client
-		.create_verification(&provider, &countries, None)
-		.await;
+	// A stored snapshot rebinds through `client.provider(info)`, here with the
+	// operation stripped to prove the typed rejection.
+	let mut narrowed_info = provider.into_info();
+	narrowed_info.operations.create_verification = None;
+
+	let rebound = client.provider(narrowed_info);
+	let outcome = rebound.create_verification(&countries, None).await;
 	assert!(outcome.is_err(), "a provider without createVerification must surface a typed error");
 
 	harness.shutdown()?;

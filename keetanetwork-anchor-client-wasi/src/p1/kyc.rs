@@ -14,7 +14,7 @@ use keetanetwork_anchor_bindings::error::CodedError;
 use keetanetwork_anchor_bindings::registry::HandleRegistry;
 use keetanetwork_anchor_client::{
 	AnchorClientError, AnchorContext, AnchorOutcome, Certificate, Certificates, CountryCode, ExpectedCost, KycClient,
-	KycOperations, KycProvider, Resolver, Verification, VerificationStatus,
+	KycOperations, KycProviderInfo, Resolver, Verification, VerificationStatus,
 };
 use keetanetwork_client_wasi::{bytes_result, string_in};
 use serde::{Deserialize, Serialize};
@@ -155,7 +155,15 @@ pub extern "C" fn keeta_kyc_free(handle: i32) {
 
 fn providers(handle: i32, countries_json: &str) -> Result<Vec<u8>, CodedError> {
 	let countries = parse_countries(countries_json)?;
-	let providers = with_session(handle, |client| block_on(async { client.providers(&countries).await }))?;
+	let providers = with_session(handle, |client| {
+		block_on(async {
+			let providers = client.providers(&countries).await?;
+			Ok(providers
+				.into_iter()
+				.map(|provider| provider.into_info())
+				.collect::<Vec<_>>())
+		})
+	})?;
 	let payload: Vec<ProviderDto> = providers.into_iter().map(ProviderDto::from).collect();
 
 	encode(&payload)
@@ -174,7 +182,8 @@ fn create_verification(
 	let outcome = with_session(handle, |client| {
 		block_on(async {
 			client
-				.create_verification(&provider, &countries, redirect)
+				.provider(provider)
+				.create_verification(&countries, redirect)
 				.await
 		})
 	})?;
@@ -184,7 +193,8 @@ fn create_verification(
 
 fn get_certificates(handle: i32, provider_json: &str, id: &str) -> Result<Vec<u8>, CodedError> {
 	let provider = parse_provider(provider_json)?;
-	let outcome = with_session(handle, |client| block_on(async { client.get_certificates(&provider, id).await }))?;
+	let outcome =
+		with_session(handle, |client| block_on(async { client.provider(provider).get_certificates(id).await }))?;
 
 	encode(&CertificatesOutcomeDto::from(outcome))
 }
@@ -192,7 +202,7 @@ fn get_certificates(handle: i32, provider_json: &str, id: &str) -> Result<Vec<u8
 fn get_verification_status(handle: i32, provider_json: &str, id: &str) -> Result<Vec<u8>, CodedError> {
 	let provider = parse_provider(provider_json)?;
 	let outcome =
-		with_session(handle, |client| block_on(async { client.get_verification_status(&provider, id).await }))?;
+		with_session(handle, |client| block_on(async { client.provider(provider).get_verification_status(id).await }))?;
 
 	encode(&StatusOutcomeDto::from(outcome))
 }
@@ -246,9 +256,8 @@ fn canonical(values: Vec<String>) -> Result<Vec<CountryCode>, CodedError> {
 }
 
 /// Parse a provider argument from its JSON representation.
-fn parse_provider(json: &str) -> Result<KycProvider, CodedError> {
+fn parse_provider(json: &str) -> Result<KycProviderInfo, CodedError> {
 	let dto: ProviderDto = serde_json::from_str(json).map_err(invalid_input)?;
-
 	provider_from_dto(dto)
 }
 
@@ -375,8 +384,8 @@ enum CertificatesOutcomeDto {
 // Domain <-> DTO conversions
 // ---------------------------------------------------------------------------
 
-impl From<KycProvider> for ProviderDto {
-	fn from(provider: KycProvider) -> Self {
+impl From<KycProviderInfo> for ProviderDto {
+	fn from(provider: KycProviderInfo) -> Self {
 		let country_codes = provider
 			.country_codes
 			.map(|codes| codes.iter().map(|code| code.as_str().to_string()).collect());
@@ -397,11 +406,11 @@ impl From<KycOperations> for OperationsDto {
 	}
 }
 
-/// Build a validated [`KycProvider`] from its DTO.
-fn provider_from_dto(dto: ProviderDto) -> Result<KycProvider, CodedError> {
+/// Build a validated [`KycProviderInfo`] from its DTO.
+fn provider_from_dto(dto: ProviderDto) -> Result<KycProviderInfo, CodedError> {
 	let country_codes = dto.country_codes.map(canonical).transpose()?;
 
-	Ok(KycProvider { id: dto.id, ca: dto.ca, operations: operations_from_dto(dto.operations), country_codes })
+	Ok(KycProviderInfo { id: dto.id, ca: dto.ca, operations: operations_from_dto(dto.operations), country_codes })
 }
 
 /// Build [`KycOperations`] from its DTO.

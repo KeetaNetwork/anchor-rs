@@ -1,6 +1,6 @@
 //! Service-metadata serialization structs and the validated KYC domain types.
 //!
-//! The serialization structs deserialize the JSON as-is; [`KycProvider`] is the
+//! The serialization structs deserialize the JSON as-is; [`KycProviderInfo`] is the
 //! validated domain value produced via [`TryFrom`].
 
 use alloc::string::{String, ToString};
@@ -14,7 +14,7 @@ use crate::error::ResolverError;
 /// The validated fields of a KYC provider entry.
 ///
 /// The signature (`account`/`signed`) and `legal` are verified separately from
-/// the raw entry, so this reads only the fields a [`KycProvider`] carries.
+/// the raw entry, so this reads only the fields a [`KycProviderInfo`] carries.
 #[derive(Debug, Clone, Deserialize)]
 pub(crate) struct KycProviderJson {
 	pub operations: Value,
@@ -95,9 +95,11 @@ impl TryFrom<&str> for CountryCode {
 	}
 }
 
-/// A validated KYC provider resolved from service metadata.
+/// The validated metadata snapshot of a KYC provider, the data a
+/// `KycProvider` handle (feature `kyc`) operates over. Re-resolving yields a
+/// fresh snapshot.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct KycProvider {
+pub struct KycProviderInfo {
 	/// The provider id (the key under `services.kyc`).
 	pub id: String,
 	/// The provider's operation endpoints.
@@ -108,7 +110,7 @@ pub struct KycProvider {
 	pub ca: String,
 }
 
-impl KycProvider {
+impl KycProviderInfo {
 	/// Whether this provider can validate accounts in every requested country.
 	///
 	/// A provider with no country list validates worldwide and always matches.
@@ -120,7 +122,7 @@ impl KycProvider {
 	}
 }
 
-impl TryFrom<(String, &Value)> for KycProvider {
+impl TryFrom<(String, &Value)> for KycProviderInfo {
 	type Error = ResolverError;
 
 	fn try_from((id, entry): (String, &Value)) -> Result<Self, Self::Error> {
@@ -180,10 +182,11 @@ mod tests {
 			},
 			"ca": "ca-pem"
 		});
-		let provider = KycProvider::try_from(("p".to_string(), &entry));
+
+		let provider = KycProviderInfo::try_from(("p".to_string(), &entry));
 		assert!(matches!(
 			provider,
-			Ok(KycProvider {
+			Ok(KycProviderInfo {
 				operations: KycOperations { create_verification: Some(create), get_certificates: Some(certs), .. },
 				..
 			}) if create == "https://kyc.example/create" && certs == "https://kyc.example/certs"
@@ -199,7 +202,7 @@ mod tests {
 
 	#[test]
 	fn worldwide_provider_matches_any_request() -> Result<(), ResolverError> {
-		let provider = KycProvider {
+		let provider = KycProviderInfo {
 			id: "p".to_string(),
 			operations: KycOperations::default(),
 			country_codes: None,
@@ -213,7 +216,7 @@ mod tests {
 
 	#[test]
 	fn bounded_provider_requires_all_requested_countries() -> Result<(), ResolverError> {
-		let provider = KycProvider {
+		let provider = KycProviderInfo {
 			id: "p".to_string(),
 			operations: KycOperations::default(),
 			country_codes: Some(alloc::vec![CountryCode::try_from("US")?]),

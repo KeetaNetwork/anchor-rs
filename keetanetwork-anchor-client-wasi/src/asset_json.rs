@@ -10,12 +10,13 @@ use std::collections::BTreeMap;
 use keetanetwork_anchor_bindings::error::CodedError;
 use keetanetwork_anchor_client::AssetMovementOperations;
 use keetanetwork_anchor_client::{
-	AccountStatus, AssetMovementBlocker, AssetMovementProvider, AssetOrPair, CreatePersistentForwardingAddressRequest,
-	CreatePersistentForwardingTemplateRequest, EndpointAuth, ExecuteTransferRequest, ForwardingAddressFilter,
-	ForwardingDestination, InitiatePersistentForwardingTemplateRequest, ListForwardingAddressTemplatesRequest,
-	ListForwardingAddressesRequest, ListTransactionsRequest, OperationEndpoint, Pagination, PersistentAddressFilter,
-	ProviderFilter, ProviderSearch, ShareKycRequest, TransactionEndpointFilter, TransactionRefFilter,
-	TransferDestination, TransferRequest, TransferSource,
+	AccountStatus, AssetMovementBlocker, AssetMovementProvider, AssetMovementProviderInfo, AssetOrPair,
+	CreatePersistentForwardingAddressRequest, CreatePersistentForwardingTemplateRequest, EndpointAuth,
+	ExecuteTransferRequest, ForwardingAddressFilter, ForwardingDestination,
+	InitiatePersistentForwardingTemplateRequest, ListForwardingAddressTemplatesRequest, ListForwardingAddressesRequest,
+	ListTransactionsRequest, OperationEndpoint, Pagination, PersistentAddressFilter, ProviderFilter, ProviderSearch,
+	ShareKycRequest, TransactionEndpointFilter, TransactionRefFilter, TransferDestination, TransferRequest,
+	TransferSource,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -47,13 +48,13 @@ where
 }
 
 /// Encode discovered providers as a JSON array.
-pub(crate) fn encode_providers(providers: Vec<AssetMovementProvider>) -> Result<Vec<u8>, CodedError> {
+pub(crate) fn encode_providers(providers: Vec<AssetMovementProviderInfo>) -> Result<Vec<u8>, CodedError> {
 	let payload: Vec<ProviderDto> = providers.into_iter().map(ProviderDto::from).collect();
 	encode(&payload)
 }
 
 /// Encode a single provider (or JSON `null` when absent).
-pub(crate) fn encode_provider(provider: Option<AssetMovementProvider>) -> Result<Vec<u8>, CodedError> {
+pub(crate) fn encode_provider(provider: Option<AssetMovementProviderInfo>) -> Result<Vec<u8>, CodedError> {
 	match provider {
 		Some(provider) => encode(&ProviderDto::from(provider)),
 		None => encode(&Value::Null),
@@ -74,11 +75,20 @@ pub(crate) fn encode_ack() -> Result<Vec<u8>, CodedError> {
 // Discovery
 // ---------------------------------------------------------------------------
 
+/// Unwrap discovered provider handles into their metadata snapshots for the
+/// JSON boundary.
+pub(crate) fn snapshots(providers: Vec<AssetMovementProvider<'_>>) -> Vec<AssetMovementProviderInfo> {
+	providers
+		.into_iter()
+		.map(AssetMovementProvider::into_info)
+		.collect()
+}
+
 /// Narrow discovered `providers` to those passing `filter` (id and account).
 pub(crate) fn filter_providers(
-	providers: Vec<AssetMovementProvider>,
+	providers: Vec<AssetMovementProviderInfo>,
 	filter: &ProviderFilter,
-) -> Vec<AssetMovementProvider> {
+) -> Vec<AssetMovementProviderInfo> {
 	providers
 		.into_iter()
 		.filter(|provider| accepts(filter, provider))
@@ -86,7 +96,7 @@ pub(crate) fn filter_providers(
 }
 
 /// Whether `provider` passes `filter` (id and account narrowing).
-fn accepts(filter: &ProviderFilter, provider: &AssetMovementProvider) -> bool {
+fn accepts(filter: &ProviderFilter, provider: &AssetMovementProviderInfo) -> bool {
 	let id_ok = filter.id.as_deref().is_none_or(|id| id == provider.id);
 	let account_ok = filter
 		.account
@@ -101,7 +111,7 @@ fn accepts(filter: &ProviderFilter, provider: &AssetMovementProvider) -> bool {
 // ---------------------------------------------------------------------------
 
 /// Parse a provider argument from its JSON representation.
-pub(crate) fn parse_provider(json: &str) -> Result<AssetMovementProvider, CodedError> {
+pub(crate) fn parse_provider(json: &str) -> Result<AssetMovementProviderInfo, CodedError> {
 	let dto: ProviderDto = serde_json::from_str(json).map_err(invalid_input)?;
 	Ok(dto.into())
 }
@@ -158,8 +168,8 @@ struct ProviderDto {
 	account: Option<String>,
 }
 
-impl From<AssetMovementProvider> for ProviderDto {
-	fn from(provider: AssetMovementProvider) -> Self {
+impl From<AssetMovementProviderInfo> for ProviderDto {
+	fn from(provider: AssetMovementProviderInfo) -> Self {
 		let operations = provider
 			.operations
 			.iter()
@@ -179,7 +189,7 @@ impl From<AssetMovementProvider> for ProviderDto {
 	}
 }
 
-impl From<ProviderDto> for AssetMovementProvider {
+impl From<ProviderDto> for AssetMovementProviderInfo {
 	fn from(dto: ProviderDto) -> Self {
 		let operations: AssetMovementOperations = dto
 			.operations
