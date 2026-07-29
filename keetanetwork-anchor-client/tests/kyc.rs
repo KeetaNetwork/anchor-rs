@@ -6,44 +6,40 @@ mod common;
 mod harness;
 
 use std::error::Error;
-use std::str::FromStr;
-use std::sync::Arc;
 
-use common::account_from_seed;
-use harness::{issue_attributes, HarnessError, KycHarness, SUBJECT_SEED};
-use keetanetwork_account::GenericAccount;
-use keetanetwork_anchor_client::{
-	AnchorContext, AnchorOutcome, CountryCode, KeetaClient, KycClient, ReqwestTransport, Resolver, SupportedCountries,
-};
+use common::live_context;
+use harness::{issue_attributes, HarnessError, KycAnchor, KycHarness, SUBJECT_SEED};
+use keetanetwork_anchor_client::{AnchorOutcome, CountryCode, KycClient, KycProvider, SupportedCountries};
 use serde_json::Value;
 
 type TestResult = Result<(), Box<dyn Error>>;
 
-/// A KYC client whose resolver reads the `root` account's on-chain metadata
-/// through the node client at `api`, and whose caller signs with a
-/// deterministic account over the live reqwest transport.
-fn client_for(api: &str, root: &str) -> Result<KycClient, Box<dyn Error>> {
-	let transport = Arc::new(ReqwestTransport::try_default()?);
-	let client = KeetaClient::new(api);
-	let resolver = Resolver::new(client, transport.clone(), [GenericAccount::from_str(root)?]);
-	let signer = Arc::new(GenericAccount::EcdsaSecp256k1(account_from_seed(0x11)));
-	let context = AnchorContext::new(resolver, transport, signer);
+/// A started harness anchor publishing `countries`, and the live client bound
+/// to it over the shared [`live_context`].
+fn started_anchor(countries: Option<&[&str]>) -> Result<(KycHarness, KycAnchor, KycClient), Box<dyn Error>> {
+	let mut harness = KycHarness::start()?;
+	let anchor = harness.start_kyc_anchor(countries, true)?;
+	let context = live_context(&anchor.api, &anchor.root)?;
+	let client = KycClient::new(context);
 
-	Ok(KycClient::new(context))
+	Ok((harness, anchor, client))
+}
+
+/// The first discovered provider, or the missing-field harness error.
+fn first_provider(providers: Vec<KycProvider<'_>>) -> Result<KycProvider<'_>, HarnessError> {
+	providers
+		.into_iter()
+		.next()
+		.ok_or(HarnessError::MissingField { field: "kyc provider" })
 }
 
 #[tokio::test]
 async fn kyc_client_runs_the_full_verification_path() -> TestResult {
-	let mut harness = KycHarness::start()?;
-	let anchor = harness.start_kyc_anchor(Some(&["US"]), true)?;
-	let client = client_for(&anchor.api, &anchor.root)?;
+	let (mut harness, anchor, client) = started_anchor(Some(&["US"]))?;
 
 	let countries = [CountryCode::try_from("US")?];
 	let providers = client.providers(&countries).await?;
-	let provider = providers
-		.into_iter()
-		.next()
-		.ok_or(HarnessError::MissingField { field: "kyc provider" })?;
+	let provider = first_provider(providers)?;
 	assert_eq!(provider.id, anchor.provider_id, "discovered provider id diverges");
 
 	let verification = provider
@@ -106,9 +102,7 @@ async fn kyc_client_runs_the_full_verification_path() -> TestResult {
 
 #[tokio::test]
 async fn supported_countries_fold_across_the_published_providers() -> TestResult {
-	let mut harness = KycHarness::start()?;
-	let anchor = harness.start_kyc_anchor(Some(&["US", "DE", "DE"]), true)?;
-	let client = client_for(&anchor.api, &anchor.root)?;
+	let (harness, _anchor, client) = started_anchor(Some(&["US", "DE", "DE"]))?;
 
 	let supported = client.get_supported_countries().await?;
 	let germany = CountryCode::try_from("DE")?;
@@ -122,9 +116,7 @@ async fn supported_countries_fold_across_the_published_providers() -> TestResult
 
 #[tokio::test]
 async fn an_unconfigured_provider_publishes_an_empty_country_union() -> TestResult {
-	let mut harness = KycHarness::start()?;
-	let anchor = harness.start_kyc_anchor(None, true)?;
-	let client = client_for(&anchor.api, &anchor.root)?;
+	let (harness, _anchor, client) = started_anchor(None)?;
 
 	// The reference server publishes `countryCodes: []` when none are configured.
 	let supported = client.get_supported_countries().await?;
@@ -136,16 +128,11 @@ async fn an_unconfigured_provider_publishes_an_empty_country_union() -> TestResu
 
 #[tokio::test]
 async fn kyc_client_rejects_a_provider_missing_an_operation() -> TestResult {
-	let mut harness = KycHarness::start()?;
-	let anchor = harness.start_kyc_anchor(Some(&["US"]), true)?;
-	let client = client_for(&anchor.api, &anchor.root)?;
+	let (harness, _anchor, client) = started_anchor(Some(&["US"]))?;
 
 	let countries = [CountryCode::try_from("US")?];
 	let providers = client.providers(&countries).await?;
-	let provider = providers
-		.into_iter()
-		.next()
-		.ok_or(HarnessError::MissingField { field: "kyc provider" })?;
+	let provider = first_provider(providers)?;
 
 	// A stored snapshot rebinds through `client.provider(info)`, here with the
 	// operation stripped to prove the typed rejection.

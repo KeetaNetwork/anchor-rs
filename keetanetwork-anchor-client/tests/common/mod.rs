@@ -22,6 +22,35 @@ pub fn account_from_seed(seed_byte: u8) -> Account<KeyECDSASECP256K1> {
 	Account::<KeyECDSASECP256K1>::try_from(accountable).expect("account builds from seed")
 }
 
+#[cfg(feature = "http")]
+mod live {
+	use std::error::Error;
+	use std::str::FromStr;
+	use std::sync::Arc;
+
+	use keetanetwork_account::GenericAccount;
+	use keetanetwork_anchor_client::{AnchorContext, KeetaClient, ReqwestTransport, Resolver};
+
+	use super::account_from_seed;
+
+	/// An anchor context whose resolver reads the `root` account's on-chain
+	/// metadata through the node client at `api`, and whose caller signs with
+	/// a deterministic account over the live reqwest transport.
+	pub fn live_context(api: &str, root: &str) -> Result<AnchorContext, Box<dyn Error>> {
+		let transport = Arc::new(ReqwestTransport::try_default()?);
+		let client = KeetaClient::new(api);
+		let resolver = Resolver::new(client, transport.clone(), [GenericAccount::from_str(root)?]);
+		let signer = Arc::new(GenericAccount::EcdsaSecp256k1(account_from_seed(0x11)));
+		let context = AnchorContext::new(resolver, transport, signer);
+
+		Ok(context)
+	}
+}
+
+#[cfg(feature = "http")]
+#[allow(unused_imports)]
+pub use live::live_context;
+
 /// The instant encoded by [`TIMESTAMP`].
 pub fn reference_time() -> DateTime<Utc> {
 	let fixed = DateTime::parse_from_rfc3339(TIMESTAMP).expect("fixed timestamp parses");

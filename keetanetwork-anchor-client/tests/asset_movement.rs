@@ -8,20 +8,18 @@ mod harness;
 
 use core::sync::atomic::{AtomicU32, Ordering};
 use std::error::Error;
-use std::str::FromStr;
 use std::sync::Arc;
 
-use common::account_from_seed;
+use common::live_context;
 use harness::{AssetAnchor, AssetHarness, HarnessError};
-use keetanetwork_account::GenericAccount;
 use keetanetwork_anchor_client::{
-	parse_total, AccountStatus, AnchorClientError, AnchorContext, AssetMovementClient, AssetMovementProvider,
-	AssetOrPair, AwaitOptions, ClientRenderableContent, CreatePersistentForwardingAddressRequest,
+	parse_total, AccountStatus, AnchorClientError, AssetMovementClient, AssetMovementProvider, AssetOrPair,
+	AwaitOptions, ClientRenderableContent, CreatePersistentForwardingAddressRequest,
 	CreatePersistentForwardingTemplateRequest, Disclaimer, DisclaimerPurpose, ExecuteTransferRequest,
-	ForwardingAddressFilter, ForwardingDestination, InitiatePersistentForwardingTemplateRequest, KeetaClient,
+	ForwardingAddressFilter, ForwardingDestination, InitiatePersistentForwardingTemplateRequest,
 	ListForwardingAddressTemplatesRequest, ListForwardingAddressesRequest, ListTransactionsRequest, Pagination,
-	PersistentAddressFilter, ProviderSearch, ReqwestTransport, Resolver, ShareKycRequest, TokenLocationMetadata,
-	TransactionEndpointFilter, TransferDestination, TransferRequest, TransferSource,
+	PersistentAddressFilter, ProviderSearch, ShareKycRequest, TokenLocationMetadata, TransactionEndpointFilter,
+	TransferDestination, TransferRequest, TransferSource,
 };
 use serde_json::{json, Value};
 
@@ -36,17 +34,15 @@ const EVM_LOCATION: &str = "chain:evm:100";
 /// The canonical Keeta destination location the fixtures use.
 const KEETA_LOCATION: &str = "chain:keeta:100";
 
-/// An asset-movement client whose resolver reads the `root` account's on-chain
-/// metadata through the node client at `api`, and whose caller signs with a
-/// deterministic account over the live reqwest transport.
-fn client_for(api: &str, root: &str) -> Result<AssetMovementClient, Box<dyn Error>> {
-	let transport = Arc::new(ReqwestTransport::try_default()?);
-	let client = KeetaClient::new(api);
-	let resolver = Resolver::new(client, transport.clone(), [GenericAccount::from_str(root)?]);
-	let signer = Arc::new(GenericAccount::EcdsaSecp256k1(account_from_seed(0x11)));
-	let context = AnchorContext::new(resolver, transport, signer);
+/// A started harness anchor and the live client bound to it over the shared
+/// [`live_context`].
+fn started_anchor() -> Result<(AssetHarness, AssetAnchor, AssetMovementClient), Box<dyn Error>> {
+	let mut harness = AssetHarness::start()?;
+	let anchor = harness.start_asset_anchor(true)?;
+	let context = live_context(&anchor.api, &anchor.root)?;
+	let client = AssetMovementClient::new(context);
 
-	Ok(AssetMovementClient::new(context))
+	Ok((harness, anchor, client))
 }
 
 /// The single provider the running anchor publishes.
@@ -96,9 +92,7 @@ fn share_kyc_attributes_request(attributes: &str) -> ShareKycRequest {
 
 #[tokio::test]
 async fn discovery_reads_the_published_provider() -> TestResult {
-	let mut harness = AssetHarness::start()?;
-	let anchor = harness.start_asset_anchor(true)?;
-	let client = client_for(&anchor.api, &anchor.root)?;
+	let (harness, anchor, client) = started_anchor()?;
 
 	let providers = client.providers().await?;
 	assert_eq!(providers.len(), 1, "exactly one provider is published");
@@ -128,9 +122,7 @@ async fn discovery_reads_the_published_provider() -> TestResult {
 
 #[tokio::test]
 async fn published_legal_and_location_metadata_decode() -> TestResult {
-	let mut harness = AssetHarness::start()?;
-	let anchor = harness.start_asset_anchor(true)?;
-	let client = client_for(&anchor.api, &anchor.root)?;
+	let (harness, anchor, client) = started_anchor()?;
 	let provider = discovered_provider(&client, &anchor).await?;
 
 	let disclaimers = provider
@@ -165,9 +157,7 @@ async fn published_legal_and_location_metadata_decode() -> TestResult {
 
 #[tokio::test]
 async fn transfers_run_end_to_end_against_the_live_anchor() -> TestResult {
-	let mut harness = AssetHarness::start()?;
-	let anchor = harness.start_asset_anchor(true)?;
-	let client = client_for(&anchor.api, &anchor.root)?;
+	let (harness, anchor, client) = started_anchor()?;
 	let provider = discovered_provider(&client, &anchor).await?;
 
 	let status = provider.account_status().await?;
@@ -222,9 +212,7 @@ async fn transfers_run_end_to_end_against_the_live_anchor() -> TestResult {
 
 #[tokio::test]
 async fn forwarding_and_listing_run_against_the_live_anchor() -> TestResult {
-	let mut harness = AssetHarness::start()?;
-	let anchor = harness.start_asset_anchor(true)?;
-	let client = client_for(&anchor.api, &anchor.root)?;
+	let (harness, anchor, client) = started_anchor()?;
 	let provider = discovered_provider(&client, &anchor).await?;
 	let asset = AssetOrPair::from(anchor.asset.clone());
 
@@ -431,9 +419,7 @@ async fn asset_canonicalization_matches_the_reference_client() -> TestResult {
 
 #[tokio::test]
 async fn share_kyc_attributes_settles_and_polls_against_the_live_anchor() -> TestResult {
-	let mut harness = AssetHarness::start()?;
-	let anchor = harness.start_asset_anchor(true)?;
-	let client = client_for(&anchor.api, &anchor.root)?;
+	let (harness, anchor, client) = started_anchor()?;
 	let provider = discovered_provider(&client, &anchor).await?;
 
 	let settling_request = share_kyc_attributes_request("exported-attributes");
