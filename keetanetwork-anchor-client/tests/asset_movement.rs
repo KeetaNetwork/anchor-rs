@@ -50,10 +50,10 @@ fn client_for(api: &str, root: &str) -> Result<AssetMovementClient, Box<dyn Erro
 }
 
 /// The single provider the running anchor publishes.
-async fn discovered_provider(
-	client: &AssetMovementClient,
+async fn discovered_provider<'c>(
+	client: &'c AssetMovementClient,
 	anchor: &AssetAnchor,
-) -> Result<AssetMovementProvider, Box<dyn Error>> {
+) -> Result<AssetMovementProvider<'c>, Box<dyn Error>> {
 	let provider = client
 		.provider_by_id(&anchor.provider_id)
 		.await?
@@ -103,16 +103,13 @@ async fn discovery_reads_the_published_provider() -> TestResult {
 	let providers = client.providers().await?;
 	assert_eq!(providers.len(), 1, "exactly one provider is published");
 	assert_eq!(providers[0].id, anchor.provider_id, "discovered provider id diverges");
-	assert!(client.is_operation_supported(&providers[0], "simulateTransfer"), "simulateTransfer must be advertised");
+	assert!(providers[0].is_operation_supported("simulateTransfer"), "simulateTransfer must be advertised");
 
-	let by_account = client
-		.provider_by_account(
-			anchor
-				.signer
-				.clone()
-				.ok_or(HarnessError::MissingField { field: "signer" })?,
-		)
-		.await?;
+	let signer = anchor
+		.signer
+		.clone()
+		.ok_or(HarnessError::MissingField { field: "signer" })?;
+	let by_account = client.provider_by_account(signer).await?;
 	assert!(by_account.is_some(), "the provider must resolve by its signing account");
 
 	let search = ProviderSearch::for_asset(anchor.asset.clone())
@@ -121,9 +118,8 @@ async fn discovery_reads_the_published_provider() -> TestResult {
 	let matches = client.providers_for_transfer(&search).await?;
 	assert_eq!(matches.len(), 1, "the provider must satisfy a search over its published path");
 
-	let none = client
-		.providers_for_transfer(&ProviderSearch::for_asset("evm:0xdeadbeef"))
-		.await?;
+	let unadvertised_search = ProviderSearch::for_asset("evm:0xdeadbeef");
+	let none = client.providers_for_transfer(&unadvertised_search).await?;
 	assert!(none.is_empty(), "an unadvertised asset must match no provider");
 
 	harness.shutdown()?;
@@ -174,13 +170,12 @@ async fn transfers_run_end_to_end_against_the_live_anchor() -> TestResult {
 	let client = client_for(&anchor.api, &anchor.root)?;
 	let provider = discovered_provider(&client, &anchor).await?;
 
-	let status = client.account_status(&provider).await?;
+	let status = provider.account_status().await?;
 	assert_eq!(status, AccountStatus::Ready, "the fixture account must be ready");
 
 	let recipient = Value::String(anchor.send_to_address.clone());
-	let simulated = client
-		.simulate_transfer(&provider, &push_transfer(&anchor, Some(recipient.clone())))
-		.await?;
+	let push_request = push_transfer(&anchor, Some(recipient));
+	let simulated = provider.simulate_transfer(&push_request).await?;
 	assert_eq!(simulated.instruction_choices.len(), 1, "the simulation must offer one instruction");
 	assert_eq!(
 		simulated.instruction_choices[0]["type"],
@@ -188,9 +183,7 @@ async fn transfers_run_end_to_end_against_the_live_anchor() -> TestResult {
 		"a push transfer must simulate to a crypto send"
 	);
 
-	let transfer = client
-		.initiate_transfer(&provider, &push_transfer(&anchor, Some(recipient)))
-		.await?;
+	let transfer = provider.initiate_transfer(&push_request).await?;
 	assert_eq!(transfer.id, "123", "the anchor must assign the fixture transfer id");
 	assert_eq!(
 		transfer.instruction_choices[0]["sendToAddress"],
@@ -198,18 +191,16 @@ async fn transfers_run_end_to_end_against_the_live_anchor() -> TestResult {
 		"the initiated instruction must resolve the send-to address"
 	);
 
-	let missing_recipient = client
-		.initiate_transfer(&provider, &push_transfer(&anchor, None))
-		.await;
+	let recipientless_request = push_transfer(&anchor, None);
+	let missing_recipient = provider.initiate_transfer(&recipientless_request).await;
 	assert!(missing_recipient.is_err(), "initiating without a recipient must fail before any request");
 
-	let status = client.transfer_status(&provider, &transfer.id).await?;
+	let status = provider.transfer_status(&transfer.id).await?;
 	assert_eq!(status.transaction["id"], json!("123"), "the signed status URL must serve the transaction");
 	assert_eq!(status.transaction["status"], json!("COMPLETED"), "the fixture transaction reports completed");
 
-	let pull = client
-		.initiate_transfer(&provider, &pull_transfer(&anchor))
-		.await?;
+	let pull_request = pull_transfer(&anchor);
+	let pull = provider.initiate_transfer(&pull_request).await?;
 	let instruction = pull
 		.instruction_choices
 		.first()
@@ -217,9 +208,8 @@ async fn transfers_run_end_to_end_against_the_live_anchor() -> TestResult {
 		.ok_or(HarnessError::MissingField { field: "pull instruction" })?;
 	assert_eq!(instruction["type"], json!("ACH_DEBIT"), "a bank-sourced transfer must offer a fiat pull");
 
-	let executed = client
-		.execute_transfer(&provider, &ExecuteTransferRequest { id: pull.id.clone(), instruction })
-		.await?;
+	let execute_request = ExecuteTransferRequest { id: pull.id.clone(), instruction };
+	let executed = provider.execute_transfer(&execute_request).await?;
 	assert_eq!(
 		executed.transaction["status"],
 		json!("EXECUTED"),
@@ -238,68 +228,59 @@ async fn forwarding_and_listing_run_against_the_live_anchor() -> TestResult {
 	let provider = discovered_provider(&client, &anchor).await?;
 	let asset = AssetOrPair::from(anchor.asset.clone());
 
-	let session = client
-		.initiate_persistent_forwarding_template(
-			&provider,
-			&InitiatePersistentForwardingTemplateRequest { asset: asset.clone(), location: EVM_LOCATION.to_string() },
-		)
+	let initiate_request =
+		InitiatePersistentForwardingTemplateRequest { asset: asset.clone(), location: EVM_LOCATION.to_string() };
+	let session = provider
+		.initiate_persistent_forwarding_template(&initiate_request)
 		.await?;
 	assert_eq!(session.id, "test-session-id", "the anchor must open the fixture session");
 	assert_eq!(session.data["plaidLinkToken"], json!("link-sandbox-test-token"), "the session data must decode");
 
-	let template = client
-		.create_persistent_forwarding_template(
-			&provider,
-			&CreatePersistentForwardingTemplateRequest::Direct {
-				asset: asset.clone(),
-				location: EVM_LOCATION.to_string(),
-				address: Value::String(anchor.send_to_address.clone()),
-			},
-		)
+	let direct_request = CreatePersistentForwardingTemplateRequest::Direct {
+		asset: asset.clone(),
+		location: EVM_LOCATION.to_string(),
+		address: Value::String(anchor.send_to_address.clone()),
+	};
+	let template = provider
+		.create_persistent_forwarding_template(&direct_request)
 		.await?;
 	assert_eq!(template.id, "template-id", "a direct create must return the fixture template");
 
-	let completed = client
-		.create_persistent_forwarding_template(
-			&provider,
-			&CreatePersistentForwardingTemplateRequest::Completion {
-				id: Some(session.id.clone()),
-				data: json!({
-					"type": "plaid",
-					"plaidPublicToken": "public-sandbox-token",
-					"plaidAccountId": "account-1",
-				}),
-			},
-		)
+	let completion_request = CreatePersistentForwardingTemplateRequest::Completion {
+		id: Some(session.id.clone()),
+		data: json!({
+			"type": "plaid",
+			"plaidPublicToken": "public-sandbox-token",
+			"plaidAccountId": "account-1",
+		}),
+	};
+	let completed = provider
+		.create_persistent_forwarding_template(&completion_request)
 		.await?;
 	assert_eq!(completed.id, "template-id", "a session completion must return the fixture template");
 
-	let templates = client
-		.list_forwarding_address_templates(
-			&provider,
-			&ListForwardingAddressTemplatesRequest {
-				asset: Some(vec![anchor.asset.clone()]),
-				location: Some(vec![EVM_LOCATION.to_string()]),
-			},
-		)
+	let list_templates_request = ListForwardingAddressTemplatesRequest {
+		asset: Some(vec![anchor.asset.clone()]),
+		location: Some(vec![EVM_LOCATION.to_string()]),
+	};
+	let templates = provider
+		.list_forwarding_address_templates(&list_templates_request)
 		.await?;
 	assert_eq!(templates.templates.len(), 1, "the template listing must serve the fixture page");
 	assert_eq!(parse_total(&templates.total), Some(1), "the template listing must carry its total");
 
-	let created = client
-		.create_persistent_forwarding_address(
-			&provider,
-			&CreatePersistentForwardingAddressRequest {
-				source_location: EVM_LOCATION.to_string(),
-				asset: asset.clone(),
-				outgoing_rail: Some("KEETA_SEND".to_string()),
-				incoming_rail: None,
-				destination: ForwardingDestination::Address {
-					location: KEETA_LOCATION.to_string(),
-					address: Value::String(anchor.send_to_address.clone()),
-				},
-			},
-		)
+	let create_address_request = CreatePersistentForwardingAddressRequest {
+		source_location: EVM_LOCATION.to_string(),
+		asset: asset.clone(),
+		outgoing_rail: Some("KEETA_SEND".to_string()),
+		incoming_rail: None,
+		destination: ForwardingDestination::Address {
+			location: KEETA_LOCATION.to_string(),
+			address: Value::String(anchor.send_to_address.clone()),
+		},
+	};
+	let created = provider
+		.create_persistent_forwarding_address(&create_address_request)
 		.await?;
 	assert_eq!(created.address, json!(anchor.send_to_address), "the created address must decode");
 
@@ -314,55 +295,52 @@ async fn forwarding_and_listing_run_against_the_live_anchor() -> TestResult {
 		.and_then(serde_json::Number::as_u64);
 	assert_eq!(basis_points, Some(50), "the variable fee must carry its basis points");
 
-	let from_template = client
-		.create_persistent_forwarding_address(
-			&provider,
-			&CreatePersistentForwardingAddressRequest {
-				source_location: EVM_LOCATION.to_string(),
-				asset: asset.clone(),
-				outgoing_rail: None,
-				incoming_rail: None,
-				destination: ForwardingDestination::Template { persistent_address_template_id: template.id.clone() },
-			},
-		)
+	let template_backed_request = CreatePersistentForwardingAddressRequest {
+		source_location: EVM_LOCATION.to_string(),
+		asset: asset.clone(),
+		outgoing_rail: None,
+		incoming_rail: None,
+		destination: ForwardingDestination::Template { persistent_address_template_id: template.id.clone() },
+	};
+	let from_template = provider
+		.create_persistent_forwarding_address(&template_backed_request)
 		.await?;
 	assert_eq!(from_template.address, json!(anchor.send_to_address), "a template-backed create must decode");
 
-	let addresses = client
-		.list_forwarding_addresses(
-			&provider,
-			&ListForwardingAddressesRequest {
-				search: Some(vec![ForwardingAddressFilter {
-					source_location: Some(EVM_LOCATION.to_string()),
-					asset: Some(AssetOrPair::from(anchor.asset.clone())),
-					..ForwardingAddressFilter::default()
-				}]),
-				pagination: Pagination { limit: Some(10), offset: Some(0) },
-			},
-		)
+	let address_filter = ForwardingAddressFilter {
+		source_location: Some(EVM_LOCATION.to_string()),
+		asset: Some(asset.clone()),
+		..ForwardingAddressFilter::default()
+	};
+	let list_addresses_request = ListForwardingAddressesRequest {
+		search: Some(vec![address_filter]),
+		pagination: Pagination { limit: Some(10), offset: Some(0) },
+	};
+	let addresses = provider
+		.list_forwarding_addresses(&list_addresses_request)
 		.await?;
 	assert_eq!(addresses.addresses.len(), 1, "the address listing must serve the fixture page");
 	assert_eq!(parse_total(&addresses.total), Some(1), "the address listing must carry its total");
 
-	let transactions = client
-		.list_transactions(
-			&provider,
-			&ListTransactionsRequest {
-				persistent_addresses: Some(vec![PersistentAddressFilter {
-					location: EVM_LOCATION.to_string(),
-					persistent_address: Some(anchor.send_to_address.clone()),
-					persistent_address_template: None,
-				}]),
-				from: Some(TransactionEndpointFilter {
-					location: EVM_LOCATION.to_string(),
-					user_address: Some(anchor.send_to_address.clone()),
-					asset: Some(anchor.asset.clone()),
-				}),
-				to: None,
-				transactions: None,
-				pagination: Pagination { limit: Some(10), offset: None },
-			},
-		)
+	let persistent_address_filter = PersistentAddressFilter {
+		location: EVM_LOCATION.to_string(),
+		persistent_address: Some(anchor.send_to_address.clone()),
+		persistent_address_template: None,
+	};
+	let from_filter = TransactionEndpointFilter {
+		location: EVM_LOCATION.to_string(),
+		user_address: Some(anchor.send_to_address.clone()),
+		asset: Some(anchor.asset.clone()),
+	};
+	let list_transactions_request = ListTransactionsRequest {
+		persistent_addresses: Some(vec![persistent_address_filter]),
+		from: Some(from_filter),
+		to: None,
+		transactions: None,
+		pagination: Pagination { limit: Some(10), offset: None },
+	};
+	let transactions = provider
+		.list_transactions(&list_transactions_request)
 		.await?;
 	assert_eq!(transactions.transactions.len(), 1, "the transaction listing must serve the fixture page");
 	assert_eq!(
@@ -371,27 +349,32 @@ async fn forwarding_and_listing_run_against_the_live_anchor() -> TestResult {
 		"the listed transaction must be the fixture transaction"
 	);
 
-	client
-		.deactivate_persistent_forwarding_template(&provider, &template.id)
+	provider
+		.deactivate_persistent_forwarding_template(&template.id)
 		.await?;
-	client
-		.deactivate_persistent_forwarding_address(&provider, &template.id)
+	provider
+		.deactivate_persistent_forwarding_address(&template.id)
 		.await?;
 
-	let missing = client
-		.deactivate_persistent_forwarding_template(&provider, "does-not-exist")
+	let missing = provider
+		.deactivate_persistent_forwarding_template("does-not-exist")
 		.await;
 	assert!(missing.is_err(), "deactivating an unknown template must surface the anchor error");
 
-	let mut narrowed = provider.clone();
-	narrowed.operations = narrowed
+	// A stored snapshot rebinds through `client.provider(info)`, the primitive
+	// the FFI layers use.
+	let mut narrowed_info = provider.info().clone();
+	let retained_operations = narrowed_info
 		.operations
 		.iter()
 		.filter(|(name, _)| *name != "listTransactions")
 		.map(|(name, endpoint)| (name.to_string(), endpoint.clone()))
 		.collect();
-	let unadvertised = client
-		.list_transactions(&narrowed, &ListTransactionsRequest::default())
+	narrowed_info.operations = retained_operations;
+
+	let rebound = client.provider(narrowed_info);
+	let unadvertised = rebound
+		.list_transactions(&ListTransactionsRequest::default())
 		.await;
 	assert!(
 		matches!(unadvertised, Err(AnchorClientError::UnsupportedOperation { .. })),
@@ -453,18 +436,14 @@ async fn share_kyc_attributes_settles_and_polls_against_the_live_anchor() -> Tes
 	let client = client_for(&anchor.api, &anchor.root)?;
 	let provider = discovered_provider(&client, &anchor).await?;
 
-	let settled = client
-		.share_kyc_attributes(&provider, &share_kyc_attributes_request("exported-attributes"))
-		.await?;
+	let settling_request = share_kyc_attributes_request("exported-attributes");
+	let settled = provider.share_kyc_attributes(&settling_request).await?;
 	assert!(!settled.is_pending, "a plain share must settle immediately");
 
-	let without_polling = client
-		.share_kyc_attributes_and_wait(
-			&provider,
-			&share_kyc_attributes_request("exported-attributes"),
-			AwaitOptions::default(),
-			|_millis| async { panic!("a settled share must not sleep") },
-		)
+	let without_polling = provider
+		.share_kyc_attributes_and_wait(&settling_request, AwaitOptions::default(), |_millis| async {
+			panic!("a settled share must not sleep")
+		})
 		.await?;
 	assert!(!without_polling.is_pending, "a settled share must return without polling");
 
@@ -473,30 +452,22 @@ async fn share_kyc_attributes_settles_and_polls_against_the_live_anchor() -> Tes
 	let polls = Arc::new(AtomicU32::new(0));
 	let counter = Arc::clone(&polls);
 	let options = AwaitOptions { interval_ms: 1, timeout_ms: 60_000 };
-	let outcome = client
-		.share_kyc_attributes_and_wait(
-			&provider,
-			&share_kyc_attributes_request("promise-flow"),
-			options,
-			move |_millis| {
-				let counter = Arc::clone(&counter);
-				async move {
-					counter.fetch_add(1, Ordering::Relaxed);
-				}
-			},
-		)
+	let promise_request = share_kyc_attributes_request("promise-flow");
+	let outcome = provider
+		.share_kyc_attributes_and_wait(&promise_request, options, move |_millis| {
+			let counter = Arc::clone(&counter);
+			async move {
+				counter.fetch_add(1, Ordering::Relaxed);
+			}
+		})
 		.await?;
 	assert!(!outcome.is_pending, "the polled promise must settle");
 	assert_eq!(polls.load(Ordering::Relaxed), 2, "the poll must sleep once per pending response");
 
 	let options = AwaitOptions { interval_ms: 1_000, timeout_ms: 500 };
-	let timed_out = client
-		.share_kyc_attributes_and_wait(
-			&provider,
-			&share_kyc_attributes_request("promise-stall"),
-			options,
-			|_millis| async {},
-		)
+	let stalling_request = share_kyc_attributes_request("promise-stall");
+	let timed_out = provider
+		.share_kyc_attributes_and_wait(&stalling_request, options, |_millis| async {})
 		.await;
 	assert!(
 		matches!(timed_out, Err(AnchorClientError::Timeout { .. })),

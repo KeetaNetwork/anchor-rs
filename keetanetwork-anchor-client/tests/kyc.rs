@@ -46,8 +46,8 @@ async fn kyc_client_runs_the_full_verification_path() -> TestResult {
 		.ok_or(HarnessError::MissingField { field: "kyc provider" })?;
 	assert_eq!(provider.id, anchor.provider_id, "discovered provider id diverges");
 
-	let verification = client
-		.create_verification(&provider, &countries, None)
+	let verification = provider
+		.create_verification(&countries, None)
 		.await?
 		.ready()
 		.ok_or(HarnessError::MissingField { field: "verification" })?;
@@ -57,15 +57,15 @@ async fn kyc_client_runs_the_full_verification_path() -> TestResult {
 
 	// A redirect URL rides the signed create body; the server must accept the
 	// extra field and still assign a verification.
-	let redirected = client
-		.create_verification(&provider, &countries, Some("https://example.test/done"))
+	let redirected = provider
+		.create_verification(&countries, Some("https://example.test/done"))
 		.await?
 		.ready()
 		.ok_or(HarnessError::MissingField { field: "redirected verification" })?;
 	assert!(!redirected.id.is_empty(), "a redirected create must assign a verification id");
 
-	let status = client
-		.get_verification_status(&provider, &verification.id)
+	let status = provider
+		.get_verification_status(&verification.id)
 		.await?
 		.ready()
 		.ok_or(HarnessError::MissingField { field: "verification status" })?;
@@ -76,11 +76,11 @@ async fn kyc_client_runs_the_full_verification_path() -> TestResult {
 		"the manual-review flag must survive the status decode"
 	);
 
-	let pending = client.get_certificates(&provider, "pending").await?;
+	let pending = provider.get_certificates("pending").await?;
 	assert!(matches!(pending, AnchorOutcome::Retry { .. }), "a pending certificate must ask the caller to retry");
 
-	let certificates = client
-		.get_certificates(&provider, "ready")
+	let certificates = provider
+		.get_certificates("ready")
 		.await?
 		.ready()
 		.ok_or(HarnessError::MissingField { field: "certificates" })?;
@@ -93,8 +93,8 @@ async fn kyc_client_runs_the_full_verification_path() -> TestResult {
 		.get("verificationID")
 		.and_then(Value::as_str)
 		.ok_or(HarnessError::MissingField { field: "verificationID" })?;
-	let chain = client
-		.get_certificates(&provider, verification_id)
+	let chain = provider
+		.get_certificates(verification_id)
 		.await?
 		.ready()
 		.ok_or(HarnessError::MissingField { field: "issued chain" })?;
@@ -111,7 +111,9 @@ async fn supported_countries_fold_across_the_published_providers() -> TestResult
 	let client = client_for(&anchor.api, &anchor.root)?;
 
 	let supported = client.get_supported_countries().await?;
-	let expected = SupportedCountries::Countries(vec![CountryCode::try_from("DE")?, CountryCode::try_from("US")?]);
+	let germany = CountryCode::try_from("DE")?;
+	let united_states = CountryCode::try_from("US")?;
+	let expected = SupportedCountries::Countries(vec![germany, united_states]);
 	assert_eq!(supported, expected, "the published codes must fold sorted and deduplicated");
 
 	harness.shutdown()?;
@@ -140,15 +142,18 @@ async fn kyc_client_rejects_a_provider_missing_an_operation() -> TestResult {
 
 	let countries = [CountryCode::try_from("US")?];
 	let providers = client.providers(&countries).await?;
-	let mut provider = providers
+	let provider = providers
 		.into_iter()
 		.next()
 		.ok_or(HarnessError::MissingField { field: "kyc provider" })?;
 
-	provider.operations.create_verification = None;
-	let outcome = client
-		.create_verification(&provider, &countries, None)
-		.await;
+	// A stored snapshot rebinds through `client.provider(info)`, here with the
+	// operation stripped to prove the typed rejection.
+	let mut narrowed_info = provider.into_info();
+	narrowed_info.operations.create_verification = None;
+
+	let rebound = client.provider(narrowed_info);
+	let outcome = rebound.create_verification(&countries, None).await;
 	assert!(outcome.is_err(), "a provider without createVerification must surface a typed error");
 
 	harness.shutdown()?;

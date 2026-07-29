@@ -13,7 +13,7 @@ use keetanetwork_account::GenericAccount;
 use keetanetwork_anchor_bindings::error::CodedError;
 use keetanetwork_anchor_bindings::registry::HandleRegistry;
 use keetanetwork_anchor_client::{
-	AnchorClientError, AnchorContext, AssetMovementClient, AssetMovementProvider, AwaitOptions, ProviderFilter,
+	AnchorClientError, AnchorContext, AssetMovementClient, AssetMovementProviderInfo, AwaitOptions, ProviderFilter,
 	Resolver,
 };
 use keetanetwork_client_wasi::{bytes_result, string_in};
@@ -22,7 +22,7 @@ use crate::asset_json::{
 	create_address_request, create_template_request, encode, encode_account_status, encode_ack, encode_provider,
 	encode_providers, execute_request, filter_providers, initiate_template_request, list_addresses_request,
 	list_templates_request, list_transactions_request, parse_provider, parse_provider_search,
-	share_kyc_attributes_request, transfer_request,
+	share_kyc_attributes_request, snapshots, transfer_request,
 };
 
 use super::transport::{block_on, host_sleep_ms, host_transport};
@@ -132,7 +132,7 @@ pub unsafe extern "C" fn keeta_asset_simulate_transfer(
 ) -> i32 {
 	dispatch2(provider_ptr, provider_len, request_ptr, request_len, |provider, request| {
 		let request = transfer_request(request)?;
-		let outcome = with_session(handle, |client| block_on(client.simulate_transfer(&provider, &request)))?;
+		let outcome = with_session(handle, |client| block_on(client.provider(provider).simulate_transfer(&request)))?;
 		encode(&outcome)
 	})
 }
@@ -152,7 +152,7 @@ pub unsafe extern "C" fn keeta_asset_initiate_transfer(
 ) -> i32 {
 	dispatch2(provider_ptr, provider_len, request_ptr, request_len, |provider, request| {
 		let request = transfer_request(request)?;
-		let outcome = with_session(handle, |client| block_on(client.initiate_transfer(&provider, &request)))?;
+		let outcome = with_session(handle, |client| block_on(client.provider(provider).initiate_transfer(&request)))?;
 		encode(&outcome)
 	})
 }
@@ -173,7 +173,7 @@ pub unsafe extern "C" fn keeta_asset_execute_transfer(
 ) -> i32 {
 	dispatch2(provider_ptr, provider_len, request_ptr, request_len, |provider, request| {
 		let request = execute_request(request)?;
-		let outcome = with_session(handle, |client| block_on(client.execute_transfer(&provider, &request)))?;
+		let outcome = with_session(handle, |client| block_on(client.provider(provider).execute_transfer(&request)))?;
 		encode(&outcome)
 	})
 }
@@ -193,7 +193,7 @@ pub unsafe extern "C" fn keeta_asset_transfer_status(
 	id_len: i32,
 ) -> i32 {
 	dispatch2(provider_ptr, provider_len, id_ptr, id_len, |provider, id| {
-		let outcome = with_session(handle, |client| block_on(client.transfer_status(&provider, id)))?;
+		let outcome = with_session(handle, |client| block_on(client.provider(provider).transfer_status(id)))?;
 		encode(&outcome)
 	})
 }
@@ -212,7 +212,7 @@ pub unsafe extern "C" fn keeta_asset_account_status(handle: i32, provider_ptr: i
 
 	bytes_result((|| {
 		let provider = parse_provider(&provider_json)?;
-		let status = with_session(handle, |client| block_on(client.account_status(&provider)))?;
+		let status = with_session(handle, |client| block_on(client.provider(provider).account_status()))?;
 		encode_account_status(&status)
 	})())
 }
@@ -234,7 +234,11 @@ pub unsafe extern "C" fn keeta_asset_initiate_persistent_forwarding_template(
 	dispatch2(provider_ptr, provider_len, request_ptr, request_len, |provider, request| {
 		let request = initiate_template_request(request)?;
 		let outcome = with_session(handle, |client| {
-			block_on(client.initiate_persistent_forwarding_template(&provider, &request))
+			block_on(
+				client
+					.provider(provider)
+					.initiate_persistent_forwarding_template(&request),
+			)
 		})?;
 
 		encode(&outcome)
@@ -257,8 +261,13 @@ pub unsafe extern "C" fn keeta_asset_create_persistent_forwarding_template(
 ) -> i32 {
 	dispatch2(provider_ptr, provider_len, request_ptr, request_len, |provider, request| {
 		let request = create_template_request(request)?;
-		let outcome =
-			with_session(handle, |client| block_on(client.create_persistent_forwarding_template(&provider, &request)))?;
+		let outcome = with_session(handle, |client| {
+			block_on(
+				client
+					.provider(provider)
+					.create_persistent_forwarding_template(&request),
+			)
+		})?;
 
 		encode(&outcome)
 	})
@@ -280,8 +289,13 @@ pub unsafe extern "C" fn keeta_asset_list_forwarding_address_templates(
 ) -> i32 {
 	dispatch2(provider_ptr, provider_len, request_ptr, request_len, |provider, request| {
 		let request = list_templates_request(request)?;
-		let outcome =
-			with_session(handle, |client| block_on(client.list_forwarding_address_templates(&provider, &request)))?;
+		let outcome = with_session(handle, |client| {
+			block_on(
+				client
+					.provider(provider)
+					.list_forwarding_address_templates(&request),
+			)
+		})?;
 
 		encode(&outcome)
 	})
@@ -303,8 +317,13 @@ pub unsafe extern "C" fn keeta_asset_create_persistent_forwarding_address(
 ) -> i32 {
 	dispatch2(provider_ptr, provider_len, request_ptr, request_len, |provider, request| {
 		let request = create_address_request(request)?;
-		let details =
-			with_session(handle, |client| block_on(client.create_persistent_forwarding_address(&provider, &request)))?;
+		let details = with_session(handle, |client| {
+			block_on(
+				client
+					.provider(provider)
+					.create_persistent_forwarding_address(&request),
+			)
+		})?;
 
 		encode(&details)
 	})
@@ -326,7 +345,13 @@ pub unsafe extern "C" fn keeta_asset_list_forwarding_addresses(
 ) -> i32 {
 	dispatch2(provider_ptr, provider_len, request_ptr, request_len, |provider, request| {
 		let request = list_addresses_request(request)?;
-		let outcome = with_session(handle, |client| block_on(client.list_forwarding_addresses(&provider, &request)))?;
+		let outcome = with_session(handle, |client| {
+			block_on(
+				client
+					.provider(provider)
+					.list_forwarding_addresses(&request),
+			)
+		})?;
 		encode(&outcome)
 	})
 }
@@ -346,7 +371,13 @@ pub unsafe extern "C" fn keeta_asset_deactivate_persistent_forwarding_template(
 	id_len: i32,
 ) -> i32 {
 	dispatch2(provider_ptr, provider_len, id_ptr, id_len, |provider, id| {
-		with_session(handle, |client| block_on(client.deactivate_persistent_forwarding_template(&provider, id)))?;
+		with_session(handle, |client| {
+			block_on(
+				client
+					.provider(provider)
+					.deactivate_persistent_forwarding_template(id),
+			)
+		})?;
 		encode_ack()
 	})
 }
@@ -366,7 +397,13 @@ pub unsafe extern "C" fn keeta_asset_deactivate_persistent_forwarding_address(
 	id_len: i32,
 ) -> i32 {
 	dispatch2(provider_ptr, provider_len, id_ptr, id_len, |provider, id| {
-		with_session(handle, |client| block_on(client.deactivate_persistent_forwarding_address(&provider, id)))?;
+		with_session(handle, |client| {
+			block_on(
+				client
+					.provider(provider)
+					.deactivate_persistent_forwarding_address(id),
+			)
+		})?;
 		encode_ack()
 	})
 }
@@ -387,7 +424,7 @@ pub unsafe extern "C" fn keeta_asset_list_transactions(
 ) -> i32 {
 	dispatch2(provider_ptr, provider_len, request_ptr, request_len, |provider, request| {
 		let request = list_transactions_request(request)?;
-		let outcome = with_session(handle, |client| block_on(client.list_transactions(&provider, &request)))?;
+		let outcome = with_session(handle, |client| block_on(client.provider(provider).list_transactions(&request)))?;
 		encode(&outcome)
 	})
 }
@@ -408,7 +445,8 @@ pub unsafe extern "C" fn keeta_asset_share_kyc_attributes(
 ) -> i32 {
 	dispatch2(provider_ptr, provider_len, request_ptr, request_len, |provider, request| {
 		let request = share_kyc_attributes_request(request)?;
-		let outcome = with_session(handle, |client| block_on(client.share_kyc_attributes(&provider, &request)))?;
+		let outcome =
+			with_session(handle, |client| block_on(client.provider(provider).share_kyc_attributes(&request)))?;
 		encode(&outcome)
 	})
 }
@@ -436,11 +474,14 @@ pub unsafe extern "C" fn keeta_asset_share_kyc_attributes_and_wait(
 	dispatch2(provider_ptr, provider_len, request_ptr, request_len, |provider, request| {
 		let request = share_kyc_attributes_request(request)?;
 		let options = await_options(interval_ms, timeout_ms);
-		let outcome = with_session(handle, |client| {
-			block_on(client.share_kyc_attributes_and_wait(&provider, &request, options, |millis| async move {
-				host_sleep_ms(u64::from(millis))
-			}))
-		})?;
+		let outcome =
+			with_session(handle, |client| {
+				block_on(client.provider(provider).share_kyc_attributes_and_wait(
+					&request,
+					options,
+					|millis| async move { host_sleep_ms(u64::from(millis)) },
+				))
+			})?;
 
 		encode(&outcome)
 	})
@@ -479,7 +520,12 @@ fn providers(handle: i32, filter: ProviderFilter) -> Result<Vec<u8>, CodedError>
 
 fn providers_for_transfer(handle: i32, search_json: &str) -> Result<Vec<u8>, CodedError> {
 	let search = parse_provider_search(search_json)?;
-	let providers = with_session(handle, |client| block_on(client.providers_for_transfer(&search)))?;
+	let providers = with_session(handle, |client| {
+		block_on(async {
+			let providers = client.providers_for_transfer(&search).await?;
+			Ok(snapshots(providers))
+		})
+	})?;
 	encode_providers(providers)
 }
 
@@ -488,13 +534,14 @@ fn provider_one(handle: i32, filter: ProviderFilter) -> Result<Vec<u8>, CodedErr
 	encode_provider(providers.into_iter().next())
 }
 
-/// Discover providers matching `filter` through the client's public surface.
+/// Discover provider snapshots matching `filter` through the client's public
+/// surface.
 async fn lookup(
 	client: &AssetMovementClient,
 	filter: &ProviderFilter,
-) -> Result<Vec<AssetMovementProvider>, AnchorClientError> {
+) -> Result<Vec<AssetMovementProviderInfo>, AnchorClientError> {
 	let all = client.providers().await?;
-	Ok(filter_providers(all, filter))
+	Ok(filter_providers(snapshots(all), filter))
 }
 
 // ---------------------------------------------------------------------------
@@ -535,7 +582,7 @@ fn dispatch2(
 	provider_len: i32,
 	arg_ptr: i32,
 	arg_len: i32,
-	body: impl FnOnce(AssetMovementProvider, &str) -> Result<Vec<u8>, CodedError>,
+	body: impl FnOnce(AssetMovementProviderInfo, &str) -> Result<Vec<u8>, CodedError>,
 ) -> i32 {
 	let result = (|| {
 		let provider_json = unsafe { string_in(provider_ptr, provider_len) }.ok_or_else(unreadable)?;

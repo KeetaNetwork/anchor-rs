@@ -10,9 +10,12 @@ public sealed record KycOperations(
 	string? CheckLocality,
 	string? GetEstimate);
 
-/// <summary>A KYC provider discovered from on-chain service metadata.</summary>
+/// <summary>
+/// The metadata snapshot of a KYC provider discovered from on-chain service
+/// metadata, the data a <see cref="KycProvider"/> handle operates over.
+/// </summary>
 /// <remarks><see cref="CountryCodes"/> is null for a worldwide provider.</remarks>
-public sealed record KycProvider(
+public sealed record KycProviderInfo(
 	string Id,
 	string Ca,
 	KycOperations Operations,

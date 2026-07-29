@@ -52,7 +52,8 @@ pub use keetanetwork_client::KeetaClient;
 
 #[cfg(feature = "codec")]
 pub use resolver::{
-	decode_base64, parse_metadata, AccountCertificate, CountryCode, KycOperations, KycProvider, Resolver, ServiceQuery,
+	decode_base64, parse_metadata, AccountCertificate, CountryCode, KycOperations, KycProviderInfo, Resolver,
+	ServiceQuery,
 };
 
 #[cfg(feature = "trust")]
@@ -63,7 +64,8 @@ pub use service::{AnchorCaller, AnchorContext, AnchorOutcome, Auth, BodyEnvelope
 
 #[cfg(feature = "kyc")]
 pub use services::kyc::{
-	Certificate, Certificates, ExpectedCost, KycClient, KycQuery, SupportedCountries, Verification, VerificationStatus,
+	Certificate, Certificates, ExpectedCost, KycClient, KycProvider, KycQuery, SupportedCountries, Verification,
+	VerificationStatus,
 };
 
 #[cfg(feature = "kyc")]
@@ -72,11 +74,11 @@ pub use sharable::{fetch_external_blobs, sharable_with_references};
 #[cfg(feature = "asset")]
 pub use services::asset_movement::{
 	canonicalize_asset, canonicalize_location, parse_total, AccountStatus, AddressPage, AnchorDetails, AssetLocation,
-	AssetMovementBlocker, AssetMovementClient, AssetMovementOperations, AssetMovementProvider, AssetMovementQuery,
-	AssetOrAssetWithLocation, AssetOrPair, AwaitOptions, ChainLocation, ClientRenderableContent,
-	CreatePersistentForwardingAddressRequest, CreatePersistentForwardingTemplateRequest, Disclaimer, DisclaimerPurpose,
-	EndpointAuth, ExecuteTransferRequest, FeeBreakdown, FeeLineItem, ForwardingAddress, ForwardingAddressFilter,
-	ForwardingDestination, ForwardingTemplate, InitiatePersistentForwardingTemplateRequest,
+	AssetMovementBlocker, AssetMovementClient, AssetMovementOperations, AssetMovementProvider,
+	AssetMovementProviderInfo, AssetMovementQuery, AssetOrAssetWithLocation, AssetOrPair, AwaitOptions, ChainLocation,
+	ClientRenderableContent, CreatePersistentForwardingAddressRequest, CreatePersistentForwardingTemplateRequest,
+	Disclaimer, DisclaimerPurpose, EndpointAuth, ExecuteTransferRequest, FeeBreakdown, FeeLineItem, ForwardingAddress,
+	ForwardingAddressFilter, ForwardingDestination, ForwardingTemplate, InitiatePersistentForwardingTemplateRequest,
 	ListForwardingAddressTemplatesRequest, ListForwardingAddressesRequest, ListTransactionsRequest,
 	MinimumTransferValue, OperationEndpoint, Pagination, PersistentAddressFilter, ProviderFilter, ProviderSearch,
 	ShareKycOutcome, ShareKycRequest, SimulatedTransfer, TemplatePage, TemplateSession, TokenLocationMetadata,

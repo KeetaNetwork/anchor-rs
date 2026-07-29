@@ -204,9 +204,11 @@ fn decimal_places<'de, D: Deserializer<'de>>(deserializer: D) -> Result<u32, D::
 	}
 }
 
-/// A validated asset-movement provider resolved from service metadata.
+/// The validated metadata snapshot of an asset-movement provider, the data a
+/// [`AssetMovementProvider`](super::client::AssetMovementProvider) handle
+/// operates over. Re-resolving yields a fresh snapshot.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AssetMovementProvider {
+pub struct AssetMovementProviderInfo {
 	/// The provider id (the key under `services.assetMovement`).
 	pub id: String,
 	/// The operation endpoints the provider advertises.
@@ -222,7 +224,7 @@ pub struct AssetMovementProvider {
 	pub account: Option<String>,
 }
 
-impl AssetMovementProvider {
+impl AssetMovementProviderInfo {
 	/// Read a provider from its metadata `id` and `entry`.
 	fn from_entry(id: String, entry: &Value) -> Self {
 		let operations = AssetMovementOperations::from_entry(entry);
@@ -316,7 +318,7 @@ impl ProviderFilter {
 	}
 
 	/// Whether `provider` passes this filter.
-	fn accepts(&self, provider: &AssetMovementProvider) -> bool {
+	fn accepts(&self, provider: &AssetMovementProviderInfo) -> bool {
 		let id_ok = self.id.as_deref().is_none_or(|id| id == provider.id);
 		let account_ok = self
 			.account
@@ -332,10 +334,10 @@ pub struct AssetMovementQuery;
 impl ServiceQuery for AssetMovementQuery {
 	const SERVICE: &'static str = "assetMovement";
 	type Criteria = ProviderFilter;
-	type Provider = AssetMovementProvider;
+	type Provider = AssetMovementProviderInfo;
 
-	fn parse(id: String, entry: &Value, criteria: &ProviderFilter) -> Option<AssetMovementProvider> {
-		let provider = AssetMovementProvider::from_entry(id, entry);
+	fn parse(id: String, entry: &Value, criteria: &ProviderFilter) -> Option<AssetMovementProviderInfo> {
+		let provider = AssetMovementProviderInfo::from_entry(id, entry);
 		criteria.accepts(&provider).then_some(provider)
 	}
 }
@@ -388,7 +390,7 @@ impl ProviderSearch {
 
 	/// Whether `provider` advertises a supported-asset path satisfying this
 	/// search.
-	pub fn accepts(&self, provider: &AssetMovementProvider) -> bool {
+	pub fn accepts(&self, provider: &AssetMovementProviderInfo) -> bool {
 		provider
 			.supported_assets
 			.iter()
@@ -585,7 +587,7 @@ mod tests {
 	#[test]
 	fn a_bare_string_endpoint_defaults_to_no_auth() {
 		let entry = json!({ "operations": { "simulateTransfer": "https://anchor.example/api/simulateTransfer" } });
-		let provider = AssetMovementProvider::from_entry("p".into(), &entry);
+		let provider = AssetMovementProviderInfo::from_entry("p".into(), &entry);
 		let endpoint = provider
 			.operations
 			.get("simulateTransfer")
@@ -604,7 +606,7 @@ mod tests {
 				}
 			}
 		});
-		let provider = AssetMovementProvider::from_entry("p".into(), &entry);
+		let provider = AssetMovementProviderInfo::from_entry("p".into(), &entry);
 		let endpoint = provider
 			.operations
 			.get("initiateTransfer")
@@ -615,7 +617,7 @@ mod tests {
 	#[test]
 	fn get_account_status_is_always_required() {
 		let entry = json!({ "operations": { "getAccountStatus": "https://anchor.example/api/getAccountStatus" } });
-		let provider = AssetMovementProvider::from_entry("p".into(), &entry);
+		let provider = AssetMovementProviderInfo::from_entry("p".into(), &entry);
 		let endpoint = provider
 			.operations
 			.get("getAccountStatus")
@@ -626,8 +628,8 @@ mod tests {
 	#[test]
 	fn a_filter_by_id_keeps_only_the_matching_provider() {
 		let filter = ProviderFilter::by_id("wanted");
-		let wanted = AssetMovementProvider::from_entry("wanted".into(), &json!({ "operations": {} }));
-		let other = AssetMovementProvider::from_entry("other".into(), &json!({ "operations": {} }));
+		let wanted = AssetMovementProviderInfo::from_entry("wanted".into(), &json!({ "operations": {} }));
+		let other = AssetMovementProviderInfo::from_entry("other".into(), &json!({ "operations": {} }));
 		assert!(filter.accepts(&wanted));
 		assert!(!filter.accepts(&other));
 	}
@@ -635,14 +637,14 @@ mod tests {
 	#[test]
 	fn a_filter_by_account_matches_the_entry_signer() {
 		let filter = ProviderFilter::by_account("keeta_signer");
-		let mut provider = AssetMovementProvider::from_entry("p".into(), &json!({ "operations": {} }));
+		let mut provider = AssetMovementProviderInfo::from_entry("p".into(), &json!({ "operations": {} }));
 		provider.account = Some("keeta_signer".into());
 		assert!(filter.accepts(&provider));
 	}
 
 	/// A provider advertising an EVM<->Keeta `KEETA_SEND` path whose endpoints
 	/// carry distinct asset ids (`evm:0x5` and `token`) and symmetric rails.
-	fn searchable_provider() -> AssetMovementProvider {
+	fn searchable_provider() -> AssetMovementProviderInfo {
 		let entry = json!({
 			"operations": {},
 			"supportedAssets": [{
@@ -655,7 +657,7 @@ mod tests {
 				}]
 			}]
 		});
-		AssetMovementProvider::from_entry("p".into(), &entry)
+		AssetMovementProviderInfo::from_entry("p".into(), &entry)
 	}
 
 	#[test]
@@ -716,7 +718,7 @@ mod tests {
 
 	/// A provider publishing an EVM asset id in non-canonical (lowercase)
 	/// casing, mirroring the reference resolver's metadata normalization.
-	fn lowercase_evm_provider() -> AssetMovementProvider {
+	fn lowercase_evm_provider() -> AssetMovementProviderInfo {
 		let entry = json!({
 			"operations": {},
 			"supportedAssets": [{
@@ -729,7 +731,7 @@ mod tests {
 				}]
 			}]
 		});
-		AssetMovementProvider::from_entry("p".into(), &entry)
+		AssetMovementProviderInfo::from_entry("p".into(), &entry)
 	}
 
 	#[test]
@@ -756,7 +758,7 @@ mod tests {
 	/// A provider publishing one general markdown disclaimer, one malformed
 	/// disclaimer, and per-location token metadata with a string
 	/// `decimalPlaces`.
-	fn decorated_provider() -> AssetMovementProvider {
+	fn decorated_provider() -> AssetMovementProviderInfo {
 		let entry = json!({
 			"operations": {},
 			"legal": {
@@ -778,7 +780,7 @@ mod tests {
 				}
 			}
 		});
-		AssetMovementProvider::from_entry("p".into(), &entry)
+		AssetMovementProviderInfo::from_entry("p".into(), &entry)
 	}
 
 	#[test]
@@ -792,7 +794,7 @@ mod tests {
 
 	#[test]
 	fn a_provider_without_legal_metadata_has_no_disclaimers() {
-		let provider = AssetMovementProvider::from_entry("p".into(), &json!({ "operations": {} }));
+		let provider = AssetMovementProviderInfo::from_entry("p".into(), &json!({ "operations": {} }));
 		assert!(provider.legal_disclaimers().is_none());
 	}
 
@@ -809,7 +811,7 @@ mod tests {
 				"disclaimers": []
 			}
 		});
-		let provider = AssetMovementProvider::from_entry("p".into(), &entry);
+		let provider = AssetMovementProviderInfo::from_entry("p".into(), &entry);
 		assert!(matches!(
 			provider.legal_anchor_details(),
 			Some(AnchorDetails {
@@ -832,7 +834,7 @@ mod tests {
 				}
 			}
 		});
-		let provider = AssetMovementProvider::from_entry("p".into(), &entry);
+		let provider = AssetMovementProviderInfo::from_entry("p".into(), &entry);
 		assert!(matches!(
 			provider.legal_anchor_details(),
 			Some(AnchorDetails { name: Some(_), description: None, logo: Some(_) })
@@ -841,7 +843,7 @@ mod tests {
 
 	#[test]
 	fn a_provider_without_anchor_details_has_none() {
-		let provider = AssetMovementProvider::from_entry("p".into(), &json!({ "operations": {} }));
+		let provider = AssetMovementProviderInfo::from_entry("p".into(), &json!({ "operations": {} }));
 		assert!(provider.legal_anchor_details().is_none());
 	}
 
@@ -885,7 +887,7 @@ mod tests {
 			}
 		});
 
-		let provider = AssetMovementProvider::from_entry("p".into(), &entry);
+		let provider = AssetMovementProviderInfo::from_entry("p".into(), &entry);
 		assert!(provider
 			.asset_metadata_for_location("chain:evm:100", "evm:0x5aaeb6053f3e94c9b9a09f33669435e7ef1beaed")
 			.is_none());
@@ -909,7 +911,7 @@ mod tests {
 			}]
 		});
 
-		let provider = AssetMovementProvider::from_entry("p".into(), &entry);
+		let provider = AssetMovementProviderInfo::from_entry("p".into(), &entry);
 		let search = ProviderSearch::for_asset("token");
 		assert!(!search.accepts(&provider));
 	}

@@ -8,6 +8,12 @@ namespace KeetaNet.Anchor.Kyc;
 /// Discovery, request signing, retries, and the account-status blocker fold all
 /// run inside the wasm core.
 /// </summary>
+/// <remarks>
+/// Discovery returns <see cref="AssetProvider"/> handles carrying the resolved
+/// metadata; every operation lives on the handle. A stored
+/// <see cref="AssetProviderInfo"/> snapshot rebinds through
+/// <see cref="Provider"/>.
+/// </remarks>
 public sealed class AssetMovementClient : IDisposable
 {
 	private static readonly JsonSerializerOptions Json = new()
@@ -27,6 +33,10 @@ public sealed class AssetMovementClient : IDisposable
 		_handle = handle;
 	}
 
+	internal WasmRuntime Runtime => _runtime;
+
+	internal int Handle => _handle;
+
 	/// <summary>
 	/// Build a client signed by an existing <paramref name="account"/> from the
 	/// <c>crypto</c> surface, resolving providers from <paramref name="root"/>'s
@@ -39,11 +49,7 @@ public sealed class AssetMovementClient : IDisposable
 	}
 
 	/// <summary>Every advertised provider.</summary>
-	public IReadOnlyList<AssetProvider> Providers()
-	{
-		byte[] payload = _runtime.AssetProviders(_handle);
-		return JsonSerializer.Deserialize<List<AssetProvider>>(payload, Json) ?? new List<AssetProvider>();
-	}
+	public IReadOnlyList<AssetProvider> Providers() => ParseProviders(_runtime.AssetProviders(_handle));
 
 	/// <summary>The provider with <paramref name="id"/>, or null when none advertises it.</summary>
 	public AssetProvider? ProviderById(string id) => ParseOptionalProvider(_runtime.AssetProviderById(_handle, id));
@@ -56,38 +62,104 @@ public sealed class AssetMovementClient : IDisposable
 	/// Every provider whose advertised <c>supportedAssets</c> satisfies
 	/// <paramref name="search"/> (asset, endpoints, and directional rails).
 	/// </summary>
-	public IReadOnlyList<AssetProvider> GetProvidersForTransfer(AssetProviderSearch search)
-	{
-		byte[] payload = _runtime.AssetProvidersForTransfer(_handle, Serialize(search));
-		return JsonSerializer.Deserialize<List<AssetProvider>>(payload, Json) ?? new List<AssetProvider>();
-	}
+	public IReadOnlyList<AssetProvider> GetProvidersForTransfer(AssetProviderSearch search) =>
+		ParseProviders(_runtime.AssetProvidersForTransfer(_handle, Serialize(search)));
 
 	/// <summary>
-	/// Whether <paramref name="provider"/> advertises the
-	/// <paramref name="operation"/> endpoint (e.g. <c>initiateTransfer</c>,
-	/// <c>createPersistentForwarding</c>).
+	/// Bind a stored <see cref="AssetProviderInfo"/> snapshot back to this
+	/// client, yielding the operation-carrying <see cref="AssetProvider"/>
+	/// handle.
 	/// </summary>
-	public bool IsOperationSupported(AssetProvider provider, string operation) =>
-		provider.Operations.ContainsKey(operation);
-
-	/// <summary>The provider's advertised legal disclaimers, or null when none.</summary>
-	public JsonElement? GetLegalDisclaimers(AssetProvider provider) => provider.Legal;
+	public AssetProvider Provider(AssetProviderInfo info) => new(this, info);
 
 	/// <summary>
 	/// The legal disclaimers advertised by the provider with
 	/// <paramref name="id"/>, or null when the provider or its disclaimers are
 	/// absent.
 	/// </summary>
-	public JsonElement? GetProviderLegalDisclaimersById(string id) => ProviderById(id)?.Legal;
+	public JsonElement? GetProviderLegalDisclaimersById(string id) => ProviderById(id)?.GetLegalDisclaimers();
+
+	internal static string Serialize<T>(T value) => JsonSerializer.Serialize(value, Json);
+
+	internal static T Read<T>(byte[] payload) =>
+		JsonSerializer.Deserialize<T>(payload, Json)
+		?? throw new KeetaException("DECODE", $"could not decode a {typeof(T).Name} from the asset-movement response");
+
+	/// <summary>Bind each snapshot in a JSON provider-array payload to this client.</summary>
+	private IReadOnlyList<AssetProvider> ParseProviders(byte[] payload)
+	{
+		List<AssetProviderInfo> infos =
+			JsonSerializer.Deserialize<List<AssetProviderInfo>>(payload, Json) ?? new List<AssetProviderInfo>();
+		return infos.ConvertAll(info => new AssetProvider(this, info));
+	}
+
+	/// <summary>Parse a provider payload, mapping a JSON <c>null</c> body to null.</summary>
+	private AssetProvider? ParseOptionalProvider(byte[] payload)
+	{
+		using var document = JsonDocument.Parse(payload);
+		if (document.RootElement.ValueKind == JsonValueKind.Null)
+		{
+			return null;
+		}
+
+		AssetProviderInfo? info = document.RootElement.Deserialize<AssetProviderInfo>(Json);
+		return info is null ? null : new AssetProvider(this, info);
+	}
+
+	public void Dispose()
+	{
+		if (_disposed)
+		{
+			return;
+		}
+
+		_disposed = true;
+		_runtime.AssetFree(_handle);
+	}
+}
+
+/// <summary>
+/// A discovered provider bound to its client: every operation lives here, and
+/// the resolved metadata snapshot is exposed as <see cref="Info"/>.
+/// </summary>
+/// <remarks>
+/// The handle holds no wasm resource of its own so it needs no disposal and
+/// rebinds cheaply from a stored snapshot via
+/// <see cref="AssetMovementClient.Provider"/>.
+/// </remarks>
+public sealed class AssetProvider
+{
+	private readonly AssetMovementClient _client;
+
+	internal AssetProvider(AssetMovementClient client, AssetProviderInfo info)
+	{
+		_client = client;
+		Info = info;
+	}
+
+	/// <summary>The resolved metadata snapshot.</summary>
+	public AssetProviderInfo Info { get; }
+
+	/// <summary>The provider id (the key under <c>services.assetMovement</c>).</summary>
+	public string Id => Info.Id;
+
+	/// <summary>
+	/// Whether the provider advertises the <paramref name="operation"/> endpoint
+	/// (e.g. <c>initiateTransfer</c>, <c>createPersistentForwarding</c>).
+	/// </summary>
+	public bool IsOperationSupported(string operation) => Info.Operations.ContainsKey(operation);
+
+	/// <summary>The provider's advertised legal disclaimers, or null when none.</summary>
+	public JsonElement? GetLegalDisclaimers() => Info.Legal;
 
 	/// <summary>
 	/// The provider's display metadata for <paramref name="asset"/> (an external
 	/// chain asset id) at <paramref name="location"/> (a canonical location
 	/// string), or null when the provider advertises none.
 	/// </summary>
-	public JsonElement? GetAssetMetadataForLocation(AssetProvider provider, string location, string asset)
+	public JsonElement? GetAssetMetadataForLocation(string location, string asset)
 	{
-		if (provider.LocationMetadata is not { } metadata || metadata.ValueKind != JsonValueKind.Object)
+		if (Info.LocationMetadata is not { } metadata || metadata.ValueKind != JsonValueKind.Object)
 		{
 			return null;
 		}
@@ -104,125 +176,111 @@ public sealed class AssetMovementClient : IDisposable
 	}
 
 	/// <summary>Simulate a transfer, returning a fluent handle over its instruction choices.</summary>
-	public AssetSimulatedTransfer SimulateTransfer(AssetProvider provider, AssetTransferRequest request)
+	public AssetSimulatedTransfer SimulateTransfer(AssetTransferRequest request)
 	{
-		var transport = Read<AssetSimulatedTransferTransport>(
-			_runtime.AssetSimulateTransfer(_handle, Serialize(provider), Serialize(request)));
-		return new AssetSimulatedTransfer(this, provider, request, transport.InstructionChoices);
+		var transport = AssetMovementClient.Read<AssetSimulatedTransferTransport>(
+			_client.Runtime.AssetSimulateTransfer(_client.Handle, SerializedInfo(), AssetMovementClient.Serialize(request)));
+		return new AssetSimulatedTransfer(this, request, transport.InstructionChoices);
 	}
 
 	/// <summary>Initiate a transfer, returning a fluent handle. The request's recipient is required.</summary>
-	public AssetTransfer InitiateTransfer(AssetProvider provider, AssetTransferRequest request)
+	public AssetTransfer InitiateTransfer(AssetTransferRequest request)
 	{
-		var transport = Read<AssetTransferTransport>(
-			_runtime.AssetInitiateTransfer(_handle, Serialize(provider), Serialize(request)));
-		return new AssetTransfer(this, provider, transport.Id, transport.InstructionChoices);
+		var transport = AssetMovementClient.Read<AssetTransferTransport>(
+			_client.Runtime.AssetInitiateTransfer(_client.Handle, SerializedInfo(), AssetMovementClient.Serialize(request)));
+		return new AssetTransfer(this, transport.Id, transport.InstructionChoices);
 	}
 
 	/// <summary>Execute a pull instruction for a transfer.</summary>
-	public AssetTransferStatus ExecuteTransfer(AssetProvider provider, AssetExecuteRequest request) =>
-		Read<AssetTransferStatus>(_runtime.AssetExecuteTransfer(_handle, Serialize(provider), Serialize(request)));
+	public AssetTransferStatus ExecuteTransfer(AssetExecuteRequest request) =>
+		AssetMovementClient.Read<AssetTransferStatus>(
+			_client.Runtime.AssetExecuteTransfer(_client.Handle, SerializedInfo(), AssetMovementClient.Serialize(request)));
 
 	/// <summary>Read the status of transfer <paramref name="id"/>.</summary>
-	public AssetTransferStatus TransferStatus(AssetProvider provider, string id) =>
-		Read<AssetTransferStatus>(_runtime.AssetTransferStatus(_handle, Serialize(provider), id));
+	public AssetTransferStatus TransferStatus(string id) =>
+		AssetMovementClient.Read<AssetTransferStatus>(
+			_client.Runtime.AssetTransferStatus(_client.Handle, SerializedInfo(), id));
 
 	/// <summary>Read whether the signer's account is ready to use this provider.</summary>
-	public AssetAccountStatus AccountStatus(AssetProvider provider) =>
-		Read<AssetAccountStatus>(_runtime.AssetAccountStatus(_handle, Serialize(provider)));
+	public AssetAccountStatus AccountStatus() =>
+		AssetMovementClient.Read<AssetAccountStatus>(
+			_client.Runtime.AssetAccountStatus(_client.Handle, SerializedInfo()));
 
 	/// <summary>Open a persistent-forwarding template session.</summary>
-	public AssetTemplateSession InitiatePersistentForwardingTemplate(AssetProvider provider, AssetInitiateTemplateRequest request) =>
-		Read<AssetTemplateSession>(
-			_runtime.AssetInitiatePersistentForwardingTemplate(_handle, Serialize(provider), Serialize(request)));
+	public AssetTemplateSession InitiatePersistentForwardingTemplate(AssetInitiateTemplateRequest request) =>
+		AssetMovementClient.Read<AssetTemplateSession>(
+			_client.Runtime.AssetInitiatePersistentForwardingTemplate(
+				_client.Handle, SerializedInfo(), AssetMovementClient.Serialize(request)));
 
 	/// <summary>Create a persistent-forwarding template.</summary>
-	public AssetForwardingTemplate CreatePersistentForwardingTemplate(AssetProvider provider, AssetCreateTemplateRequest request) =>
-		Read<AssetForwardingTemplate>(
-			_runtime.AssetCreatePersistentForwardingTemplate(_handle, Serialize(provider), Serialize(request)));
+	public AssetForwardingTemplate CreatePersistentForwardingTemplate(AssetCreateTemplateRequest request) =>
+		AssetMovementClient.Read<AssetForwardingTemplate>(
+			_client.Runtime.AssetCreatePersistentForwardingTemplate(
+				_client.Handle, SerializedInfo(), AssetMovementClient.Serialize(request)));
 
 	/// <summary>List persistent-forwarding templates.</summary>
-	public AssetTemplatePage ListForwardingAddressTemplates(AssetProvider provider, AssetListTemplatesRequest request) =>
-		Read<AssetTemplatePage>(_runtime.AssetListForwardingAddressTemplates(_handle, Serialize(provider), Serialize(request)));
+	public AssetTemplatePage ListForwardingAddressTemplates(AssetListTemplatesRequest request) =>
+		AssetMovementClient.Read<AssetTemplatePage>(
+			_client.Runtime.AssetListForwardingAddressTemplates(
+				_client.Handle, SerializedInfo(), AssetMovementClient.Serialize(request)));
 
 	/// <summary>Create a persistent-forwarding address, returning its (obfuscated) details.</summary>
-	public JsonElement CreatePersistentForwardingAddress(AssetProvider provider, AssetCreateAddressRequest request) =>
-		Read<JsonElement>(_runtime.AssetCreatePersistentForwardingAddress(_handle, Serialize(provider), Serialize(request)));
+	public JsonElement CreatePersistentForwardingAddress(AssetCreateAddressRequest request) =>
+		AssetMovementClient.Read<JsonElement>(
+			_client.Runtime.AssetCreatePersistentForwardingAddress(
+				_client.Handle, SerializedInfo(), AssetMovementClient.Serialize(request)));
 
 	/// <summary>List persistent-forwarding addresses.</summary>
-	public AssetAddressPage ListForwardingAddresses(AssetProvider provider, AssetListAddressesRequest request) =>
-		Read<AssetAddressPage>(_runtime.AssetListForwardingAddresses(_handle, Serialize(provider), Serialize(request)));
+	public AssetAddressPage ListForwardingAddresses(AssetListAddressesRequest request) =>
+		AssetMovementClient.Read<AssetAddressPage>(
+			_client.Runtime.AssetListForwardingAddresses(
+				_client.Handle, SerializedInfo(), AssetMovementClient.Serialize(request)));
 
 	/// <summary>Deactivate a persistent-forwarding template by id.</summary>
-	public void DeactivatePersistentForwardingTemplate(AssetProvider provider, string id) =>
-		_runtime.AssetDeactivatePersistentForwardingTemplate(_handle, Serialize(provider), id);
+	public void DeactivatePersistentForwardingTemplate(string id) =>
+		_client.Runtime.AssetDeactivatePersistentForwardingTemplate(_client.Handle, SerializedInfo(), id);
 
 	/// <summary>Deactivate a persistent-forwarding address by id.</summary>
-	public void DeactivatePersistentForwardingAddress(AssetProvider provider, string id) =>
-		_runtime.AssetDeactivatePersistentForwardingAddress(_handle, Serialize(provider), id);
+	public void DeactivatePersistentForwardingAddress(string id) =>
+		_client.Runtime.AssetDeactivatePersistentForwardingAddress(_client.Handle, SerializedInfo(), id);
 
 	/// <summary>List asset-movement transactions.</summary>
-	public AssetTransactionPage ListTransactions(AssetProvider provider, AssetListTransactionsRequest request) =>
-		Read<AssetTransactionPage>(_runtime.AssetListTransactions(_handle, Serialize(provider), Serialize(request)));
+	public AssetTransactionPage ListTransactions(AssetListTransactionsRequest request) =>
+		AssetMovementClient.Read<AssetTransactionPage>(
+			_client.Runtime.AssetListTransactions(_client.Handle, SerializedInfo(), AssetMovementClient.Serialize(request)));
 
 	/// <summary>
 	/// Share KYC attributes with the provider, returning the outcome verbatim.
 	/// A pending outcome carries the promise URL the caller must poll; use
 	/// <see cref="ShareKycAttributesAndWait"/> to poll it automatically.
 	/// </summary>
-	public AssetShareKycOutcome ShareKycAttributes(AssetProvider provider, AssetShareKycRequest request) =>
-		Read<AssetShareKycOutcome>(_runtime.AssetShareKycAttributes(_handle, Serialize(provider), Serialize(request)));
+	public AssetShareKycOutcome ShareKycAttributes(AssetShareKycRequest request) =>
+		AssetMovementClient.Read<AssetShareKycOutcome>(
+			_client.Runtime.AssetShareKycAttributes(_client.Handle, SerializedInfo(), AssetMovementClient.Serialize(request)));
 
 	/// <summary>
 	/// Share KYC attributes and, when the outcome is pending with a promise URL,
 	/// poll that URL inside the core until it resolves.
 	/// </summary>
 	public AssetShareKycOutcome ShareKycAttributesAndWait(
-		AssetProvider provider,
 		AssetShareKycRequest request,
 		TimeSpan? pollInterval = null,
 		TimeSpan? timeout = null) =>
-		Read<AssetShareKycOutcome>(_runtime.AssetShareKycAttributesAndWait(
-			_handle,
-			Serialize(provider),
-			Serialize(request),
+		AssetMovementClient.Read<AssetShareKycOutcome>(_client.Runtime.AssetShareKycAttributesAndWait(
+			_client.Handle,
+			SerializedInfo(),
+			AssetMovementClient.Serialize(request),
 			ToWholeMilliseconds(pollInterval),
 			ToWholeMilliseconds(timeout)));
+
+	/// <summary>The snapshot serialized for the per-call wasm ABI.</summary>
+	private string SerializedInfo() => AssetMovementClient.Serialize(Info);
 
 	/// <summary>A bound as whole milliseconds, with 0 selecting the core default.</summary>
 	private static int ToWholeMilliseconds(TimeSpan? bound) =>
 		bound is { } value && value > TimeSpan.Zero
 			? (int)Math.Min(value.TotalMilliseconds, int.MaxValue)
 			: 0;
-
-	private static string Serialize<T>(T value) => JsonSerializer.Serialize(value, Json);
-
-	private static T Read<T>(byte[] payload) =>
-		JsonSerializer.Deserialize<T>(payload, Json)
-		?? throw new KeetaException("DECODE", $"could not decode a {typeof(T).Name} from the asset-movement response");
-
-	/// <summary>Parse a provider payload, mapping a JSON <c>null</c> body to null.</summary>
-	private static AssetProvider? ParseOptionalProvider(byte[] payload)
-	{
-		using var document = JsonDocument.Parse(payload);
-		if (document.RootElement.ValueKind == JsonValueKind.Null)
-		{
-			return null;
-		}
-
-		return document.RootElement.Deserialize<AssetProvider>(Json);
-	}
-
-	public void Dispose()
-	{
-		if (_disposed)
-		{
-			return;
-		}
-
-		_disposed = true;
-		_runtime.AssetFree(_handle);
-	}
 }
 
 /// <summary>
@@ -232,17 +290,14 @@ public sealed class AssetMovementClient : IDisposable
 /// </summary>
 public sealed class AssetSimulatedTransfer
 {
-	private readonly AssetMovementClient _client;
 	private readonly AssetProvider _provider;
 	private readonly AssetTransferRequest _request;
 
 	internal AssetSimulatedTransfer(
-		AssetMovementClient client,
 		AssetProvider provider,
 		AssetTransferRequest request,
 		IReadOnlyList<JsonElement> instructionChoices)
 	{
-		_client = client;
 		_provider = provider;
 		_request = request;
 		InstructionChoices = instructionChoices;
@@ -263,7 +318,7 @@ public sealed class AssetSimulatedTransfer
 			Recipient = recipient ?? _request.To.Recipient,
 			DepositMessage = depositMessage ?? _request.To.DepositMessage,
 		};
-		return _client.InitiateTransfer(_provider, _request with { To = to });
+		return _provider.InitiateTransfer(_request with { To = to });
 	}
 }
 
@@ -274,16 +329,13 @@ public sealed class AssetSimulatedTransfer
 /// </summary>
 public sealed class AssetTransfer
 {
-	private readonly AssetMovementClient _client;
 	private readonly AssetProvider _provider;
 
 	internal AssetTransfer(
-		AssetMovementClient client,
 		AssetProvider provider,
 		string id,
 		IReadOnlyList<JsonElement> instructionChoices)
 	{
-		_client = client;
 		_provider = provider;
 		Id = id;
 		InstructionChoices = instructionChoices;
@@ -296,9 +348,9 @@ public sealed class AssetTransfer
 	public IReadOnlyList<JsonElement> InstructionChoices { get; }
 
 	/// <summary>Read this transfer's current status.</summary>
-	public AssetTransferStatus GetStatus() => _client.TransferStatus(_provider, Id);
+	public AssetTransferStatus GetStatus() => _provider.TransferStatus(Id);
 
 	/// <summary>Execute a fiat pull <paramref name="instruction"/> for this transfer.</summary>
 	public AssetTransferStatus Execute(AssetPullInstruction instruction) =>
-		_client.ExecuteTransfer(_provider, new AssetExecuteRequest(Id, instruction));
+		_provider.ExecuteTransfer(new AssetExecuteRequest(Id, instruction));
 }
