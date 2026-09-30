@@ -60,22 +60,22 @@ version = "0.6.2"
 default-features = false
 
 [workspace.dependencies.keetanetwork-anchor]
-version = "0.2.3"
+version = "0.2.4"
 path = "keetanetwork-anchor"
 default-features = false
 
 [workspace.dependencies.keetanetwork-anchor-bindings]
-version = "0.2.4"
+version = "0.2.6"
 path = "keetanetwork-anchor-bindings"
 default-features = false
 
 [workspace.dependencies.keetanetwork-anchor-client]
-version = "0.5.0"
+version = "0.5.1"
 path = "keetanetwork-anchor-client"
 default-features = false
 
 [workspace.dependencies.keetanetwork-anchor-client-wasi]
-version = "0.5.0"
+version = "0.5.1"
 path = "keetanetwork-anchor-client-wasi"
 default-features = false
 
